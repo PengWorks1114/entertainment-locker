@@ -10,6 +10,8 @@ import {
   query,
   serverTimestamp,
   where,
+  terminate,
+  clearIndexedDbPersistence,
 } from "firebase/firestore";
 
 type Cabinet = { id: string; name: string };
@@ -61,6 +63,16 @@ export default function CabinetsPage() {
     setName("");
   }
 
+  async function clearCache() {
+    try {
+      await terminate(db);
+    } catch {}
+    try {
+      await clearIndexedDbPersistence(db);
+    } catch {}
+    location.reload();
+  }
+
   if (!user) {
     return (
       <main className="min-h-[100dvh] p-6">
@@ -77,7 +89,16 @@ export default function CabinetsPage() {
 
   return (
     <main className="min-h-[100dvh] p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">櫃子</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">櫃子</h1>
+        <button
+          onClick={clearCache}
+          className="h-10 px-3 rounded border text-sm"
+          title="清除本機 Firestore 快取並重新載入"
+        >
+          清除快取
+        </button>
+      </div>
 
       <div className="flex gap-2">
         <input
