@@ -17,6 +17,7 @@ export type ItemFormInput = {
   links?: ItemLink[] | undefined;
   thumbUrl?: string | undefined;
   progressNote?: string | undefined;
+  insightNote?: string | undefined;
   note?: string | undefined;
   rating?: number | null | undefined;
   status: ItemStatus;
@@ -33,6 +34,7 @@ export type ItemFormData = {
   links: ItemLink[];
   thumbUrl?: string;
   progressNote?: string;
+  insightNote?: string;
   note?: string;
   rating?: number;
   status: ItemStatus;
@@ -188,6 +190,13 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     const progressNote = assertString(input.progressNote, "進度備註格式錯誤").trim();
     if (progressNote) {
       data.progressNote = progressNote;
+    }
+  }
+
+  if (input.insightNote) {
+    const insightNote = assertString(input.insightNote, "心得/筆記格式錯誤").trim();
+    if (insightNote) {
+      data.insightNote = insightNote;
     }
   }
 

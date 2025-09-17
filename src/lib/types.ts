@@ -69,6 +69,7 @@ export type ItemRecord = {
   links: ItemLink[];
   thumbUrl?: string | null;
   progressNote?: string | null;
+  insightNote?: string | null;
   note?: string | null;
   rating?: number | null;
   status: ItemStatus;

@@ -39,6 +39,7 @@ type FilterState = {
   ratingMax: string;
   hasNextUpdate: HasNextUpdateFilter;
   sort: SortOption;
+  tags: string[];
 };
 
 const PAGE_SIZE = 10;
@@ -75,6 +76,7 @@ const defaultFilters: FilterState = {
   ratingMax: "",
   hasNextUpdate: "all",
   sort: "updated",
+  tags: [],
 };
 
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
@@ -90,6 +92,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [listError, setListError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [currentPage, setCurrentPage] = useState(1);
+  const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -200,6 +203,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
             progressNote:
               typeof data.progressNote === "string" ? data.progressNote : null,
+            insightNote:
+              typeof data.insightNote === "string" ? data.insightNote : null,
             note: typeof data.note === "string" ? data.note : null,
             rating: ratingValue,
             status: statusValue,
@@ -236,7 +241,20 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.ratingMax,
     filters.hasNextUpdate,
     filters.sort,
+    filters.tags,
   ]);
+
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    items.forEach((item) => {
+      item.tags.forEach((tag) => {
+        if (tag.trim().length > 0) {
+          tagSet.add(tag);
+        }
+      });
+    });
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }, [items]);
 
   const filteredItems = useMemo(() => {
     const searchTerm = filters.search.trim().toLowerCase();
@@ -271,6 +289,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         return false;
       }
       if (filters.hasNextUpdate === "no" && item.nextUpdateAt) {
+        return false;
+      }
+      if (
+        filters.tags.length > 0 &&
+        !filters.tags.every((tag) => item.tags.includes(tag))
+      ) {
         return false;
       }
       return true;
@@ -326,14 +350,52 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.ratingMin.trim().length > 0 ||
     filters.ratingMax.trim().length > 0 ||
     filters.hasNextUpdate !== "all" ||
-    filters.sort !== "updated";
+    filters.sort !== "updated" ||
+    filters.tags.length > 0;
 
   function updateFilter<K extends keyof FilterState>(key: K, value: FilterState[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
+  function addTagFilter(tag: string) {
+    const normalized = tag.trim();
+    if (!normalized) return;
+    setFilters((prev) => {
+      if (prev.tags.includes(normalized)) {
+        return prev;
+      }
+      return { ...prev, tags: [...prev.tags, normalized] };
+    });
+  }
+
+  function removeTagFilter(tag: string) {
+    setFilters((prev) => ({
+      ...prev,
+      tags: prev.tags.filter((itemTag) => itemTag !== tag),
+    }));
+  }
+
+  function toggleTagFilter(tag: string) {
+    setFilters((prev) => {
+      if (prev.tags.includes(tag)) {
+        return {
+          ...prev,
+          tags: prev.tags.filter((itemTag) => itemTag !== tag),
+        };
+      }
+      return { ...prev, tags: [...prev.tags, tag] };
+    });
+  }
+
+  function handleTagSubmit() {
+    if (!tagInput.trim()) return;
+    addTagFilter(tagInput);
+    setTagInput("");
+  }
+
   function resetFilters() {
     setFilters(defaultFilters);
+    setTagInput("");
   }
 
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
@@ -503,6 +565,82 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 <option value="nextUpdate">下次更新時間（最早）</option>
               </select>
             </label>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <span className="text-sm text-gray-600">標籤篩選</span>
+              <p className="text-xs text-gray-500">
+                可加入多個標籤，僅顯示同時符合所有標籤的作品。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {filters.tags.length === 0 ? (
+                <span className="text-xs text-gray-400">目前未選擇標籤</span>
+              ) : (
+                filters.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700"
+                  >
+                    #{tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTagFilter(tag)}
+                      className="rounded-full bg-blue-100 px-1 text-[10px] text-blue-600 transition hover:bg-blue-200"
+                      aria-label={`移除標籤 ${tag}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleTagSubmit();
+                  }
+                }}
+                placeholder="輸入標籤名稱"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={handleTagSubmit}
+                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+              >
+                加入標籤
+              </button>
+            </div>
+            {availableTags.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">快速加入：</span>
+                <div className="flex flex-wrap gap-2">
+                  {availableTags.map((tag) => {
+                    const isSelected = filters.tags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`rounded-full border px-3 py-1 text-xs transition ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-50 text-blue-700"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        #{tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">

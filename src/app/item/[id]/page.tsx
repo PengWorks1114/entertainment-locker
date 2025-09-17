@@ -194,6 +194,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           links,
           thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
           progressNote: typeof data.progressNote === "string" ? data.progressNote : null,
+          insightNote: typeof data.insightNote === "string" ? data.insightNote : null,
           note: typeof data.note === "string" ? data.note : null,
           rating: ratingValue,
           status: statusValue,
@@ -399,6 +400,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const updatedAtText = formatDateTime(item.updatedAt);
   const tags = item.tags ?? [];
   const links = item.links ?? [];
+  const insightNote = item.insightNote ?? null;
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -529,11 +531,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 </div>
               )}
 
-              {links.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-sm text-gray-500">來源連結</div>
-                  <ul className="space-y-2 text-sm">
-                    {links.map((link) => (
+          {links.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm text-gray-500">來源連結</div>
+              <ul className="space-y-2 text-sm">
+                {links.map((link) => (
                       <li
                         key={`${link.label}-${link.url}`}
                         className="flex flex-wrap items-center gap-2"
@@ -547,28 +549,28 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                           {link.label}
                         </a>
                         {link.isPrimary && (
-                          <span className="text-xs text-emerald-600">（點我觀看）</span>
+                          <span className="text-xs text-emerald-600">（此為&quot;點我觀看&quot;觸發連結）</span>
                         )}
                       </li>
                     ))}
-                  </ul>
-                </div>
-              )}
+              </ul>
+            </div>
+          )}
 
-              {item.progressNote && (
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">進度備註</div>
-                  <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                    {item.progressNote}
-                  </div>
-                </div>
-              )}
+          {item.progressNote && (
+            <div className="space-y-1">
+              <div className="text-sm text-gray-500">進度備註</div>
+              <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                {item.progressNote}
+              </div>
+            </div>
+          )}
 
-              {item.note && (
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">一般備註</div>
-                  <div className="rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
-                    {item.note}
+          {item.note && (
+            <div className="space-y-1">
+              <div className="text-sm text-gray-500">一般備註</div>
+              <div className="rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
+                {item.note}
                   </div>
                 </div>
               )}
@@ -596,6 +598,20 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
           )}
         </section>
+
+        {insightNote && (
+          <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
+              <p className="text-sm text-gray-600">
+                這裡記錄的是屬於自己的觀後感、想法或推薦理由，僅供參考。
+              </p>
+            </div>
+            <div className="rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner whitespace-pre-wrap break-words">
+              {insightNote}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

@@ -62,6 +62,7 @@ type ItemFormState = {
   author: string;
   tagsText: string;
   progressNote: string;
+  insightNote: string;
   note: string;
   rating: string;
   status: ItemStatus;
@@ -83,6 +84,7 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     author: "",
     tagsText: "",
     progressNote: "",
+    insightNote: "",
     note: "",
     rating: "",
     status: "planning",
@@ -201,6 +203,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             ? data.tags.map((tag: unknown) => String(tag ?? "")).join("\n")
             : "",
           progressNote: (data.progressNote as string) ?? "",
+          insightNote: (data.insightNote as string) ?? "",
           note: (data.note as string) ?? "",
           rating: ratingValue,
           status,
@@ -346,6 +349,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         links: filteredLinks,
         thumbUrl: form.thumbUrl,
         progressNote: form.progressNote,
+        insightNote: form.insightNote,
         note: form.note,
         rating: form.rating ? Number(form.rating) : undefined,
         status: form.status,
@@ -363,6 +367,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         links: parsedData.links,
         thumbUrl: parsedData.thumbUrl ?? null,
         progressNote: parsedData.progressNote ?? null,
+        insightNote: parsedData.insightNote ?? null,
         note: parsedData.note ?? null,
         rating:
           parsedData.rating !== undefined ? parsedData.rating : null,
@@ -394,6 +399,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         author: parsedData.author ?? "",
         tagsText: parsedData.tags.join("\n"),
         progressNote: parsedData.progressNote ?? "",
+        insightNote: parsedData.insightNote ?? "",
         note: parsedData.note ?? "",
         rating:
           parsedData.rating !== undefined
@@ -697,6 +703,18 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   }
                   className={textAreaClass}
                   placeholder="例如：更新到最新話"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-base">心得 / 筆記</label>
+                <textarea
+                  value={form.insightNote}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, insightNote: e.target.value }))
+                  }
+                  className={textAreaClass}
+                  placeholder="分享一些觀後感、推薦理由等"
                 />
               </div>
 
