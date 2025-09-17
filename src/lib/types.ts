@@ -1,0 +1,60 @@
+import type { Timestamp } from "firebase/firestore";
+
+export const ITEM_STATUS_VALUES = [
+  "planning",
+  "in-progress",
+  "completed",
+  "on-hold",
+  "dropped",
+] as const;
+
+export type ItemStatus = (typeof ITEM_STATUS_VALUES)[number];
+
+export const ITEM_STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
+  { value: "planning", label: "待開啟" },
+  { value: "in-progress", label: "進行中" },
+  { value: "completed", label: "已完成" },
+  { value: "on-hold", label: "暫停" },
+  { value: "dropped", label: "棄追" },
+];
+
+export const UPDATE_FREQUENCY_VALUES = [
+  "weekly",
+  "biweekly",
+  "monthly",
+  "irregular",
+] as const;
+
+export type UpdateFrequency = (typeof UPDATE_FREQUENCY_VALUES)[number];
+
+export const UPDATE_FREQUENCY_OPTIONS: { value: UpdateFrequency; label: string }[] = [
+  { value: "weekly", label: "每週" },
+  { value: "biweekly", label: "雙週" },
+  { value: "monthly", label: "每月" },
+  { value: "irregular", label: "不定期" },
+];
+
+export type ItemLink = {
+  label: string;
+  url: string;
+};
+
+export type ItemRecord = {
+  id: string;
+  uid: string;
+  cabinetId: string;
+  titleZh: string;
+  titleAlt?: string | null;
+  author?: string | null;
+  tags: string[];
+  links: ItemLink[];
+  thumbUrl?: string | null;
+  progressNote?: string | null;
+  note?: string | null;
+  rating?: number | null;
+  status: ItemStatus;
+  updateFrequency?: UpdateFrequency | null;
+  nextUpdateAt?: Timestamp | null;
+  createdAt?: Timestamp | null;
+  updatedAt?: Timestamp | null;
+};
