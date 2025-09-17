@@ -82,6 +82,11 @@ export function usePrimaryProgress(item: ItemRecord) {
 
   useEffect(() => {
     const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      setLoading(false);
+      return undefined;
+    }
     const progressQuery = query(
       collection(db, "item", item.id, "progress"),
       where("isPrimary", "==", true),
@@ -140,6 +145,9 @@ export function usePrimaryProgress(item: ItemRecord) {
     setUpdating(true);
     try {
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       const batch = writeBatch(db);
       const progressRef = doc(db, "item", item.id, "progress", primary.id);
       batch.update(progressRef, {

@@ -98,7 +98,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [progressError, setProgressError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(getFirebaseAuth(), (current) => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      setItemLoading(false);
+      setProgressLoading(false);
+      setItemError("Firebase 尚未設定");
+      setProgressError("Firebase 尚未設定");
+      return undefined;
+    }
+    const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -120,6 +129,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     (async () => {
       try {
         const db = getFirebaseDb();
+        if (!db) {
+          setItemError("Firebase 尚未設定");
+          setItemLoading(false);
+          return;
+        }
         const itemRef = doc(db, "item", itemId);
         const snap = await getDoc(itemRef);
         if (!active) return;
@@ -289,6 +303,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     setProgressLoading(true);
     setProgressError(null);
     const db = getFirebaseDb();
+    if (!db) {
+      setProgressError("Firebase 尚未設定");
+      setProgressLoading(false);
+      return;
+    }
     const progressQuery = query(
       collection(db, "item", itemId, "progress"),
       where("isPrimary", "==", true),

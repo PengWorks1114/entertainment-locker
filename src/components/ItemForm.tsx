@@ -237,6 +237,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       }
       try {
         const db = getFirebaseDb();
+        if (!db) {
+          return [];
+        }
         const snap = await getDoc(doc(db, "cabinet", cabinetId));
         if (!snap.exists()) {
           return [];
@@ -256,6 +259,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
   useEffect(() => {
     const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      setError("Firebase 尚未設定");
+      setLoading(false);
+      return undefined;
+    }
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
@@ -270,6 +279,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
     let active = true;
     const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      setCabinets([]);
+      return;
+    }
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
     getDocs(q)
       .then((snap) => {
@@ -311,6 +325,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     let active = true;
     setLoading(true);
     const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      setLoading(false);
+      return;
+    }
     getDoc(doc(db, "item", itemId))
       .then((snap) => {
         if (!active) return;
@@ -646,6 +665,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       };
 
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       if (mode === "edit" && itemId) {
         await updateDoc(doc(db, "item", itemId), docData);
         setMessage("已儲存");
@@ -691,6 +713,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       setAppearances(mapFormAppearances(parsedData.appearances));
     } catch (err) {
       if (err instanceof ValidationError) {
+        setError(err.message);
+      } else if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
         setError("儲存時發生錯誤");
@@ -776,6 +800,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     tagsCacheRef.current[form.cabinetId] = nextTags;
     try {
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       await updateDoc(doc(db, "cabinet", form.cabinetId), {
         tags: nextTags,
         updatedAt: serverTimestamp(),
@@ -783,11 +810,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       setTagStatus({ message: `已新增 #${value}`, error: null, saving: false });
     } catch (err) {
       console.error("新增標籤失敗", err);
-      setTagStatus({
-        message: null,
-        error: "新增標籤時發生錯誤，請稍後再試",
-        saving: false,
-      });
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "新增標籤時發生錯誤，請稍後再試";
+      setTagStatus({ message: null, error: message, saving: false });
       setCabinetTags(previousTags);
       tagsCacheRef.current[form.cabinetId] = previousTags;
       setForm((prev) => ({

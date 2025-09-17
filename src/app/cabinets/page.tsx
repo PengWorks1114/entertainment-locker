@@ -33,7 +33,13 @@ export default function CabinetsPage() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   useEffect(() => {
-    const unAuth = onAuthStateChanged(getFirebaseAuth(), (current) => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      return undefined;
+    }
+
+    const unAuth = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -46,6 +52,10 @@ export default function CabinetsPage() {
       return;
     }
     const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
     const unSub = onSnapshot(
       q,
@@ -87,6 +97,10 @@ export default function CabinetsPage() {
     setFeedback(null);
     try {
       const db = getFirebaseDb();
+      if (!db) {
+        setFeedback({ type: "error", message: "Firebase 尚未設定" });
+        return;
+      }
       await addDoc(collection(db, "cabinet"), {
         uid: user.uid,
         name: trimmed,
@@ -105,11 +119,15 @@ export default function CabinetsPage() {
   async function clearCache() {
     try {
       const db = getFirebaseDb();
-      await terminate(db);
+      if (db) {
+        await terminate(db);
+      }
     } catch {}
     try {
       const db = getFirebaseDb();
-      await clearIndexedDbPersistence(db);
+      if (db) {
+        await clearIndexedDbPersistence(db);
+      }
     } catch {}
     location.reload();
   }

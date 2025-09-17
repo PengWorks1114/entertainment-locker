@@ -8,6 +8,8 @@ import {
 import { getAuth, type Auth } from "firebase/auth";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
+type Nullable<T> = T | null;
+
 type FirebaseEnvKey =
   | "NEXT_PUBLIC_FIREBASE_API_KEY"
   | "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"
@@ -16,62 +18,116 @@ type FirebaseEnvKey =
   | "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"
   | "NEXT_PUBLIC_FIREBASE_APP_ID";
 
-function getEnvValue(key: FirebaseEnvKey): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(
-      `ENV 未載入：缺少 ${key}（請檢查 .env.local 位置與鍵名）`
-    );
+const REQUIRED_ENV_KEYS: FirebaseEnvKey[] = [
+  "NEXT_PUBLIC_FIREBASE_API_KEY",
+  "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+  "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+  "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+  "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+  "NEXT_PUBLIC_FIREBASE_APP_ID",
+];
+
+function readFirebaseConfig(): Nullable<{
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+}> {
+  const missingKeys = REQUIRED_ENV_KEYS.filter((key) => !process.env[key]);
+
+  if (missingKeys.length > 0) {
+    if (process.env.NODE_ENV !== "test") {
+      console.error(
+        `Firebase 環境變數缺失：${missingKeys.join(", ")}`,
+        "請確認 .env.local 是否存在並包含所需設定。"
+      );
+    }
+    return null;
   }
-  return value;
+
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+  } as const;
 }
 
-function createFirebaseApp(): FirebaseApp {
-  const config = {
-    apiKey: getEnvValue("NEXT_PUBLIC_FIREBASE_API_KEY"),
-    authDomain: getEnvValue("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"),
-    projectId: getEnvValue("NEXT_PUBLIC_FIREBASE_PROJECT_ID"),
-    storageBucket: getEnvValue("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"),
-    messagingSenderId: getEnvValue("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
-    appId: getEnvValue("NEXT_PUBLIC_FIREBASE_APP_ID"),
-  } as const;
+function createFirebaseApp(): Nullable<FirebaseApp> {
+  const config = readFirebaseConfig();
+  if (!config) {
+    return null;
+  }
   return getApps().length ? getApp() : initializeApp(config);
 }
 
-let cachedApp: FirebaseApp | null = null;
-let cachedDb: Firestore | null = null;
-let cachedAuth: Auth | null = null;
-let cachedStorage: FirebaseStorage | null = null;
+let cachedApp: Nullable<FirebaseApp> = null;
+let cachedDb: Nullable<Firestore> = null;
+let cachedAuth: Nullable<Auth> = null;
+let cachedStorage: Nullable<FirebaseStorage> = null;
+let initializationAttempted = false;
 
-export function getFirebaseApp(): FirebaseApp {
-  if (!cachedApp) {
-    cachedApp = createFirebaseApp();
+export function getFirebaseApp(): Nullable<FirebaseApp> {
+  if (cachedApp) {
+    return cachedApp;
   }
+
+  if (initializationAttempted) {
+    return null;
+  }
+
+  initializationAttempted = true;
+  cachedApp = createFirebaseApp();
   return cachedApp;
 }
 
-export function getFirebaseDb(): Firestore {
-  if (!cachedDb) {
-    cachedDb = initializeFirestore(getFirebaseApp(), {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-    });
+export function getFirebaseDb(): Nullable<Firestore> {
+  if (cachedDb) {
+    return cachedDb;
   }
+
+  const app = getFirebaseApp();
+  if (!app) {
+    return null;
+  }
+
+  cachedDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  });
   return cachedDb;
 }
 
-export function getFirebaseAuth(): Auth {
-  if (!cachedAuth) {
-    cachedAuth = getAuth(getFirebaseApp());
+export function getFirebaseAuth(): Nullable<Auth> {
+  if (cachedAuth) {
+    return cachedAuth;
   }
+
+  const app = getFirebaseApp();
+  if (!app) {
+    return null;
+  }
+
+  cachedAuth = getAuth(app);
   return cachedAuth;
 }
 
-export function getFirebaseStorage(): FirebaseStorage {
-  if (!cachedStorage) {
-    cachedStorage = getStorage(getFirebaseApp());
+export function getFirebaseStorage(): Nullable<FirebaseStorage> {
+  if (cachedStorage) {
+    return cachedStorage;
   }
+
+  const app = getFirebaseApp();
+  if (!app) {
+    return null;
+  }
+
+  cachedStorage = getStorage(app);
   return cachedStorage;
 }
 

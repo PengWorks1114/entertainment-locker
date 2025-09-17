@@ -31,6 +31,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthReady(true);
+      return undefined;
+    }
     const unSub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthReady(true);
@@ -70,6 +74,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const auth = getFirebaseAuth();
+      if (!auth) {
+        setError("Firebase 尚未設定");
+        setLoading(false);
+        return;
+      }
       if (mode === "login") {
         await signInWithEmailAndPassword(auth, trimmedEmail, pw);
         setMessage("登入成功，正在前往櫃子");
@@ -110,6 +119,9 @@ export default function LoginPage() {
     setMessage(null);
     try {
       const auth = getFirebaseAuth();
+      if (!auth) {
+        throw new Error("Firebase 尚未設定");
+      }
       await signOut(auth);
       setMessage("已登出，歡迎再次使用");
       router.push("/");

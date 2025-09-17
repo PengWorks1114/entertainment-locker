@@ -23,6 +23,11 @@ export default function AppHeader() {
 
   useEffect(() => {
     const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthReady(true);
+      return undefined;
+    }
+
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthReady(true);
@@ -44,6 +49,9 @@ export default function AppHeader() {
     setSigningOut(true);
     try {
       const auth = getFirebaseAuth();
+      if (!auth) {
+        throw new Error("Firebase 尚未設定，無法登出");
+      }
       await signOut(auth);
       router.push("/");
       router.refresh();

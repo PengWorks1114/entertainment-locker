@@ -289,6 +289,11 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
 
   useEffect(() => {
     const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      setLoading(false);
+      return undefined;
+    }
     const colRef = collection(db, "item", itemId, "progress");
     const q = query(colRef, orderBy("updatedAt", "desc"));
     const unsub = onSnapshot(
@@ -334,6 +339,9 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
 
   useEffect(() => {
     const db = getFirebaseDb();
+    if (!db) {
+      return undefined;
+    }
     const itemRef = doc(db, "item", itemId);
     const unsub = onSnapshot(
       itemRef,
@@ -373,6 +381,9 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     try {
       const nextDate = calculateNextUpdateDate(itemFrequency);
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       await updateDoc(doc(db, "item", itemId), {
         updatedAt: serverTimestamp(),
         nextUpdateAt: nextDate ? Timestamp.fromDate(nextDate) : null,
@@ -442,6 +453,9 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
         isPrimary: newForm.isPrimary,
       });
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       const colRef = collection(db, "item", itemId, "progress");
       const docRef = await addDoc(colRef, {
         platform: parsed.platform,
@@ -462,6 +476,8 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
       setMessage("已新增進度");
     } catch (err) {
       if (err instanceof ValidationError) {
+        setError(err.message);
+      } else if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
         console.error("新增進度時發生錯誤", err);
@@ -491,6 +507,9 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
         isPrimary: progress.find((record) => record.id === id)?.isPrimary ?? false,
       });
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       await updateDoc(doc(db, "item", itemId, "progress", id), {
         platform: parsed.platform,
         type: parsed.type,
@@ -504,6 +523,8 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
       setMessage("已更新進度");
     } catch (err) {
       if (err instanceof ValidationError) {
+        setError(err.message);
+      } else if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
         console.error("更新進度時發生錯誤", err);
@@ -520,12 +541,19 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     setDeletingId(id);
     try {
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       await deleteDoc(doc(db, "item", itemId, "progress", id));
       await touchItemAfterProgressChange();
       setMessage("已刪除進度");
     } catch (err) {
       console.error("刪除進度時發生錯誤", err);
-      setError("刪除進度時發生錯誤");
+      if (err instanceof Error && err.message) {
+        setError(err.message);
+      } else {
+        setError("刪除進度時發生錯誤");
+      }
     } finally {
       setDeletingId(null);
     }
@@ -537,6 +565,9 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     setPrimaryUpdatingId(progressId);
     try {
       const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
       const colRef = collection(db, "item", itemId, "progress");
       const snap = await getDocs(colRef);
       const batch = writeBatch(db);
@@ -556,7 +587,11 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
       setMessage("已更新主進度");
     } catch (err) {
       console.error("設定主進度時發生錯誤", err);
-      setError("設定主進度時發生錯誤");
+      if (err instanceof Error && err.message) {
+        setError(err.message);
+      } else {
+        setError("設定主進度時發生錯誤");
+      }
     } finally {
       setPrimaryUpdatingId(null);
     }

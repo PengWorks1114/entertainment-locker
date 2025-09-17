@@ -146,7 +146,16 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(getFirebaseAuth(), (current) => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      setCabinetLoading(false);
+      setItemsLoading(false);
+      setCabinetError("Firebase 尚未設定");
+      setListError("Firebase 尚未設定");
+      return undefined;
+    }
+    const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -166,7 +175,14 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setCabinetLoading(true);
     setCabinetError(null);
     setCanView(false);
-    const cabinetRef = doc(getFirebaseDb(), "cabinet", cabinetId);
+    const db = getFirebaseDb();
+    if (!db) {
+      setCabinetError("Firebase 尚未設定");
+      setCabinetLoading(false);
+      setCabinetTags([]);
+      return;
+    }
+    const cabinetRef = doc(db, "cabinet", cabinetId);
     getDoc(cabinetRef)
       .then((snap) => {
         if (!active) return;
@@ -208,6 +224,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     }
     setItemsLoading(true);
     const db = getFirebaseDb();
+    if (!db) {
+      setListError("Firebase 尚未設定");
+      setItems([]);
+      setItemsLoading(false);
+      return;
+    }
     const q = query(
       collection(db, "item"),
       where("uid", "==", user.uid),
