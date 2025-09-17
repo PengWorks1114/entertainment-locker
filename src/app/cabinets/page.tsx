@@ -4,14 +4,14 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
   addDoc,
+  clearIndexedDbPersistence,
   collection,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
-  where,
   terminate,
-  clearIndexedDbPersistence,
+  Timestamp,
+  where,
 } from "firebase/firestore";
 
 type Cabinet = { id: string; name: string };
@@ -29,16 +29,22 @@ export default function CabinetsPage() {
 
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, "cabinet"),
-      where("uid", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
+    const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
     const unSub = onSnapshot(q, (snap) => {
-      const rows: Cabinet[] = snap.docs.map((d) => ({
-        id: d.id,
-        name: d.get("name") || "",
-      }));
+      const rows: Cabinet[] = snap.docs
+        .map((d) => {
+          const data = d.data();
+          const createdAt = data?.createdAt;
+          const createdMs =
+            createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+          return {
+            id: d.id,
+            name: (data?.name as string) || "",
+            createdMs,
+          };
+        })
+        .sort((a, b) => b.createdMs - a.createdMs)
+        .map((item) => ({ id: item.id, name: item.name }));
       setList(rows);
     });
     return () => unSub();

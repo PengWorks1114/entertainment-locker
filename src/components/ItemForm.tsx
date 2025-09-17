@@ -9,7 +9,6 @@ import {
   doc,
   getDoc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   Timestamp,
@@ -18,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import ThumbLinkField from "./ThumbLinkField";
+import ProgressEditor from "./ProgressEditor";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
@@ -96,18 +96,30 @@ export default function ItemForm({ itemId }: ItemFormProps) {
       setCabinets([]);
       return;
     }
-    const q = query(
-      collection(db, "cabinet"),
-      where("uid", "==", user.uid),
-      orderBy("createdAt", "desc")
+    const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
+    const unSub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: CabinetOption[] = snap.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const createdAt = data?.createdAt;
+            const createdMs =
+              createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+            return {
+              id: docSnap.id,
+              name: (data?.name as string) ?? "",
+              createdMs,
+            };
+          })
+          .sort((a, b) => b.createdMs - a.createdMs)
+          .map((item) => ({ id: item.id, name: item.name }));
+        setCabinets(rows);
+      },
+      () => {
+        setError("載入櫃子清單時發生錯誤");
+      }
     );
-    const unSub = onSnapshot(q, (snap) => {
-      const rows: CabinetOption[] = snap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        name: (docSnap.get("name") as string) ?? "",
-      }));
-      setCabinets(rows);
-    });
     return () => unSub();
   }, [user]);
 
@@ -353,25 +365,26 @@ export default function ItemForm({ itemId }: ItemFormProps) {
   }
 
   return (
-    <main className="min-h-[100dvh] p-6 space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">
-          {mode === "edit" ? "編輯物件" : "新增物件"}
-        </h1>
-        <p className="text-sm text-gray-500">
-          可只填寫中文標題後儲存，其他欄位日後再補。
-        </p>
-        {cabinets.length === 0 && (
-          <p className="text-sm text-red-600">
-            尚未建立櫃子，請先於「櫃子」頁面建立後再新增物件。
+    <main className="min-h-[100dvh] p-6 space-y-10">
+      <section className="space-y-6">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold">
+            {mode === "edit" ? "編輯物件" : "新增物件"}
+          </h1>
+          <p className="text-sm text-gray-500">
+            可只填寫中文標題後儲存，其他欄位日後再補。
           </p>
-        )}
-      </div>
+          {cabinets.length === 0 && (
+            <p className="text-sm text-red-600">
+              尚未建立櫃子，請先於「櫃子」頁面建立後再新增物件。
+            </p>
+          )}
+        </div>
 
-      {error && <div className="text-sm text-red-600">{error}</div>}
-      {message && <div className="text-sm text-green-600">{message}</div>}
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        {message && <div className="text-sm text-green-600">{message}</div>}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-1">
           <label className="text-base">所屬櫃子</label>
           <select
@@ -619,6 +632,23 @@ export default function ItemForm({ itemId }: ItemFormProps) {
           {saving ? "儲存中…" : mode === "edit" ? "儲存變更" : "建立物件"}
         </button>
       </form>
+      </section>
+
+      {mode === "edit" && itemId ? (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold">進度管理</h2>
+          <p className="text-sm text-gray-500">
+            可針對不同平台記錄進度，並指定主進度以供列表與快捷操作使用。
+          </p>
+          <ProgressEditor itemId={itemId} />
+        </section>
+      ) : (
+        <section>
+          <p className="text-sm text-gray-500">
+            建立後即可在此管理各平台進度紀錄。
+          </p>
+        </section>
+      )}
     </main>
   );
 }

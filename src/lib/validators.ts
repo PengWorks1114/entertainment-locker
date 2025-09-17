@@ -1,8 +1,10 @@
 import {
   ITEM_STATUS_VALUES,
+  PROGRESS_TYPE_VALUES,
   UPDATE_FREQUENCY_VALUES,
   type ItemLink,
   type ItemStatus,
+  type ProgressType,
   type UpdateFrequency,
 } from "./types";
 
@@ -36,6 +38,26 @@ export type ItemFormData = {
   status: ItemStatus;
   updateFrequency: UpdateFrequency | null;
   nextUpdateAt?: Date;
+};
+
+export type ProgressFormInput = {
+  platform: string;
+  type: ProgressType;
+  value: number;
+  unit?: string | undefined;
+  note?: string | undefined;
+  link?: string | undefined;
+  isPrimary?: boolean | undefined;
+};
+
+export type ProgressFormData = {
+  platform: string;
+  type: ProgressType;
+  value: number;
+  unit?: string;
+  note?: string;
+  link?: string;
+  isPrimary: boolean;
 };
 
 export type ValidationIssue = {
@@ -183,6 +205,57 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       throw new ValidationError("下次更新時間格式錯誤");
     }
     data.nextUpdateAt = input.nextUpdateAt;
+  }
+
+  return data;
+}
+
+export function parseProgressForm(input: ProgressFormInput): ProgressFormData {
+  const platform = assertString(input.platform, "平台必填").trim();
+  if (!platform) {
+    throw new ValidationError("平台必填");
+  }
+
+  const type = input.type;
+  if (!PROGRESS_TYPE_VALUES.includes(type)) {
+    throw new ValidationError("進度類型不在允許範圍");
+  }
+
+  if (!Number.isFinite(input.value)) {
+    throw new ValidationError("進度數值需為數字");
+  }
+  const value = Number(input.value);
+  if (value < 0) {
+    throw new ValidationError("進度數值不可為負數");
+  }
+
+  const data: ProgressFormData = {
+    platform,
+    type,
+    value,
+    isPrimary: Boolean(input.isPrimary),
+  };
+
+  if (input.unit) {
+    const unit = assertString(input.unit, "單位需為文字").trim();
+    if (unit) {
+      data.unit = unit;
+    }
+  }
+
+  if (input.note) {
+    const note = assertString(input.note, "備註需為文字").trim();
+    if (note) {
+      data.note = note;
+    }
+  }
+
+  if (input.link) {
+    const link = assertString(input.link, "連結需為文字").trim();
+    if (link) {
+      validateUrl(link, "請輸入有效的進度連結網址");
+      data.link = link;
+    }
   }
 
   return data;

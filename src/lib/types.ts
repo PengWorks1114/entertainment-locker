@@ -34,6 +34,24 @@ export const UPDATE_FREQUENCY_OPTIONS: { value: UpdateFrequency; label: string }
   { value: "irregular", label: "不定期" },
 ];
 
+export const PROGRESS_TYPE_VALUES = [
+  "chapter",
+  "episode",
+  "percent",
+  "page",
+  "level",
+] as const;
+
+export type ProgressType = (typeof PROGRESS_TYPE_VALUES)[number];
+
+export const PROGRESS_TYPE_OPTIONS: { value: ProgressType; label: string }[] = [
+  { value: "chapter", label: "章節" },
+  { value: "episode", label: "集數" },
+  { value: "percent", label: "百分比" },
+  { value: "page", label: "頁數" },
+  { value: "level", label: "等級" },
+];
+
 export type ItemLink = {
   label: string;
   url: string;
@@ -56,5 +74,18 @@ export type ItemRecord = {
   updateFrequency?: UpdateFrequency | null;
   nextUpdateAt?: Timestamp | null;
   createdAt?: Timestamp | null;
+  updatedAt?: Timestamp | null;
+};
+
+export type ProgressRecord = {
+  id: string;
+  itemId: string;
+  platform: string;
+  type: ProgressType;
+  value: number;
+  unit?: string | null;
+  note?: string | null;
+  link?: string | null;
+  isPrimary: boolean;
   updatedAt?: Timestamp | null;
 };
