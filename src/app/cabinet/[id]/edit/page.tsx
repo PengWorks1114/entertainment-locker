@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
+import { deleteCabinetWithItems } from "@/lib/firestore-utils";
 
 type CabinetEditPageProps = {
   params: Promise<{ id: string }>;
@@ -13,12 +15,15 @@ type CabinetEditPageProps = {
 
 export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const { id: cabinetId } = use(params);
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [canEdit, setCanEdit] = useState(false);
 
@@ -36,11 +41,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setCanEdit(false);
       setName("");
       setMessage(null);
+      setDeleteError(null);
       return;
     }
     let active = true;
     setLoading(true);
     setError(null);
+    setDeleteError(null);
     setMessage(null);
     const cabinetRef = doc(db, "cabinet", cabinetId);
     getDoc(cabinetRef)
@@ -115,6 +122,36 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     "h-12 w-full rounded-xl bg-black px-6 text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
   const secondaryButtonClass =
     "inline-flex w-full items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 sm:w-auto";
+  const dangerButtonClass =
+    "inline-flex w-full items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
+
+  async function handleDeleteCabinet() {
+    if (!user || !canEdit || deleting) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "確定要刪除此櫃子？將同步刪除櫃內所有作品與進度資料。"
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteCabinetWithItems(cabinetId, user.uid);
+      router.push("/cabinets");
+    } catch (err) {
+      console.error("刪除櫃子失敗", err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "刪除櫃子時發生錯誤";
+      setDeleteError(message);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (!authChecked) {
     return (
@@ -179,6 +216,12 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           </div>
         )}
 
+        {deleteError && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {deleteError}
+          </div>
+        )}
+
         {loading ? (
           <div className="rounded-2xl border bg-white/70 p-6 text-sm text-gray-600">
             正在載入櫃子資料…
@@ -202,6 +245,25 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             </button>
           </form>
         ) : null}
+
+        {!loading && canEdit && (
+          <section className="space-y-4 rounded-2xl border border-red-200 bg-red-50/70 p-6 shadow-sm">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-red-700">刪除此櫃子</h2>
+              <p className="text-sm text-red-600">
+                刪除後將移除櫃子內所有作品與進度資料，無法復原，請再次確認。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDeleteCabinet}
+              disabled={deleting}
+              className={dangerButtonClass}
+            >
+              {deleting ? "刪除中…" : "刪除此櫃子"}
+            </button>
+          </section>
+        )}
 
         {!loading && !canEdit && !error && (
           <div className="rounded-2xl border bg-white/70 p-6 text-sm text-gray-600">

@@ -537,7 +537,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
             <section className={sectionClass}>
               <div className="flex items-center justify-between">
-                <span className="text-base">相關連結</span>
+                <span className="text-base">來源連結</span>
                 <button
                   type="button"
                   onClick={() => setLinks((prev) => [...prev, { label: "", url: "" }])}

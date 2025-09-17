@@ -207,27 +207,18 @@ export default function CabinetsPage() {
                     className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-                      <div className="space-y-1">
-                        <Link
-                          href={`/cabinet/${encodedId}`}
-                          className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
-                        >
-                          {displayName}
-                        </Link>
-                        <p className="text-xs text-gray-500">ID：{row.id}</p>
-                      </div>
+                      <Link
+                        href={`/cabinet/${encodedId}`}
+                        className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                      >
+                        {displayName}
+                      </Link>
                       <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
                         <Link
                           href={`/cabinet/${encodedId}`}
                           className={`${secondaryButtonClass} w-full sm:w-auto`}
                         >
                           查看物件
-                        </Link>
-                        <Link
-                          href={`/item/new?cabinetId=${encodedId}`}
-                          className={`${secondaryButtonClass} w-full sm:w-auto`}
-                        >
-                          新增物件
                         </Link>
                         <Link
                           href={`/cabinet/${encodedId}/edit`}

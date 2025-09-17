@@ -213,9 +213,11 @@ export default function ItemCard({ item }: ItemCardProps) {
 
   return (
     <article className="space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="text-xl font-semibold text-gray-900">{item.titleZh}</h3>
+          <h3 className="text-2xl font-semibold leading-tight text-gray-900">
+            {item.titleZh}
+          </h3>
           {item.titleAlt && <p className="text-sm text-gray-500">{item.titleAlt}</p>}
         </div>
         <button
@@ -293,26 +295,34 @@ export default function ItemCard({ item }: ItemCardProps) {
               </div>
             )}
 
-            {primaryLink && (
-              <a
-                href={primaryLink.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-9 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-              >
-                點我觀看
-              </a>
-            )}
           </div>
         </div>
 
-        <div className="flex w-full flex-col items-stretch gap-2 md:w-40">
+        <div className="flex w-full flex-col items-stretch gap-2 md:w-48">
           <Link
             href={`/item/${item.id}`}
             className="inline-flex h-10 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
           >
             查看詳細頁面
           </Link>
+          {primaryLink ? (
+            <a
+              href={primaryLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+            >
+              點我觀看
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-dashed border-gray-200 px-4 text-sm font-medium text-gray-400"
+            >
+              尚未提供連結
+            </button>
+          )}
         </div>
       </div>
 

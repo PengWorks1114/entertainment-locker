@@ -507,7 +507,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
               {links.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-sm text-gray-500">相關連結</div>
+                  <div className="text-sm text-gray-500">來源連結</div>
                   <ul className="space-y-2 text-sm">
                     {links.map((link) => (
                       <li key={`${link.label}-${link.url}`}>
