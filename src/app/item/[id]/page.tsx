@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -32,6 +33,7 @@ import {
   UPDATE_FREQUENCY_VALUES,
 } from "@/lib/types";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
+import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -47,6 +49,18 @@ const progressTypeLabelMap = new Map(
 
 const secondaryButtonClass =
   "rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
+const dangerButtonClass =
+  "rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
+
+function isOptimizedImageUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === "i.imgur.com";
+  } catch {
+    return false;
+  }
+}
 
 function formatDateTime(timestamp?: Timestamp | null): string {
   if (!timestamp) return "—";
@@ -83,6 +97,7 @@ type PrimaryProgressState = {
 
 export default function ItemDetailPage({ params }: ItemPageProps) {
   const { id: itemId } = use(params);
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [item, setItem] = useState<ItemRecord | null>(null);
@@ -95,6 +110,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [progressError, setProgressError] = useState<string | null>(null);
   const [progressSuccess, setProgressSuccess] = useState<string | null>(null);
   const [progressUpdating, setProgressUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -103,6 +120,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    setDeleting(false);
+    setDeleteError(null);
+  }, [itemId]);
 
   useEffect(() => {
     if (!user) {
@@ -292,6 +314,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     return `${platform}｜${typeLabel} ${valueText}${unitText}`;
   }, [primary, progressLoading]);
 
+  const primaryLink = useMemo(() => {
+    if (!item || !Array.isArray(item.links)) {
+      return null;
+    }
+    return (
+      item.links.find((link) => link.url && link.url.trim().length > 0) ?? null
+    );
+  }, [item]);
+
   async function handleIncrement() {
     if (!item) return;
     if (!primary) {
@@ -324,6 +355,37 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
   }
 
+  async function handleDeleteItem() {
+    if (!item || !user || deleting) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "確認刪除此物件？會一併刪除相關進度資料，且無法復原。"
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteItemWithProgress(item.id, user.uid);
+      const target = item.cabinetId
+        ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
+        : "/cabinets";
+      router.push(target);
+    } catch (err) {
+      console.error("刪除物件失敗", err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "刪除物件時發生錯誤";
+      setDeleteError(message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -344,7 +406,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <Link href="/login" className="ml-1 underline">
               /login
             </Link>
-            後再查看物件。
+            後再查看物件，或返回
+            <Link href="/" className="ml-1 underline">
+              首頁
+            </Link>
+            選擇其他功能。
           </p>
         </div>
       </main>
@@ -387,6 +453,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     );
   }
 
+  const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
   const statusLabel = statusLabelMap.get(item.status) ?? item.status;
   const ratingText =
     typeof item.rating === "number" && Number.isFinite(item.rating)
@@ -430,6 +497,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
+            {primaryLink && (
+              <a
+                href={primaryLink.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={secondaryButtonClass}
+              >
+                點我觀看
+              </a>
+            )}
             <Link href="/cabinets" className={secondaryButtonClass}>
               返回櫃子列表
             </Link>
@@ -447,20 +524,44 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             >
               編輯物件
             </Link>
+            <button
+              type="button"
+              onClick={handleDeleteItem}
+              disabled={deleting}
+              className={dangerButtonClass}
+            >
+              {deleting ? "刪除中…" : "刪除此物件"}
+            </button>
           </div>
         </header>
+
+        {deleteError && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {deleteError}
+          </div>
+        )}
 
         <section className="rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="flex flex-col gap-6 md:flex-row">
             {item.thumbUrl && (
               <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden rounded-xl border bg-white/80 md:w-56">
-                <Image
-                  src={item.thumbUrl}
-                  alt={`${item.titleZh} 封面`}
-                  fill
-                  sizes="(min-width: 768px) 14rem, 100vw"
-                  className="object-cover"
-                />
+                {canUseOptimizedThumb ? (
+                  <Image
+                    src={item.thumbUrl}
+                    alt={`${item.titleZh} 封面`}
+                    fill
+                    sizes="(min-width: 768px) 14rem, 100vw"
+                    className="object-cover"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={item.thumbUrl}
+                    alt={`${item.titleZh} 封面`}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                )}
               </div>
             )}
             <div className="flex-1 space-y-6">
@@ -563,7 +664,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <button
               type="button"
               onClick={handleIncrement}
-              disabled={progressUpdating || progressLoading}
+              disabled={progressUpdating || progressLoading || deleting}
               className="h-12 rounded-xl bg-black px-6 text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {progressUpdating ? "+1…" : "+1"}

@@ -23,6 +23,7 @@ import {
   type ItemRecord,
   type ProgressType,
 } from "@/lib/types";
+import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -73,6 +74,7 @@ export default function ItemCard({ item }: ItemCardProps) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -140,6 +142,15 @@ export default function ItemCard({ item }: ItemCardProps) {
     return `${primary.platform || "未命名平台"}｜${typeLabel} ${valueText}${unitText}`;
   }, [primary, progressLoading]);
 
+  const primaryLink = useMemo(() => {
+    if (!item.links || item.links.length === 0) {
+      return null;
+    }
+    return (
+      item.links.find((link) => link.url && link.url.trim().length > 0) ?? null
+    );
+  }, [item.links]);
+
   async function handleIncrement() {
     if (!primary) {
       setError("尚未設定主進度，請先在物件頁面新增並設定主進度。");
@@ -168,6 +179,27 @@ export default function ItemCard({ item }: ItemCardProps) {
       setError("更新主進度時發生錯誤");
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (deleting) return;
+    if (!window.confirm("確認刪除此物件？會一併刪除相關進度資料。")) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    setDeleting(true);
+    try {
+      await deleteItemWithProgress(item.id, item.uid);
+      setSuccess("已刪除物件");
+    } catch (err) {
+      console.error("刪除物件失敗", err);
+      const message =
+        err instanceof Error && err.message ? err.message : "刪除物件時發生錯誤";
+      setError(message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -224,11 +256,21 @@ export default function ItemCard({ item }: ItemCardProps) {
           )}
         </div>
         <div className="flex flex-col items-end gap-2">
+          {primaryLink && (
+            <a
+              href={primaryLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-700 shadow-sm transition hover:border-gray-400 hover:text-gray-900"
+            >
+              點我觀看
+            </a>
+          )}
           <button
             type="button"
             onClick={handleIncrement}
-            disabled={updating || progressLoading}
-            className="h-12 w-20 rounded-xl bg-black text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+            disabled={updating || progressLoading || deleting}
+            className="h-12 w-24 rounded-xl bg-black text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
             {updating ? "+1…" : "+1"}
           </button>
@@ -238,6 +280,14 @@ export default function ItemCard({ item }: ItemCardProps) {
           >
             編輯物件
           </Link>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="text-xs text-red-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-red-400"
+          >
+            {deleting ? "刪除中…" : "刪除物件"}
+          </button>
         </div>
       </div>
 

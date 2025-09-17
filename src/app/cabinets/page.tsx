@@ -144,7 +144,11 @@ export default function CabinetsPage() {
             <Link href="/login" className="ml-1 underline">
               /login
             </Link>
-            以管理櫃子。
+            以管理櫃子，或回到
+            <Link href="/" className="ml-1 underline">
+              首頁
+            </Link>
+            了解更多功能。
           </p>
         </div>
       </main>

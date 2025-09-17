@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -23,6 +24,7 @@ import {
   type ItemStatus,
   type UpdateFrequency,
 } from "@/lib/types";
+import { deleteCabinetWithItems } from "@/lib/firestore-utils";
 
 type CabinetPageProps = {
   params: Promise<{ id: string }>;
@@ -53,6 +55,7 @@ const defaultFilters: FilterState = {
 
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const { id: cabinetId } = use(params);
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
@@ -64,6 +67,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [listError, setListError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [deletingCabinet, setDeletingCabinet] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -300,6 +305,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     "rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
   const subtleButtonClass =
     "rounded-lg border px-3 py-2 text-sm text-gray-600 transition hover:border-gray-300 hover:text-gray-900";
+  const dangerButtonClass =
+    "rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
 
   if (!authChecked) {
     return (
@@ -321,7 +328,11 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             <Link href="/login" className="ml-1 underline">
               /login
             </Link>
-            後再查看櫃子。
+            後再查看櫃子，或前往
+            <Link href="/" className="ml-1 underline">
+              首頁
+            </Link>
+            選擇其他操作。
           </p>
         </div>
       </main>
@@ -356,6 +367,34 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     );
   }
 
+  async function handleDeleteCabinet() {
+    if (!user || !canView || deletingCabinet) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "確定要刪除此櫃子？將同步刪除櫃內所有作品與進度資料。"
+      )
+    ) {
+      return;
+    }
+    setDeletingCabinet(true);
+    setDeleteError(null);
+    try {
+      await deleteCabinetWithItems(cabinetId, user.uid);
+      router.push("/cabinets");
+    } catch (err) {
+      console.error("刪除櫃子失敗", err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "刪除櫃子時發生錯誤";
+      setDeleteError(message);
+    } finally {
+      setDeletingCabinet(false);
+    }
+  }
+
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
@@ -374,8 +413,22 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             >
               在此櫃子新增物件
             </Link>
+            <button
+              type="button"
+              onClick={handleDeleteCabinet}
+              disabled={deletingCabinet}
+              className={dangerButtonClass}
+            >
+              {deletingCabinet ? "刪除中…" : "刪除此櫃子"}
+            </button>
           </div>
         </header>
+
+        {deleteError && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {deleteError}
+          </div>
+        )}
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="grid gap-4 lg:grid-cols-4">

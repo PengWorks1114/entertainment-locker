@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [msg, setMsg] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     const unSub = onAuthStateChanged(auth, (u) => {
@@ -55,8 +56,18 @@ export default function LoginPage() {
   }
 
   async function doSignOut() {
-    await signOut(auth);
-    setMsg("已登出");
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut(auth);
+      setMsg("已登出，正在返回首頁");
+      router.push("/");
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      setMsg(`登出時發生錯誤：${err.code ?? err.message ?? "unknown"}`);
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -92,8 +103,12 @@ export default function LoginPage() {
       >
         登入／首次自動註冊
       </button>
-      <button onClick={doSignOut} className="h-12 rounded-xl border text-base">
-        登出
+      <button
+        onClick={doSignOut}
+        disabled={signingOut}
+        className="h-12 rounded-xl border text-base disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {signingOut ? "登出中…" : "登出"}
       </button>
 
       {msg && <div className="text-sm">{msg}</div>}

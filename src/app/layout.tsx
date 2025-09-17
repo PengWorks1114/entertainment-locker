@@ -1,6 +1,8 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 
+import AppHeader from "@/components/AppHeader";
+
 export const metadata: Metadata = {
   title: "Entertainment Locker",
 };
@@ -18,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-Hant">
-      <body>{children}</body>
+      <body className="bg-gray-100 text-gray-900">
+        <AppHeader />
+        <div className="pt-4">{children}</div>
+      </body>
     </html>
   );
 }
