@@ -32,7 +32,8 @@ type CabinetPageProps = {
   params: Promise<{ id: string }>;
 };
 
-type SortOption = "updated" | "title" | "rating" | "nextUpdate";
+type SortOption = "updated" | "title" | "rating" | "nextUpdate" | "created";
+type SortDirection = "asc" | "desc";
 type HasNextUpdateFilter = "all" | "yes" | "no";
 type ViewMode = "grid" | "list";
 
@@ -43,6 +44,7 @@ type FilterState = {
   ratingMax: string;
   hasNextUpdate: HasNextUpdateFilter;
   sort: SortOption;
+  sortDirection: SortDirection;
   tags: string[];
 };
 
@@ -85,6 +87,7 @@ const defaultFilters: FilterState = {
   ratingMax: "",
   hasNextUpdate: "all",
   sort: "updated",
+  sortDirection: "desc",
   tags: [],
 };
 
@@ -425,30 +428,40 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     });
 
     const sorted = [...matches].sort((a, b) => {
+      const direction = filters.sortDirection === "asc" ? 1 : -1;
       switch (filters.sort) {
         case "title":
-          return a.titleZh.localeCompare(b.titleZh, "zh-Hant");
+          return direction * a.titleZh.localeCompare(b.titleZh, "zh-Hant");
         case "rating": {
+          const fallback = filters.sortDirection === "asc" ? Infinity : -Infinity;
           const ratingA =
             typeof a.rating === "number" && Number.isFinite(a.rating)
               ? a.rating
-              : -Infinity;
+              : fallback;
           const ratingB =
             typeof b.rating === "number" && Number.isFinite(b.rating)
               ? b.rating
-              : -Infinity;
-          return ratingB - ratingA;
+              : fallback;
+          return direction * (ratingA - ratingB);
         }
         case "nextUpdate": {
-          const timeA = a.nextUpdateAt ? a.nextUpdateAt.toMillis() : Number.POSITIVE_INFINITY;
-          const timeB = b.nextUpdateAt ? b.nextUpdateAt.toMillis() : Number.POSITIVE_INFINITY;
-          return timeA - timeB;
+          const fallback = filters.sortDirection === "asc" ? Infinity : -Infinity;
+          const timeA = a.nextUpdateAt ? a.nextUpdateAt.toMillis() : fallback;
+          const timeB = b.nextUpdateAt ? b.nextUpdateAt.toMillis() : fallback;
+          return direction * (timeA - timeB);
+        }
+        case "created": {
+          const fallback = filters.sortDirection === "asc" ? Infinity : -Infinity;
+          const timeA = a.createdAt ? a.createdAt.toMillis() : fallback;
+          const timeB = b.createdAt ? b.createdAt.toMillis() : fallback;
+          return direction * (timeA - timeB);
         }
         case "updated":
         default: {
-          const timeA = a.updatedAt ? a.updatedAt.toMillis() : 0;
-          const timeB = b.updatedAt ? b.updatedAt.toMillis() : 0;
-          return timeB - timeA;
+          const fallback = filters.sortDirection === "asc" ? Infinity : -Infinity;
+          const timeA = a.updatedAt ? a.updatedAt.toMillis() : fallback;
+          const timeB = b.updatedAt ? b.updatedAt.toMillis() : fallback;
+          return direction * (timeA - timeB);
         }
       }
     });
@@ -474,7 +487,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.ratingMin.trim().length > 0 ||
     filters.ratingMax.trim().length > 0 ||
     filters.hasNextUpdate !== "all" ||
-    filters.sort !== "updated" ||
+    filters.sort !== defaultFilters.sort ||
+    filters.sortDirection !== defaultFilters.sortDirection ||
     filters.tags.length > 0;
 
   function updateFilter<K extends keyof FilterState>(key: K, value: FilterState[K]) {
@@ -518,12 +532,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   }
 
   function resetFilters() {
-    setFilters(defaultFilters);
+    setFilters({ ...defaultFilters });
     setTagInput("");
   }
 
-  const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
-  const selectClass = "h-12 w-full rounded-xl border px-4 text-base";
+  const inputClass = "h-12 rounded-xl border px-4 text-base";
+  const selectClass = "h-12 rounded-xl border px-4 text-base";
   const smallInputClass = "h-10 w-full rounded-lg border px-3 text-sm";
 
   if (!authChecked) {
@@ -617,7 +631,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 value={filters.search}
                 onChange={(event) => updateFilter("search", event.target.value)}
                 placeholder="中文 / 原文 / 作者"
-                className={inputClass}
+                className={`${inputClass} w-full`}
               />
             </label>
             <label className="space-y-1">
@@ -627,7 +641,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 onChange={(event) =>
                   updateFilter("status", event.target.value as ItemStatus | "all")
                 }
-                className={selectClass}
+                className={`${selectClass} w-full`}
               >
                 <option value="all">全部狀態</option>
                 {ITEM_STATUS_OPTIONS.map((option) => (
@@ -667,7 +681,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 onChange={(event) =>
                   updateFilter("hasNextUpdate", event.target.value as HasNextUpdateFilter)
                 }
-                className={selectClass}
+                className={`${selectClass} w-full`}
               >
                 <option value="all">全部</option>
                 <option value="yes">僅顯示有下一次提醒</option>
@@ -676,18 +690,49 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             </label>
             <label className="space-y-1">
               <span className="text-sm text-gray-600">排序方式</span>
-              <select
-                value={filters.sort}
-                onChange={(event) =>
-                  updateFilter("sort", event.target.value as SortOption)
-                }
-                className={selectClass}
-              >
-                <option value="updated">最近更新</option>
-                <option value="rating">評分最高</option>
-                <option value="title">名稱 A → Z</option>
-                <option value="nextUpdate">下次更新時間（最早）</option>
-              </select>
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={filters.sort}
+                  onChange={(event) =>
+                    updateFilter("sort", event.target.value as SortOption)
+                  }
+                  className={`${selectClass} flex-1 min-w-[10rem]`}
+                >
+                  <option value="updated">最近更新</option>
+                  <option value="created">建立時間</option>
+                  <option value="rating">評分最高</option>
+                  <option value="title">名稱 A → Z</option>
+                  <option value="nextUpdate">下次更新時間</option>
+                </select>
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <label className="inline-flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name="sortDirection"
+                      value="asc"
+                      checked={filters.sortDirection === "asc"}
+                      onChange={(event) =>
+                        event.target.checked && updateFilter("sortDirection", "asc")
+                      }
+                      className="h-4 w-4"
+                    />
+                    正序
+                  </label>
+                  <label className="inline-flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name="sortDirection"
+                      value="desc"
+                      checked={filters.sortDirection === "desc"}
+                      onChange={(event) =>
+                        event.target.checked && updateFilter("sortDirection", "desc")
+                      }
+                      className="h-4 w-4"
+                    />
+                    反序
+                  </label>
+                </div>
+              </div>
             </label>
           </div>
 
@@ -720,7 +765,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 ))
               )}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:flex-nowrap">
               <input
                 value={tagInput}
                 onChange={(event) => setTagInput(event.target.value)}
@@ -731,12 +776,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   }
                 }}
                 placeholder="輸入標籤名稱"
-                className={inputClass}
+                className={`${inputClass} flex-1 min-w-[8rem]`}
               />
               <button
                 type="button"
                 onClick={handleTagSubmit}
-                className={`${buttonClass({ variant: "secondary" })} h-auto min-h-[2.5rem] w-full flex-col whitespace-pre-line text-center leading-tight sm:w-auto`}
+                className={`${buttonClass({ variant: "secondary" })} h-auto min-h-[2.5rem] flex-none whitespace-pre-line px-4 text-center leading-tight`}
               >
                 {"加入\n標籤"}
               </button>

@@ -104,7 +104,7 @@ export default function ItemCard({ item }: ItemCardProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <Link
           href={detailHref}
-          className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
+          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
         >
           {item.thumbUrl ? (
             canUseOptimizedThumb ? (
@@ -112,7 +112,7 @@ export default function ItemCard({ item }: ItemCardProps) {
                 src={item.thumbUrl}
                 alt={`${item.titleZh} 縮圖`}
                 fill
-                sizes="64px"
+                sizes="80px"
                 className="object-cover"
               />
             ) : (
@@ -131,8 +131,11 @@ export default function ItemCard({ item }: ItemCardProps) {
           )}
         </Link>
 
-        <div className="flex w-full flex-col items-stretch gap-2 sm:w-48">
-          <Link href={detailHref} className={buttonClass({ variant: "secondary" })}>
+        <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:items-end">
+          <Link
+            href={detailHref}
+            className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+          >
             查看詳細頁面
           </Link>
           {primaryLink ? (
@@ -140,7 +143,7 @@ export default function ItemCard({ item }: ItemCardProps) {
               href={primaryLink.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={buttonClass({ variant: "secondary" })}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
               點我觀看
             </a>
@@ -148,7 +151,7 @@ export default function ItemCard({ item }: ItemCardProps) {
             <button
               type="button"
               disabled
-              className={`${buttonClass({ variant: "secondary" })} border-dashed text-gray-400`}
+              className={`${buttonClass({ variant: "secondary" })} w-full border-dashed text-gray-400 sm:w-auto`}
             >
               尚未提供連結
             </button>
