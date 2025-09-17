@@ -1,4 +1,5 @@
-import { collection, deleteDoc, doc, getDoc, getDocs, query, where, writeBatch } from "firebase/firestore";
+import { FirebaseError } from "firebase/app";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 
 import { db } from "./firebase";
 
@@ -13,13 +14,25 @@ export async function deleteItemWithProgress(itemId: string, userId?: string) {
     throw new Error("您沒有刪除此物件的權限");
   }
 
-  const batch = writeBatch(db);
   const progressSnap = await getDocs(collection(db, "item", itemId, "progress"));
   for (const docSnap of progressSnap.docs) {
-    batch.delete(docSnap.ref);
+    try {
+      await deleteDoc(docSnap.ref);
+    } catch (err) {
+      if (err instanceof FirebaseError && err.code === "permission-denied") {
+        throw new Error("刪除進度時遭到拒絕，請稍後再試或確認帳號權限。");
+      }
+      throw err;
+    }
   }
-  batch.delete(itemRef);
-  await batch.commit();
+  try {
+    await deleteDoc(itemRef);
+  } catch (err) {
+    if (err instanceof FirebaseError && err.code === "permission-denied") {
+      throw new Error("刪除此物件的權限不足。");
+    }
+    throw err;
+  }
 }
 
 export async function deleteCabinetWithItems(cabinetId: string, userId: string) {

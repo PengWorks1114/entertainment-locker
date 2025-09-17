@@ -2,60 +2,25 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  Timestamp,
-  where,
-  writeBatch,
-  increment,
-} from "firebase/firestore";
+import { useMemo } from "react";
+import type { Timestamp } from "firebase/firestore";
 
-import { db } from "@/lib/firebase";
-import { calculateNextUpdateDate } from "@/lib/item-utils";
+import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
+import { isOptimizedImageUrl } from "@/lib/image-utils";
 import {
   ITEM_STATUS_OPTIONS,
-  PROGRESS_TYPE_OPTIONS,
   UPDATE_FREQUENCY_OPTIONS,
   type ItemRecord,
-  type ProgressType,
 } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
-function isOptimizedImageUrl(url?: string | null): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" && parsed.hostname === "i.imgur.com";
-  } catch {
-    return false;
-  }
-}
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
 );
 
-const progressTypeLabelMap = new Map(
-  PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
-);
-
 const updateFrequencyLabelMap = new Map(
   UPDATE_FREQUENCY_OPTIONS.map((option) => [option.value, option.label])
 );
-
-type PrimaryProgressState = {
-  id: string;
-  platform: string;
-  type: ProgressType;
-  value: number;
-  unit?: string | null;
-  updatedAt?: Timestamp | null;
-};
 
 type ItemCardProps = {
   item: ItemRecord;
@@ -81,80 +46,10 @@ function formatDateOnly(timestamp?: Timestamp | null): string {
     .padStart(2, "0")}`;
 }
 
-function formatProgressValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
 export default function ItemCard({ item }: ItemCardProps) {
-  const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
-  const [progressLoading, setProgressLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    const progressQuery = query(
-      collection(db, "item", item.id, "progress"),
-      where("isPrimary", "==", true),
-      limit(1)
-    );
-    const unsub = onSnapshot(
-      progressQuery,
-      (snap) => {
-        if (snap.empty) {
-          setPrimary(null);
-        } else {
-          const docSnap = snap.docs[0];
-          const data = docSnap.data();
-          const typeValue =
-            typeof data.type === "string" &&
-            progressTypeLabelMap.has(data.type as ProgressType)
-              ? (data.type as ProgressType)
-              : "chapter";
-          setPrimary({
-            id: docSnap.id,
-            platform: typeof data.platform === "string" ? data.platform : "",
-            type: typeValue,
-            value:
-              typeof data.value === "number" && Number.isFinite(data.value)
-                ? data.value
-                : 0,
-            unit: typeof data.unit === "string" ? data.unit : null,
-            updatedAt:
-              data.updatedAt instanceof Timestamp ? (data.updatedAt as Timestamp) : null,
-          });
-        }
-        setProgressLoading(false);
-      },
-      (err) => {
-        console.error("載入主進度失敗", err);
-        setError("載入主進度失敗");
-        setProgressLoading(false);
-      }
-    );
-    return () => unsub();
-  }, [item.id]);
-
-  useEffect(() => {
-    if (!success) return;
-    const timer = setTimeout(() => setSuccess(null), 2500);
-    return () => clearTimeout(timer);
-  }, [success]);
-
+  const { primary, summary, updating, loading, error, success, increment } =
+    usePrimaryProgress(item);
   const statusLabel = statusLabelMap.get(item.status) ?? item.status;
-
-  const progressSummary = useMemo(() => {
-    if (progressLoading) {
-      return "主進度載入中…";
-    }
-    if (!primary) {
-      return "尚未設定主進度";
-    }
-    const typeLabel = progressTypeLabelMap.get(primary.type) ?? primary.type;
-    const valueText = formatProgressValue(primary.value);
-    const unitText = primary.unit ? ` ${primary.unit}` : "";
-    return `${primary.platform || "未命名平台"}｜${typeLabel} ${valueText}${unitText}`;
-  }, [primary, progressLoading]);
 
   const primaryLink = useMemo(() => {
     if (!item.links || item.links.length === 0) {
@@ -169,37 +64,6 @@ export default function ItemCard({ item }: ItemCardProps) {
     const flagged = validLinks.find((link) => link.isPrimary);
     return flagged ?? validLinks[0];
   }, [item.links]);
-
-  async function handleIncrement() {
-    if (!primary) {
-      setError("尚未設定主進度，請先在物件頁面新增並設定主進度。");
-      return;
-    }
-    setError(null);
-    setSuccess(null);
-    setUpdating(true);
-    try {
-      const batch = writeBatch(db);
-      const progressRef = doc(db, "item", item.id, "progress", primary.id);
-      batch.update(progressRef, {
-        value: increment(1),
-        updatedAt: serverTimestamp(),
-      });
-      const nextDate = calculateNextUpdateDate(item.updateFrequency ?? null);
-      const itemRef = doc(db, "item", item.id);
-      batch.update(itemRef, {
-        updatedAt: serverTimestamp(),
-        nextUpdateAt: nextDate ? Timestamp.fromDate(nextDate) : null,
-      });
-      await batch.commit();
-      setSuccess("已更新主進度");
-    } catch (err) {
-      console.error("更新主進度時發生錯誤", err);
-      setError("更新主進度時發生錯誤");
-    } finally {
-      setUpdating(false);
-    }
-  }
 
   const tags = item.tags ?? [];
   const ratingText =
@@ -228,8 +92,8 @@ export default function ItemCard({ item }: ItemCardProps) {
         </div>
         <button
           type="button"
-          onClick={handleIncrement}
-          disabled={updating || progressLoading}
+          onClick={increment}
+          disabled={updating || loading}
           className={buttonClass({ variant: "primary" })}
         >
           {updating ? "+1…" : "+1"}
@@ -287,7 +151,6 @@ export default function ItemCard({ item }: ItemCardProps) {
                 <span className="block font-medium text-gray-900">{authorDisplay}</span>
               </div>
             </div>
-
           </div>
         </div>
 
@@ -353,7 +216,7 @@ export default function ItemCard({ item }: ItemCardProps) {
 
       <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>
-        <div className="text-sm text-gray-700">{progressSummary}</div>
+        <div className="text-sm text-gray-700">{summary}</div>
         {primary?.updatedAt && (
           <div className="text-xs text-gray-500">
             主進度更新於：{formatTimestamp(primary.updatedAt)}

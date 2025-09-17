@@ -15,12 +15,14 @@ import {
 } from "firebase/firestore";
 
 import ItemCard from "@/components/ItemCard";
+import ItemListRow from "@/components/ItemListRow";
 import { auth, db } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   UPDATE_FREQUENCY_VALUES,
+  type AppearanceRecord,
   type ItemRecord,
   type ItemStatus,
   type UpdateFrequency,
@@ -32,6 +34,7 @@ type CabinetPageProps = {
 
 type SortOption = "updated" | "title" | "rating" | "nextUpdate";
 type HasNextUpdateFilter = "all" | "yes" | "no";
+type ViewMode = "grid" | "list";
 
 type FilterState = {
   search: string;
@@ -44,6 +47,11 @@ type FilterState = {
 };
 
 const PAGE_SIZE = 10;
+const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
+const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
+  { value: "grid", label: "圖表" },
+  { value: "list", label: "列表" },
+];
 
 function getPaginationRange(totalPages: number, currentPage: number): (number | "ellipsis")[] {
   if (totalPages <= 7) {
@@ -132,6 +140,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [tagInput, setTagInput] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -234,6 +243,40 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 })
                 .filter((link) => link.label && link.url)
             : [];
+          const appearances: AppearanceRecord[] = Array.isArray(data.appearances)
+            ? data.appearances
+                .map((entry) => {
+                  if (!entry || typeof entry !== "object") {
+                    return null;
+                  }
+                  const recordEntry = entry as {
+                    name?: unknown;
+                    thumbUrl?: unknown;
+                    note?: unknown;
+                  };
+                  const name =
+                    typeof recordEntry.name === "string"
+                      ? recordEntry.name.trim()
+                      : "";
+                  if (!name) {
+                    return null;
+                  }
+                  const thumbUrl =
+                    typeof recordEntry.thumbUrl === "string"
+                      ? recordEntry.thumbUrl.trim()
+                      : "";
+                  const note =
+                    typeof recordEntry.note === "string"
+                      ? recordEntry.note.trim()
+                      : "";
+                  return {
+                    name,
+                    thumbUrl: thumbUrl || null,
+                    note: note || null,
+                  } satisfies AppearanceRecord;
+                })
+                .filter((entry): entry is AppearanceRecord => Boolean(entry))
+            : [];
           return {
             id: docSnap.id,
             uid: typeof data.uid === "string" ? data.uid : user.uid,
@@ -250,6 +293,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             insightNote:
               typeof data.insightNote === "string" ? data.insightNote : null,
             note: typeof data.note === "string" ? data.note : null,
+            appearances,
             rating: ratingValue,
             status: statusValue,
             updateFrequency,
@@ -304,6 +348,25 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       return { ...prev, tags: nextList };
     });
   }, [searchParams]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const key = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
+    const stored = window.localStorage.getItem(key);
+    if (stored === "grid" || stored === "list") {
+      setViewMode(stored);
+    }
+  }, [cabinetId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const key = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
+    window.localStorage.setItem(key, viewMode);
+  }, [viewMode, cabinetId]);
 
   const availableTags = useMemo(() => {
     const tagSet = new Set<string>(cabinetTags);
@@ -524,7 +587,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
@@ -704,17 +767,39 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
             <span>共 {filteredItems.length} 件物件</span>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className={buttonClass({ variant: "subtle", size: "sm" })}
-              >
-                重設篩選
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex overflow-hidden rounded-full border border-gray-200 bg-white">
+                {VIEW_OPTIONS.map((option) => {
+                  const isActive = viewMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setViewMode(option.value)}
+                      className={`px-4 py-2 text-sm font-medium transition ${
+                        isActive
+                          ? "bg-gray-900 text-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      }`}
+                      aria-pressed={isActive}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  重設篩選
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
@@ -733,10 +818,16 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
               查無符合條件的物件。
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+          ) : viewMode === "grid" ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visibleItems.map((item) => (
                 <ItemCard key={item.id} item={item} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleItems.map((item) => (
+                <ItemListRow key={item.id} item={item} />
               ))}
             </div>
           )}
