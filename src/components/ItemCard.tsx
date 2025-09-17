@@ -288,22 +288,6 @@ export default function ItemCard({ item }: ItemCardProps) {
               </div>
             </div>
 
-            {tags.length > 0 && (
-              <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                <span className="text-xs font-medium text-gray-500">標籤</span>
-                <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                  {tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full border border-gray-200 bg-white px-3 py-1"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
           </div>
         </div>
 
@@ -334,6 +318,22 @@ export default function ItemCard({ item }: ItemCardProps) {
           )}
         </div>
       </div>
+
+      {tags.length > 0 && (
+        <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+          <span className="text-xs font-medium text-gray-500">標籤</span>
+          <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>

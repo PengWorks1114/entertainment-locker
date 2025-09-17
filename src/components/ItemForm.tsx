@@ -705,19 +705,6 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   placeholder="例如：更新到最新話"
                 />
               </div>
-
-              <div className="space-y-1">
-                <label className="text-base">心得 / 筆記</label>
-                <textarea
-                  value={form.insightNote}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, insightNote: e.target.value }))
-                  }
-                  className={textAreaClass}
-                  placeholder="分享一些觀後感、推薦理由等"
-                />
-              </div>
-
               <div className="space-y-1">
                 <label className="text-base">一般備註</label>
                 <textarea
@@ -727,6 +714,21 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   }
                   className={textAreaClass}
                   placeholder="自由填寫"
+                />
+              </div>
+            </section>
+
+            <section className={sectionClass}>
+              <div className="space-y-1">
+                <label className="text-base">心得 / 筆記</label>
+                <textarea
+                  value={form.insightNote}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, insightNote: e.target.value }))
+                  }
+                  className={textAreaClass}
+                  placeholder="分享一些觀後感、推薦理由等"
+                  rows={6}
                 />
               </div>
             </section>

@@ -400,7 +400,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const updatedAtText = formatDateTime(item.updatedAt);
   const tags = item.tags ?? [];
   const links = item.links ?? [];
-  const insightNote = item.insightNote ?? null;
+  const insightNote = item.insightNote ?? "";
+  const hasInsightNote = insightNote.trim().length > 0;
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -549,7 +550,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                           {link.label}
                         </a>
                         {link.isPrimary && (
-                          <span className="text-xs text-emerald-600">（此為&quot;點我觀看&quot;觸發連結）</span>
+                          <span className="text-xs text-emerald-600">{`（此為"點我觀看"觸發連結）`}</span>
                         )}
                       </li>
                     ))}
@@ -599,19 +600,23 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
 
-        {insightNote && (
-          <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
-              <p className="text-sm text-gray-600">
-                這裡記錄的是屬於自己的觀後感、想法或推薦理由，僅供參考。
-              </p>
-            </div>
-            <div className="rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner whitespace-pre-wrap break-words">
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
+            <p className="text-sm text-gray-600">
+              這裡記錄的是屬於自己的觀後感、想法或推薦理由，僅供參考。
+            </p>
+          </div>
+          {hasInsightNote ? (
+            <div className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner">
               {insightNote}
             </div>
-          </section>
-        )}
+          ) : (
+            <p className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400">
+              目前尚未填寫心得 / 筆記。
+            </p>
+          )}
+        </section>
       </div>
     </main>
   );
