@@ -9,13 +9,22 @@ import {
   where,
   type QuerySnapshot,
   type DocumentData,
+  type DocumentSnapshot,
 } from "firebase/firestore";
 
 import { db } from "./firebase";
 
 export async function deleteItemWithProgress(itemId: string, userId?: string) {
   const itemRef = doc(db, "item", itemId);
-  const snap = await getDoc(itemRef);
+  let snap: DocumentSnapshot<DocumentData>;
+  try {
+    snap = await getDoc(itemRef);
+  } catch (err) {
+    if (err instanceof FirebaseError && err.code === "permission-denied") {
+      throw new Error("讀取物件資料時遭到拒絕，請稍後再試或確認帳號權限。");
+    }
+    throw err;
+  }
   if (!snap.exists()) {
     return;
   }

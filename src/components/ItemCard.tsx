@@ -132,56 +132,59 @@ export default function ItemCard({ item }: ItemCardProps) {
             )}
           </Link>
 
-          <div className="flex flex-1 flex-col gap-3">
-            <div className="grid gap-3 text-sm sm:grid-cols-2">
-              <div className="space-y-1">
+          <div className="flex flex-1 flex-col gap-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-900">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">狀態</span>
-                <span className="block font-medium text-gray-900">{statusLabel}</span>
+                <span className="font-medium text-gray-900">{statusLabel}</span>
               </div>
-              <div className="space-y-1">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">更新頻率</span>
-                <span className="block font-medium text-gray-900">{updateFrequencyLabel}</span>
+                <span className="font-medium text-gray-900">{updateFrequencyLabel}</span>
               </div>
-              <div className="space-y-1">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">下次更新</span>
-                <span className="block font-medium text-gray-900">{nextUpdateText}</span>
+                <span className="font-medium text-gray-900">{nextUpdateText}</span>
               </div>
-              <div className="space-y-1">
+              <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">評分</span>
-                <span className="block font-medium text-gray-900">{ratingDisplay}</span>
+                <span className="font-medium text-gray-900">{ratingDisplay}</span>
               </div>
-              <div className="space-y-1 sm:col-span-2">
+              <div className="flex items-center gap-2 basis-full text-sm text-gray-900">
                 <span className="text-xs text-gray-500">作者 / 製作</span>
-                <span className="block font-medium text-gray-900">{authorDisplay}</span>
+                <span className="font-medium text-gray-900">{authorDisplay}</span>
               </div>
             </div>
 
             {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                {tags.map((tag) => {
-                  if (!item.cabinetId) {
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span className="text-xs text-gray-500">標籤</span>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag) => {
+                    if (!item.cabinetId) {
+                      return (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
+                        >
+                          #{tag}
+                        </span>
+                      );
+                    }
+                    const tagHref = `/cabinet/${encodeURIComponent(
+                      item.cabinetId
+                    )}?tag=${encodeURIComponent(tag)}`;
                     return (
-                      <span
+                      <Link
                         key={tag}
-                        className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
+                        href={tagHref}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
                       >
                         #{tag}
-                      </span>
+                      </Link>
                     );
-                  }
-                  const tagHref = `/cabinet/${encodeURIComponent(
-                    item.cabinetId
-                  )}?tag=${encodeURIComponent(tag)}`;
-                  return (
-                    <Link
-                      key={tag}
-                      href={tagHref}
-                      className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-                    >
-                      #{tag}
-                    </Link>
-                  );
-                })}
+                  })}
+                </div>
               </div>
             )}
           </div>

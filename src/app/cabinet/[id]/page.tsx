@@ -736,10 +736,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               <button
                 type="button"
                 onClick={handleTagSubmit}
-                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto text-center`}
+                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-pre-line text-center sm:w-auto`}
               >
-                <span className="block leading-tight">加入</span>
-                <span className="block leading-tight">標籤</span>
+                {"加入\n標籤"}
               </button>
             </div>
             {availableTags.length > 0 && (
