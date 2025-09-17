@@ -20,7 +20,7 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getFirebaseDb } from "@/lib/firebase";
 import {
   PROGRESS_TYPE_OPTIONS,
   PROGRESS_TYPE_VALUES,
@@ -288,6 +288,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
   const primaryCheckboxId = useId();
 
   useEffect(() => {
+    const db = getFirebaseDb();
     const colRef = collection(db, "item", itemId, "progress");
     const q = query(colRef, orderBy("updatedAt", "desc"));
     const unsub = onSnapshot(
@@ -332,6 +333,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
   }, [itemId]);
 
   useEffect(() => {
+    const db = getFirebaseDb();
     const itemRef = doc(db, "item", itemId);
     const unsub = onSnapshot(
       itemRef,
@@ -370,6 +372,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
   async function touchItemAfterProgressChange() {
     try {
       const nextDate = calculateNextUpdateDate(itemFrequency);
+      const db = getFirebaseDb();
       await updateDoc(doc(db, "item", itemId), {
         updatedAt: serverTimestamp(),
         nextUpdateAt: nextDate ? Timestamp.fromDate(nextDate) : null,
@@ -438,6 +441,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
         link: newForm.link || undefined,
         isPrimary: newForm.isPrimary,
       });
+      const db = getFirebaseDb();
       const colRef = collection(db, "item", itemId, "progress");
       const docRef = await addDoc(colRef, {
         platform: parsed.platform,
@@ -486,6 +490,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
         link: formState.link || undefined,
         isPrimary: progress.find((record) => record.id === id)?.isPrimary ?? false,
       });
+      const db = getFirebaseDb();
       await updateDoc(doc(db, "item", itemId, "progress", id), {
         platform: parsed.platform,
         type: parsed.type,
@@ -514,6 +519,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     resetMessages();
     setDeletingId(id);
     try {
+      const db = getFirebaseDb();
       await deleteDoc(doc(db, "item", itemId, "progress", id));
       await touchItemAfterProgressChange();
       setMessage("已刪除進度");
@@ -530,6 +536,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     resetMessages();
     setPrimaryUpdatingId(progressId);
     try {
+      const db = getFirebaseDb();
       const colRef = collection(db, "item", itemId, "progress");
       const snap = await getDocs(colRef);
       const batch = writeBatch(db);

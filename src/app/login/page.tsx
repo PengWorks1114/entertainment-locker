@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -30,6 +30,7 @@ export default function LoginPage() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
     const unSub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthReady(true);
@@ -68,6 +69,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
+      const auth = getFirebaseAuth();
       if (mode === "login") {
         await signInWithEmailAndPassword(auth, trimmedEmail, pw);
         setMessage("登入成功，正在前往櫃子");
@@ -107,6 +109,7 @@ export default function LoginPage() {
     setError(null);
     setMessage(null);
     try {
+      const auth = getFirebaseAuth();
       await signOut(auth);
       setMessage("已登出，歡迎再次使用");
       router.push("/");

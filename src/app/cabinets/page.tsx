@@ -15,7 +15,7 @@ import {
   where,
 } from "firebase/firestore";
 
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
 type Cabinet = { id: string; name: string };
@@ -33,7 +33,7 @@ export default function CabinetsPage() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   useEffect(() => {
-    const unAuth = onAuthStateChanged(auth, (current) => {
+    const unAuth = onAuthStateChanged(getFirebaseAuth(), (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -45,6 +45,7 @@ export default function CabinetsPage() {
       setList([]);
       return;
     }
+    const db = getFirebaseDb();
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
     const unSub = onSnapshot(
       q,
@@ -85,6 +86,7 @@ export default function CabinetsPage() {
     }
     setFeedback(null);
     try {
+      const db = getFirebaseDb();
       await addDoc(collection(db, "cabinet"), {
         uid: user.uid,
         name: trimmed,
@@ -102,9 +104,11 @@ export default function CabinetsPage() {
 
   async function clearCache() {
     try {
+      const db = getFirebaseDb();
       await terminate(db);
     } catch {}
     try {
+      const db = getFirebaseDb();
       await clearIndexedDbPersistence(db);
     } catch {}
     location.reload();

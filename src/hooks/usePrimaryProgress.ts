@@ -12,7 +12,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { db } from "@/lib/firebase";
+import { getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
 import {
   PROGRESS_TYPE_OPTIONS,
@@ -81,6 +81,7 @@ export function usePrimaryProgress(item: ItemRecord) {
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    const db = getFirebaseDb();
     const progressQuery = query(
       collection(db, "item", item.id, "progress"),
       where("isPrimary", "==", true),
@@ -138,6 +139,7 @@ export function usePrimaryProgress(item: ItemRecord) {
     setSuccess(null);
     setUpdating(true);
     try {
+      const db = getFirebaseDb();
       const batch = writeBatch(db);
       const progressRef = doc(db, "item", item.id, "progress", primary.id);
       batch.update(progressRef, {

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 
 const baseLinkClass =
   "rounded-full px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
@@ -22,6 +22,7 @@ export default function AppHeader() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthReady(true);
@@ -42,6 +43,7 @@ export default function AppHeader() {
     if (signingOut) return;
     setSigningOut(true);
     try {
+      const auth = getFirebaseAuth();
       await signOut(auth);
       router.push("/");
       router.refresh();

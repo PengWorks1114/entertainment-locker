@@ -16,7 +16,7 @@ import {
 
 import ItemCard from "@/components/ItemCard";
 import ItemListRow from "@/components/ItemListRow";
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
@@ -146,7 +146,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (current) => {
+    const unsub = onAuthStateChanged(getFirebaseAuth(), (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -166,7 +166,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setCabinetLoading(true);
     setCabinetError(null);
     setCanView(false);
-    const cabinetRef = doc(db, "cabinet", cabinetId);
+    const cabinetRef = doc(getFirebaseDb(), "cabinet", cabinetId);
     getDoc(cabinetRef)
       .then((snap) => {
         if (!active) return;
@@ -207,6 +207,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       return;
     }
     setItemsLoading(true);
+    const db = getFirebaseDb();
     const q = query(
       collection(db, "item"),
       where("uid", "==", user.uid),
@@ -246,40 +247,39 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 })
                 .filter((link) => link.label && link.url)
             : [];
-          const appearances: AppearanceRecord[] = Array.isArray(data.appearances)
-            ? data.appearances
-                .map((entry) => {
-                  if (!entry || typeof entry !== "object") {
-                    return null;
-                  }
-                  const recordEntry = entry as {
-                    name?: unknown;
-                    thumbUrl?: unknown;
-                    note?: unknown;
-                  };
-                  const name =
-                    typeof recordEntry.name === "string"
-                      ? recordEntry.name.trim()
-                      : "";
-                  if (!name) {
-                    return null;
-                  }
-                  const thumbUrl =
-                    typeof recordEntry.thumbUrl === "string"
-                      ? recordEntry.thumbUrl.trim()
-                      : "";
-                  const note =
-                    typeof recordEntry.note === "string"
-                      ? recordEntry.note.trim()
-                      : "";
-                  return {
-                    name,
-                    thumbUrl: thumbUrl || null,
-                    note: note || null,
-                  } satisfies AppearanceRecord;
-                })
-                .filter((entry): entry is AppearanceRecord => Boolean(entry))
-            : [];
+          const appearances: AppearanceRecord[] = [];
+          if (Array.isArray(data.appearances)) {
+            for (const entry of data.appearances) {
+              if (!entry || typeof entry !== "object") {
+                continue;
+              }
+              const recordEntry = entry as {
+                name?: unknown;
+                thumbUrl?: unknown;
+                note?: unknown;
+              };
+              const name =
+                typeof recordEntry.name === "string"
+                  ? recordEntry.name.trim()
+                  : "";
+              if (!name) {
+                continue;
+              }
+              const thumbUrl =
+                typeof recordEntry.thumbUrl === "string"
+                  ? recordEntry.thumbUrl.trim()
+                  : "";
+              const note =
+                typeof recordEntry.note === "string"
+                  ? recordEntry.note.trim()
+                  : "";
+              appearances.push({
+                name,
+                thumbUrl: thumbUrl || null,
+                note: note || null,
+              });
+            }
+          }
           return {
             id: docSnap.id,
             uid: typeof data.uid === "string" ? data.uid : user.uid,

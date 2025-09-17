@@ -25,7 +25,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import ThumbLinkField from "./ThumbLinkField";
 import ProgressEditor from "./ProgressEditor";
 import {
@@ -236,6 +236,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         }
       }
       try {
+        const db = getFirebaseDb();
         const snap = await getDoc(doc(db, "cabinet", cabinetId));
         if (!snap.exists()) {
           return [];
@@ -254,6 +255,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   );
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
@@ -267,6 +269,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       return;
     }
     let active = true;
+    const db = getFirebaseDb();
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
     getDocs(q)
       .then((snap) => {
@@ -307,6 +310,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     if (!user || !itemId) return;
     let active = true;
     setLoading(true);
+    const db = getFirebaseDb();
     getDoc(doc(db, "item", itemId))
       .then((snap) => {
         if (!active) return;
@@ -641,6 +645,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         updatedAt: serverTimestamp(),
       };
 
+      const db = getFirebaseDb();
       if (mode === "edit" && itemId) {
         await updateDoc(doc(db, "item", itemId), docData);
         setMessage("已儲存");
@@ -770,6 +775,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setCabinetTags(nextTags);
     tagsCacheRef.current[form.cabinetId] = nextTags;
     try {
+      const db = getFirebaseDb();
       await updateDoc(doc(db, "cabinet", form.cabinetId), {
         tags: nextTags,
         updatedAt: serverTimestamp(),

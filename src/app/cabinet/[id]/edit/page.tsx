@@ -16,7 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { deleteCabinetWithItems } from "@/lib/firestore-utils";
 
 type CabinetEditPageProps = {
@@ -58,7 +58,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [editingValue, setEditingValue] = useState("");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (current) => {
+    const unsub = onAuthStateChanged(getFirebaseAuth(), (current) => {
       setUser(current);
       setAuthChecked(true);
     });
@@ -85,6 +85,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setError(null);
     setDeleteError(null);
     setMessage(null);
+    const db = getFirebaseDb();
     const cabinetRef = doc(db, "cabinet", cabinetId);
     getDoc(cabinetRef)
       .then((snap) => {
@@ -140,6 +141,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setSaving(true);
     setError(null);
     try {
+      const db = getFirebaseDb();
       const cabinetRef = doc(db, "cabinet", cabinetId);
       await updateDoc(cabinetRef, {
         name: trimmed,
@@ -185,6 +187,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setTagMessage(null);
     try {
       const nextTags = normalizeCabinetTags([...tags, trimmed]);
+      const db = getFirebaseDb();
       const cabinetRef = doc(db, "cabinet", cabinetId);
       await updateDoc(cabinetRef, {
         tags: nextTags,
@@ -216,6 +219,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setTagMessage(null);
       return;
     }
+    const db = getFirebaseDb();
     setTagSaving(true);
     setTagError(null);
     setTagMessage(null);
@@ -275,6 +279,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     if (!window.confirm(`確認刪除標籤「${target}」？`)) {
       return;
     }
+    const db = getFirebaseDb();
     setTagSaving(true);
     setTagError(null);
     setTagMessage(null);
