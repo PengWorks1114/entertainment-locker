@@ -213,7 +213,22 @@ export default function ItemCard({ item }: ItemCardProps) {
 
   return (
     <article className="space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h3 className="text-xl font-semibold text-gray-900">{item.titleZh}</h3>
+          {item.titleAlt && <p className="text-sm text-gray-500">{item.titleAlt}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={handleIncrement}
+          disabled={updating || progressLoading}
+          className="inline-flex h-10 items-center justify-center rounded-xl bg-gray-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {updating ? "+1…" : "+1"}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="flex flex-1 gap-4">
           <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner">
             {item.thumbUrl ? (
@@ -240,19 +255,8 @@ export default function ItemCard({ item }: ItemCardProps) {
               </div>
             )}
           </div>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Link
-                href={`/item/${item.id}`}
-                className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
-              >
-                {item.titleZh}
-              </Link>
-              {item.titleAlt && (
-                <p className="text-sm text-gray-500">{item.titleAlt}</p>
-              )}
-            </div>
 
+          <div className="flex flex-1 flex-col gap-3">
             <div className="grid gap-3 text-sm sm:grid-cols-2">
               <div className="space-y-1">
                 <span className="text-xs text-gray-500">狀態</span>
@@ -288,31 +292,24 @@ export default function ItemCard({ item }: ItemCardProps) {
                 ))}
               </div>
             )}
+
+            {primaryLink && (
+              <a
+                href={primaryLink.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
+              >
+                點我觀看
+              </a>
+            )}
           </div>
         </div>
 
-        <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
-          {primaryLink && (
-            <a
-              href={primaryLink.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 md:w-auto"
-            >
-              點我觀看
-            </a>
-          )}
-          <button
-            type="button"
-            onClick={handleIncrement}
-            disabled={updating || progressLoading}
-            className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-gray-900 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 md:w-auto"
-          >
-            {updating ? "+1…" : "+1"}
-          </button>
+        <div className="flex w-full flex-col items-stretch gap-2 md:w-40">
           <Link
             href={`/item/${item.id}`}
-            className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-gray-200 px-4 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900 md:w-auto"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
           >
             查看詳細頁面
           </Link>

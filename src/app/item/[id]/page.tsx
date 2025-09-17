@@ -549,9 +549,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         <section className="space-y-6 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">
             <h2 className="text-xl font-semibold text-gray-900">進度概覽</h2>
-            <p className="text-sm text-gray-500">
-              如需更新進度或新增不同平台，請前往編輯頁面進行設定。
-            </p>
           </div>
 
           <div className="rounded-xl bg-gray-50 px-4 py-3">
@@ -569,10 +566,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs text-gray-500">
-              想快速更新進度或管理多平台紀錄？請使用下方連結前往編輯頁面。
-            </div>
+          <div className="flex justify-end">
             <Link
               href={`/item/${encodeURIComponent(item.id)}/edit`}
               className={`${secondaryButtonClass} w-full sm:w-auto`}
