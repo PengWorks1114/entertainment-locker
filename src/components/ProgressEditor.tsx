@@ -276,6 +276,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [primaryUpdatingId, setPrimaryUpdatingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(false);
   const [itemFrequency, setItemFrequency] = useState<UpdateFrequency | null>(null);
   const [newForm, setNewForm] = useState<NewProgressFormState>({
     ...emptyFormState,
@@ -382,6 +383,42 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
     setMessage(null);
   }
 
+  function prepareNewFormForOpen() {
+    setNewForm((prev) => ({
+      ...prev,
+      platform: "",
+      value: "",
+      unit: "",
+      note: "",
+      link: "",
+      isPrimary: progress.length === 0 ? true : prev.isPrimary,
+    }));
+  }
+
+  function resetNewFormState() {
+    setNewForm((prev) => ({
+      ...prev,
+      platform: "",
+      value: "",
+      unit: "",
+      note: "",
+      link: "",
+      isPrimary: progress.length === 0,
+    }));
+  }
+
+  function handleOpenNewForm() {
+    resetMessages();
+    prepareNewFormForOpen();
+    setShowNewForm(true);
+  }
+
+  function handleCancelNewForm() {
+    resetMessages();
+    resetNewFormState();
+    setShowNewForm(false);
+  }
+
   async function handleCreate() {
     if (creating) return;
     resetMessages();
@@ -416,15 +453,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
       } else {
         await touchItemAfterProgressChange();
       }
-      setNewForm((prev) => ({
-        platform: "",
-        type: prev.type,
-        value: "",
-        unit: "",
-        note: "",
-        link: "",
-        isPrimary: progress.length === 0,
-      }));
+      resetNewFormState();
       setMessage("已新增進度");
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -553,41 +582,77 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
       )}
 
       <div className="space-y-4 rounded-xl border p-4">
-        <h3 className="text-lg font-semibold">新增進度</h3>
-        <ProgressFields
-          state={newForm}
-          onChange={(key, value) =>
-            setNewForm((prev) => ({
-              ...prev,
-              [key]: value,
-            }))
-          }
-          disabled={creating || Boolean(primaryUpdatingId)}
-        />
-        <label className="flex items-center gap-2 text-sm text-gray-700" htmlFor={primaryCheckboxId}>
-          <input
-            id={primaryCheckboxId}
-            type="checkbox"
-            checked={newForm.isPrimary}
-            onChange={(event) =>
-              setNewForm((prev) => ({
-                ...prev,
-                isPrimary: event.target.checked,
-              }))
-            }
-            disabled={creating || Boolean(primaryUpdatingId)}
-            className="h-4 w-4"
-          />
-          設為主進度（僅能有一筆）
-        </label>
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={creating || Boolean(primaryUpdatingId)}
-          className="h-12 w-full rounded-xl bg-black text-white text-base"
-        >
-          {creating ? "新增中…" : "新增進度"}
-        </button>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">新增進度</h3>
+          {showNewForm && (
+            <button
+              type="button"
+              onClick={handleCancelNewForm}
+              disabled={creating}
+              className="text-sm text-gray-500 underline-offset-4 hover:underline disabled:cursor-not-allowed"
+            >
+              收合
+            </button>
+          )}
+        </div>
+
+        {showNewForm ? (
+          <div className="space-y-4">
+            <ProgressFields
+              state={newForm}
+              onChange={(key, value) =>
+                setNewForm((prev) => ({
+                  ...prev,
+                  [key]: value,
+                }))
+              }
+              disabled={creating || Boolean(primaryUpdatingId)}
+            />
+            <label className="flex items-center gap-2 text-sm text-gray-700" htmlFor={primaryCheckboxId}>
+              <input
+                id={primaryCheckboxId}
+                type="checkbox"
+                checked={newForm.isPrimary}
+                onChange={(event) =>
+                  setNewForm((prev) => ({
+                    ...prev,
+                    isPrimary: event.target.checked,
+                  }))
+                }
+                disabled={creating || Boolean(primaryUpdatingId)}
+                className="h-4 w-4"
+              />
+              設為主進度（僅能有一筆）
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={creating || Boolean(primaryUpdatingId)}
+                className="h-12 w-full rounded-xl bg-black text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+              >
+                {creating ? "新增中…" : "儲存進度"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelNewForm}
+                disabled={creating}
+                className="h-12 w-full rounded-xl border border-gray-300 text-base text-gray-700 transition hover:border-gray-400 hover:text-gray-900 disabled:cursor-not-allowed sm:w-auto"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleOpenNewForm}
+            disabled={Boolean(primaryUpdatingId)}
+            className="h-12 w-full rounded-xl bg-black text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            新增進度
+          </button>
+        )}
       </div>
     </div>
   );

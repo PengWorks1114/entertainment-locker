@@ -20,6 +20,7 @@ import { calculateNextUpdateDate } from "@/lib/item-utils";
 import {
   ITEM_STATUS_OPTIONS,
   PROGRESS_TYPE_OPTIONS,
+  UPDATE_FREQUENCY_OPTIONS,
   type ItemRecord,
   type ProgressType,
 } from "@/lib/types";
@@ -31,6 +32,10 @@ const statusLabelMap = new Map(
 
 const progressTypeLabelMap = new Map(
   PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
+);
+
+const updateFrequencyLabelMap = new Map(
+  UPDATE_FREQUENCY_OPTIONS.map((option) => [option.value, option.label])
 );
 
 type PrimaryProgressState = {
@@ -208,40 +213,55 @@ export default function ItemCard({ item }: ItemCardProps) {
     typeof item.rating === "number" && Number.isFinite(item.rating)
       ? item.rating.toFixed(item.rating % 1 === 0 ? 0 : 1)
       : null;
+  const ratingDisplay = ratingText ?? "未設定";
+  const nextUpdateText = item.nextUpdateAt
+    ? formatDateOnly(item.nextUpdateAt)
+    : "未設定";
+  const authorDisplay =
+    item.author && item.author.trim().length > 0 ? item.author : "未設定";
+  const updateFrequencyLabel = item.updateFrequency
+    ? updateFrequencyLabelMap.get(item.updateFrequency) ?? item.updateFrequency
+    : "未設定";
 
   return (
-    <article className="space-y-4 rounded-2xl border bg-white/70 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          <Link
-            href={`/item/${item.id}`}
-            className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
-          >
-            {item.titleZh}
-          </Link>
-          {item.titleAlt && (
-            <p className="text-sm text-gray-500">{item.titleAlt}</p>
-          )}
-          <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700">
-              狀態：{statusLabel}
-            </span>
-            {ratingText && (
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700">
-                評分：{ratingText}
-              </span>
-            )}
-            {item.author && (
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700">
-                作者：{item.author}
-              </span>
-            )}
-            {item.nextUpdateAt && (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
-                下次更新：{formatDateOnly(item.nextUpdateAt)}
-              </span>
+    <article className="space-y-5 rounded-2xl border bg-white/70 p-5 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Link
+              href={`/item/${item.id}`}
+              className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+            >
+              {item.titleZh}
+            </Link>
+            {item.titleAlt && (
+              <p className="text-sm text-gray-500">{item.titleAlt}</p>
             )}
           </div>
+
+          <div className="grid gap-3 text-sm sm:grid-cols-2">
+            <div className="space-y-1">
+              <span className="text-xs text-gray-500">狀態</span>
+              <span className="block font-medium text-gray-900">{statusLabel}</span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-500">更新頻率</span>
+              <span className="block font-medium text-gray-900">{updateFrequencyLabel}</span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-500">下次更新</span>
+              <span className="block font-medium text-gray-900">{nextUpdateText}</span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-500">評分</span>
+              <span className="block font-medium text-gray-900">{ratingDisplay}</span>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <span className="text-xs text-gray-500">作者 / 製作</span>
+              <span className="block font-medium text-gray-900">{authorDisplay}</span>
+            </div>
+          </div>
+
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-2 text-xs text-gray-500">
               {tags.map((tag) => (
@@ -255,13 +275,14 @@ export default function ItemCard({ item }: ItemCardProps) {
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
           {primaryLink && (
             <a
               href={primaryLink.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-700 shadow-sm transition hover:border-gray-400 hover:text-gray-900"
+              className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-700 shadow-sm transition hover:border-gray-400 hover:text-gray-900 sm:w-auto"
             >
               點我觀看
             </a>
@@ -270,13 +291,13 @@ export default function ItemCard({ item }: ItemCardProps) {
             type="button"
             onClick={handleIncrement}
             disabled={updating || progressLoading || deleting}
-            className="h-12 w-24 rounded-xl bg-black text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="h-12 w-full rounded-xl bg-black text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
           >
             {updating ? "+1…" : "+1"}
           </button>
           <Link
             href={`/item/${item.id}/edit`}
-            className="text-xs text-gray-500 underline-offset-4 hover:underline"
+            className="text-center text-xs text-gray-500 underline-offset-4 hover:underline sm:text-right"
           >
             編輯物件
           </Link>
@@ -284,15 +305,16 @@ export default function ItemCard({ item }: ItemCardProps) {
             type="button"
             onClick={handleDelete}
             disabled={deleting}
-            className="text-xs text-red-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-red-400"
+            className="text-center text-xs text-red-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-red-400 sm:text-right"
           >
             {deleting ? "刪除中…" : "刪除物件"}
           </button>
         </div>
       </div>
 
-      <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
-        <div>主進度：{progressSummary}</div>
+      <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3">
+        <div className="text-sm font-medium text-gray-900">主進度</div>
+        <div className="text-sm text-gray-700">{progressSummary}</div>
         {primary?.updatedAt && (
           <div className="text-xs text-gray-500">
             主進度更新於：{formatTimestamp(primary.updatedAt)}

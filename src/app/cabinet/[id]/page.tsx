@@ -302,11 +302,11 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const selectClass = "h-12 w-full rounded-xl border px-4 text-base";
   const smallInputClass = "h-10 w-full rounded-lg border px-3 text-sm";
   const secondaryButtonClass =
-    "rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
+    "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
   const subtleButtonClass =
     "rounded-lg border px-3 py-2 text-sm text-gray-600 transition hover:border-gray-300 hover:text-gray-900";
   const dangerButtonClass =
-    "rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
+    "inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
 
   if (!authChecked) {
     return (
@@ -357,8 +357,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {cabinetError}
           </div>
-          <div className="flex gap-2">
-            <Link href="/cabinets" className={secondaryButtonClass}>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/cabinets" className={`${secondaryButtonClass} w-full sm:w-auto`}>
               返回櫃子列表
             </Link>
           </div>
@@ -398,26 +398,32 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
             <p className="text-sm text-gray-500">櫃子 ID：{cabinetId}</p>
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Link href="/cabinets" className={secondaryButtonClass}>
+          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
+            <Link href="/cabinets" className={`${secondaryButtonClass} w-full sm:w-auto`}>
               返回櫃子列表
             </Link>
             <Link
               href={`/item/new?cabinetId=${encodeURIComponent(cabinetId)}`}
-              className={secondaryButtonClass}
+              className={`${secondaryButtonClass} w-full sm:w-auto`}
             >
               在此櫃子新增物件
+            </Link>
+            <Link
+              href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
+              className={`${secondaryButtonClass} w-full sm:w-auto`}
+            >
+              編輯櫃子
             </Link>
             <button
               type="button"
               onClick={handleDeleteCabinet}
               disabled={deletingCabinet}
-              className={dangerButtonClass}
+              className={`${dangerButtonClass} w-full sm:w-auto`}
             >
               {deletingCabinet ? "刪除中…" : "刪除此櫃子"}
             </button>

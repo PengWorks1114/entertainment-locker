@@ -112,7 +112,7 @@ export default function CabinetsPage() {
   const primaryButtonClass =
     "h-12 rounded-xl bg-black px-6 text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
   const secondaryButtonClass =
-    "h-10 rounded-full border border-gray-200 bg-white px-4 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
+    "inline-flex h-10 items-center justify-center rounded-full border border-gray-200 bg-white px-4 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
 
   const hasCabinet = list.length > 0;
   const feedbackNode = useMemo(() => {
@@ -158,20 +158,20 @@ export default function CabinetsPage() {
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold text-gray-900">櫃子</h1>
             <p className="text-sm text-gray-500">
               建立不同作品分類，方便在物件列表間切換與整理。
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Link href="/item/new" className={secondaryButtonClass}>
+          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
+            <Link href="/item/new" className={`${secondaryButtonClass} w-full sm:w-auto`}>
               快速新增物件
             </Link>
             <button
               onClick={clearCache}
-              className={secondaryButtonClass}
+              className={`${secondaryButtonClass} w-full sm:w-auto`}
               title="清除本機 Firestore 快取並重新載入"
             >
               清除快取
@@ -209,7 +209,7 @@ export default function CabinetsPage() {
                     key={row.id}
                     className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                       <div className="space-y-1">
                         <Link
                           href={`/cabinet/${encodedId}`}
@@ -219,18 +219,24 @@ export default function CabinetsPage() {
                         </Link>
                         <p className="text-xs text-gray-500">ID：{row.id}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2 text-sm">
+                      <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
                         <Link
                           href={`/cabinet/${encodedId}`}
-                          className={secondaryButtonClass}
+                          className={`${secondaryButtonClass} w-full sm:w-auto`}
                         >
                           查看物件
                         </Link>
                         <Link
                           href={`/item/new?cabinetId=${encodedId}`}
-                          className={secondaryButtonClass}
+                          className={`${secondaryButtonClass} w-full sm:w-auto`}
                         >
                           新增物件
+                        </Link>
+                        <Link
+                          href={`/cabinet/${encodedId}/edit`}
+                          className={`${secondaryButtonClass} w-full sm:w-auto`}
+                        >
+                          編輯櫃子
                         </Link>
                       </div>
                     </div>
