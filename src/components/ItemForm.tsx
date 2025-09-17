@@ -706,9 +706,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
     setDeleting(true);
     setDeleteError(null);
+    const destinationCabinetId = form.cabinetId || initialCabinetId || "";
     try {
       await deleteItemWithProgress(itemId, user.uid);
-      router.replace("/cabinets");
+      if (destinationCabinetId) {
+        router.replace(`/cabinet/${destinationCabinetId}`);
+      } else {
+        router.replace("/cabinets");
+      }
     } catch (err) {
       console.error("刪除物件失敗", err);
       const message =

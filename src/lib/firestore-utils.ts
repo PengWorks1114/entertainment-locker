@@ -1,5 +1,15 @@
 import { FirebaseError } from "firebase/app";
-import { collection, deleteDoc, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  type QuerySnapshot,
+  type DocumentData,
+} from "firebase/firestore";
 
 import { db } from "./firebase";
 
@@ -14,7 +24,16 @@ export async function deleteItemWithProgress(itemId: string, userId?: string) {
     throw new Error("您沒有刪除此物件的權限");
   }
 
-  const progressSnap = await getDocs(collection(db, "item", itemId, "progress"));
+  const progressCollection = collection(db, "item", itemId, "progress");
+  let progressSnap: QuerySnapshot<DocumentData>;
+  try {
+    progressSnap = await getDocs(progressCollection);
+  } catch (err) {
+    if (err instanceof FirebaseError && err.code === "permission-denied") {
+      throw new Error("無法讀取進度資料，請確認帳號權限或稍後再試。");
+    }
+    throw err;
+  }
   for (const docSnap of progressSnap.docs) {
     try {
       await deleteDoc(docSnap.ref);

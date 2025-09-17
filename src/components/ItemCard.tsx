@@ -80,6 +80,7 @@ export default function ItemCard({ item }: ItemCardProps) {
     ? updateFrequencyLabelMap.get(item.updateFrequency) ?? item.updateFrequency
     : "未設定";
   const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
+  const detailHref = `/item/${item.id}`;
 
   return (
     <article className="space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
@@ -102,7 +103,10 @@ export default function ItemCard({ item }: ItemCardProps) {
 
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="flex flex-1 gap-4">
-          <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner">
+          <Link
+            href={detailHref}
+            className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
+          >
             {item.thumbUrl ? (
               canUseOptimizedThumb ? (
                 <Image
@@ -126,7 +130,7 @@ export default function ItemCard({ item }: ItemCardProps) {
                 無封面
               </div>
             )}
-          </div>
+          </Link>
 
           <div className="flex flex-1 flex-col gap-3">
             <div className="grid gap-3 text-sm sm:grid-cols-2">
@@ -151,14 +155,40 @@ export default function ItemCard({ item }: ItemCardProps) {
                 <span className="block font-medium text-gray-900">{authorDisplay}</span>
               </div>
             </div>
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                {tags.map((tag) => {
+                  if (!item.cabinetId) {
+                    return (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
+                      >
+                        #{tag}
+                      </span>
+                    );
+                  }
+                  const tagHref = `/cabinet/${encodeURIComponent(
+                    item.cabinetId
+                  )}?tag=${encodeURIComponent(tag)}`;
+                  return (
+                    <Link
+                      key={tag}
+                      href={tagHref}
+                      className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      #{tag}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="flex w-full flex-col items-stretch gap-2 md:w-48">
-          <Link
-            href={`/item/${item.id}`}
-            className={buttonClass({ variant: "secondary" })}
-          >
+          <Link href={detailHref} className={buttonClass({ variant: "secondary" })}>
             查看詳細頁面
           </Link>
           {primaryLink ? (
@@ -181,38 +211,6 @@ export default function ItemCard({ item }: ItemCardProps) {
           )}
         </div>
       </div>
-
-      {tags.length > 0 && (
-        <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-          <span className="text-xs font-medium text-gray-500">標籤</span>
-          <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-            {tags.map((tag) => {
-              if (!item.cabinetId) {
-                return (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-gray-200 bg-white px-3 py-1"
-                  >
-                    #{tag}
-                  </span>
-                );
-              }
-              const tagHref = `/cabinet/${encodeURIComponent(
-                item.cabinetId
-              )}?tag=${encodeURIComponent(tag)}`;
-              return (
-                <Link
-                  key={tag}
-                  href={tagHref}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  #{tag}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>

@@ -32,12 +32,14 @@ export default function ItemListRow({ item }: ItemListRowProps) {
   }, [item.links]);
 
   const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
+  const tags = item.tags ?? [];
+  const detailHref = `/item/${item.id}`;
 
   return (
     <article className="rounded-2xl border border-gray-100 bg-white/85 p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-4">
         <Link
-          href={`/item/${item.id}`}
+          href={detailHref}
           className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-inner"
         >
           {item.thumbUrl ? (
@@ -65,12 +67,43 @@ export default function ItemListRow({ item }: ItemListRowProps) {
           )}
         </Link>
 
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-semibold text-gray-900">
+        <div className="min-w-0 flex-1 space-y-1">
+          <Link
+            href={detailHref}
+            className="block truncate text-base font-semibold text-gray-900 transition hover:text-blue-600"
+          >
             {item.titleZh}
-          </div>
+          </Link>
           {item.titleAlt && (
             <div className="truncate text-xs text-gray-500">{item.titleAlt}</div>
+          )}
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1 text-xs text-gray-600">
+              {tags.map((tag) => {
+                if (!item.cabinetId) {
+                  return (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-gray-200 bg-white px-3 py-1"
+                    >
+                      #{tag}
+                    </span>
+                  );
+                }
+                const tagHref = `/cabinet/${encodeURIComponent(
+                  item.cabinetId
+                )}?tag=${encodeURIComponent(tag)}`;
+                return (
+                  <Link
+                    key={tag}
+                    href={tagHref}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    #{tag}
+                  </Link>
+                );
+              })}
+            </div>
           )}
         </div>
 
