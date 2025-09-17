@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -79,8 +80,42 @@ const defaultFilters: FilterState = {
   tags: [],
 };
 
+function parseTagsFromParams(params: ReturnType<typeof useSearchParams>): string[] {
+  const list: string[] = [];
+  params.getAll("tag").forEach((tag) => {
+    const trimmed = tag.trim();
+    if (trimmed) {
+      list.push(trimmed);
+    }
+  });
+  const combined = params.get("tags");
+  if (combined) {
+    combined.split(",").forEach((entry) => {
+      const trimmed = entry.trim();
+      if (trimmed) {
+        list.push(trimmed);
+      }
+    });
+  }
+  return Array.from(new Set(list));
+}
+
+function normalizeCabinetTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map((tag) => String(tag ?? "").trim())
+        .filter((tag): tag is string => tag.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
+
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const { id: cabinetId } = use(params);
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
@@ -90,9 +125,13 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [filters, setFilters] = useState<FilterState>(() => ({
+    ...defaultFilters,
+    tags: parseTagsFromParams(searchParams),
+  }));
   const [currentPage, setCurrentPage] = useState(1);
   const [tagInput, setTagInput] = useState("");
+  const [cabinetTags, setCabinetTags] = useState<string[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -108,6 +147,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       setCabinetError(null);
       setCanView(false);
       setCabinetLoading(false);
+      setCabinetTags([]);
       return;
     }
     let active = true;
@@ -121,23 +161,27 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         if (!snap.exists()) {
           setCabinetError("找不到櫃子");
           setCabinetLoading(false);
+          setCabinetTags([]);
           return;
         }
         const data = snap.data();
         if (data?.uid !== user.uid) {
           setCabinetError("您沒有存取此櫃子的權限");
           setCabinetLoading(false);
+          setCabinetTags([]);
           return;
         }
         const name = typeof data?.name === "string" && data.name ? data.name : "未命名櫃子";
         setCabinetName(name);
         setCanView(true);
+        setCabinetTags(normalizeCabinetTags(data?.tags));
         setCabinetLoading(false);
       })
       .catch(() => {
         if (!active) return;
         setCabinetError("載入櫃子資訊時發生錯誤");
         setCabinetLoading(false);
+        setCabinetTags([]);
       });
     return () => {
       active = false;
@@ -244,8 +288,25 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.tags,
   ]);
 
+  useEffect(() => {
+    const tagsFromParams = parseTagsFromParams(searchParams);
+    setFilters((prev) => {
+      const prevSet = new Set(prev.tags);
+      const nextList = tagsFromParams;
+      const nextSet = new Set(nextList);
+      const sameSize = prevSet.size === nextSet.size;
+      if (
+        sameSize &&
+        Array.from(prevSet).every((tag) => nextSet.has(tag))
+      ) {
+        return prev;
+      }
+      return { ...prev, tags: nextList };
+    });
+  }, [searchParams]);
+
   const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
+    const tagSet = new Set<string>(cabinetTags);
     items.forEach((item) => {
       item.tags.forEach((tag) => {
         if (tag.trim().length > 0) {
@@ -254,7 +315,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       });
     });
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
-  }, [items]);
+  }, [items, cabinetTags]);
 
   const filteredItems = useMemo(() => {
     const searchTerm = filters.search.trim().toLowerCase();

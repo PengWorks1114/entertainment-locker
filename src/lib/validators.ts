@@ -150,7 +150,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     const tags = input.tags
       .map((tag) => assertString(tag, "標籤需為文字").trim())
       .filter(Boolean);
-    data.tags = tags;
+    data.tags = Array.from(new Set(tags));
   }
 
   if (input.links) {

@@ -90,6 +90,7 @@ export default function CabinetsPage() {
         name: trimmed,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        tags: [],
       });
       setName("");
       setFeedback({ type: "success", message: "已新增櫃子" });

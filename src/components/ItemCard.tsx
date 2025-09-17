@@ -323,14 +323,30 @@ export default function ItemCard({ item }: ItemCardProps) {
         <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4">
           <span className="text-xs font-medium text-gray-500">標籤</span>
           <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-gray-200 bg-white px-3 py-1"
-              >
-                #{tag}
-              </span>
-            ))}
+            {tags.map((tag) => {
+              if (!item.cabinetId) {
+                return (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1"
+                  >
+                    #{tag}
+                  </span>
+                );
+              }
+              const tagHref = `/cabinet/${encodeURIComponent(
+                item.cabinetId
+              )}?tag=${encodeURIComponent(tag)}`;
+              return (
+                <Link
+                  key={tag}
+                  href={tagHref}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                >
+                  #{tag}
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

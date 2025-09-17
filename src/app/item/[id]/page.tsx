@@ -402,6 +402,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const links = item.links ?? [];
   const insightNote = item.insightNote ?? "";
   const hasInsightNote = insightNote.trim().length > 0;
+  const tagLinkBase = item.cabinetId
+    ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
+    : null;
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -520,14 +523,28 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 <div className="space-y-2">
                   <div className="text-sm text-gray-500">標籤</div>
                   <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
+                    {tags.map((tag) => {
+                      if (!tagLinkBase) {
+                        return (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700"
+                          >
+                            #{tag}
+                          </span>
+                        );
+                      }
+                      const href = `${tagLinkBase}?tag=${encodeURIComponent(tag)}`;
+                      return (
+                        <Link
+                          key={tag}
+                          href={href}
+                          className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          #{tag}
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -603,9 +620,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">
             <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
-            <p className="text-sm text-gray-600">
-              這裡記錄的是屬於自己的觀後感、想法或推薦理由，僅供參考。
-            </p>
           </div>
           {hasInsightNote ? (
             <div className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner">

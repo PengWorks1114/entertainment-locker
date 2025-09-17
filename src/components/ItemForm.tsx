@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -60,7 +60,7 @@ type ItemFormState = {
   titleZh: string;
   titleAlt: string;
   author: string;
-  tagsText: string;
+  selectedTags: string[];
   progressNote: string;
   insightNote: string;
   note: string;
@@ -82,7 +82,7 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     titleZh: "",
     titleAlt: "",
     author: "",
-    tagsText: "",
+    selectedTags: [],
     progressNote: "",
     insightNote: "",
     note: "",
@@ -109,6 +109,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cabinetTags, setCabinetTags] = useState<string[]>([]);
+  const previousCabinetIdRef = useRef<string | null>(null);
 
   const mode = itemId ? "edit" : "create";
 
@@ -194,14 +196,22 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           typeof data.rating === "number" && Number.isFinite(data.rating)
             ? String(data.rating)
             : "";
+        const loadedTags = Array.isArray(data.tags)
+          ? Array.from(
+              new Set(
+                data.tags
+                  .map((tag: unknown) => String(tag ?? "").trim())
+                  .filter((tag: string) => tag.length > 0)
+              )
+            )
+          : [];
+
         setForm({
           cabinetId: (data.cabinetId as string) ?? "",
           titleZh: (data.titleZh as string) ?? "",
           titleAlt: (data.titleAlt as string) ?? "",
           author: (data.author as string) ?? "",
-          tagsText: Array.isArray(data.tags)
-            ? data.tags.map((tag: unknown) => String(tag ?? "")).join("\n")
-            : "",
+          selectedTags: loadedTags,
           progressNote: (data.progressNote as string) ?? "",
           insightNote: (data.insightNote as string) ?? "",
           note: (data.note as string) ?? "",
@@ -251,6 +261,46 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setDeleting(false);
   }, [itemId]);
 
+  useEffect(() => {
+    const previousCabinetId = previousCabinetIdRef.current;
+    if (previousCabinetId && previousCabinetId !== form.cabinetId) {
+      setForm((prev) => ({ ...prev, selectedTags: [] }));
+    }
+    previousCabinetIdRef.current = form.cabinetId;
+  }, [form.cabinetId]);
+
+  useEffect(() => {
+    if (!form.cabinetId) {
+      setCabinetTags([]);
+      return;
+    }
+    const cabinetRef = doc(db, "cabinet", form.cabinetId);
+    const unsub = onSnapshot(
+      cabinetRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setCabinetTags([]);
+          return;
+        }
+        const data = snap.data();
+        const tags = Array.isArray(data?.tags)
+          ? Array.from(
+              new Set(
+                data.tags
+                  .map((tag: unknown) => String(tag ?? "").trim())
+                  .filter((tag: string) => tag.length > 0)
+              )
+            ).sort((a, b) => a.localeCompare(b, "zh-Hant"))
+          : [];
+        setCabinetTags(tags);
+      },
+      () => {
+        setCabinetTags([]);
+      }
+    );
+    return () => unsub();
+  }, [form.cabinetId]);
+
   const cabinetOptions = useMemo(() => cabinets, [cabinets]);
 
   if (!authChecked) {
@@ -290,10 +340,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setError("");
     setMessage("");
 
-    const tags = form.tagsText
-      .split(/[\n,]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+    const allowedTags = new Set(cabinetTags);
+    const tags = Array.from(
+      new Set(
+        form.selectedTags
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+          .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
+      )
+    );
 
     const normalizedLinks = links.map((link) => ({
       label: link.label.trim(),
@@ -397,7 +452,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         titleZh: parsedData.titleZh,
         titleAlt: parsedData.titleAlt ?? "",
         author: parsedData.author ?? "",
-        tagsText: parsedData.tags.join("\n"),
+        selectedTags: parsedData.tags,
         progressNote: parsedData.progressNote ?? "",
         insightNote: parsedData.insightNote ?? "",
         note: parsedData.note ?? "",
@@ -571,21 +626,51 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="space-y-1 block">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-base">標籤</span>
-                  <textarea
-                    value={form.tagsText}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, tagsText: e.target.value }))
-                    }
-                    className="min-h-[120px] w-full rounded-xl border px-4 py-3 text-base"
-                    placeholder="以逗號或換行分隔，例如：漫畫
-少年漫畫"
-                  />
-                </label>
-                <p className="text-xs text-gray-500">
-                  後續會提供快速標籤，現階段可先以逗號或換行分隔。
-                </p>
+                  {form.cabinetId && (
+                    <Link
+                      href={`/cabinet/${encodeURIComponent(form.cabinetId)}/edit#tag-manager`}
+                      className="text-xs text-blue-600 underline-offset-4 hover:underline"
+                    >
+                      管理標籤
+                    </Link>
+                  )}
+                </div>
+                {cabinetTags.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {cabinetTags.map((tag) => {
+                      const selected = form.selectedTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleTag(tag)}
+                          className={`rounded-full border px-3 py-1 text-sm transition ${
+                            selected
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          #{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : form.cabinetId ? (
+                  <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-500">
+                    此櫃尚未建立標籤，請先前往標籤管理新增。
+                  </p>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-500">
+                    請先選擇櫃子以載入標籤。
+                  </p>
+                )}
+                {form.selectedTags.some((tag) => !cabinetTags.includes(tag)) && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                    有部分標籤已於此櫃的標籤管理中移除，儲存時將自動忽略。
+                  </div>
+                )}
               </div>
             </section>
 
@@ -718,19 +803,22 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               </div>
             </section>
 
-            <section className={sectionClass}>
+            <section className="space-y-3 rounded-3xl border-2 border-amber-200 bg-amber-50/60 p-6 shadow-sm">
               <div className="space-y-1">
-                <label className="text-base">心得 / 筆記</label>
-                <textarea
-                  value={form.insightNote}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, insightNote: e.target.value }))
-                  }
-                  className={textAreaClass}
-                  placeholder="分享一些觀後感、推薦理由等"
-                  rows={6}
-                />
+                <h2 className="text-xl font-semibold text-amber-800">心得 / 筆記</h2>
+                <p className="text-sm text-amber-700">
+                  以更自由的篇幅整理觀後感、推薦理由或紀錄重點，僅於詳細頁面顯示。
+                </p>
               </div>
+              <textarea
+                value={form.insightNote}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, insightNote: e.target.value }))
+                }
+                className="min-h-[220px] w-full rounded-2xl border border-amber-200 bg-white/90 px-4 py-4 text-base leading-relaxed text-gray-900 shadow-inner focus:border-amber-300 focus:outline-none"
+                placeholder="分享一些觀後感、推薦理由等"
+                aria-label="心得 / 筆記"
+              />
             </section>
 
             <section className={sectionClass}>
