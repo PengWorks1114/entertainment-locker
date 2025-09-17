@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import {
-  DragEvent,
   FormEvent,
+  KeyboardEvent,
   ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,7 +18,7 @@ import {
   collection,
   doc,
   getDoc,
-  onSnapshot,
+  getDocs,
   query,
   serverTimestamp,
   Timestamp,
@@ -52,6 +53,19 @@ type AppearanceState = {
   thumbUrl: string;
   note: string;
 };
+
+function normalizeCabinetTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map((tag) => String(tag ?? "").trim())
+        .filter((tag): tag is string => tag.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
 
 type SectionKey =
   | "basic"
@@ -180,9 +194,22 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
-  const [draggingAppearanceIndex, setDraggingAppearanceIndex] = useState<number | null>(
+  const [tagQuery, setTagQuery] = useState("");
+  const [tagStatus, setTagStatus] = useState<{
+    message: string | null;
+    error: string | null;
+    saving: boolean;
+  }>({
+    message: null,
+    error: null,
+    saving: false,
+  });
+  const [isFetchingTags, setIsFetchingTags] = useState(false);
+  const [draggingAppearanceId, setDraggingAppearanceId] = useState<string | null>(
     null
   );
+  const tagsCacheRef = useRef<Record<string, string[]>>({});
+  const draggingAppearanceIndexRef = useRef<number | null>(null);
   const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
     basic: true,
     links: true,
@@ -197,6 +224,35 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
   const mode = itemId ? "edit" : "create";
 
+  const fetchCabinetTags = useCallback(
+    async (cabinetId: string, force = false): Promise<string[]> => {
+      if (!cabinetId || !user) {
+        return [];
+      }
+      if (!force) {
+        const cached = tagsCacheRef.current[cabinetId];
+        if (cached) {
+          return cached;
+        }
+      }
+      try {
+        const snap = await getDoc(doc(db, "cabinet", cabinetId));
+        if (!snap.exists()) {
+          return [];
+        }
+        const data = snap.data();
+        if (data?.uid !== user.uid) {
+          return [];
+        }
+        return normalizeCabinetTags(data?.tags);
+      } catch (err) {
+        console.error("載入櫃子標籤失敗", err);
+        return [];
+      }
+    },
+    [user]
+  );
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
@@ -210,10 +266,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       setCabinets([]);
       return;
     }
+    let active = true;
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
-    const unSub = onSnapshot(
-      q,
-      (snap) => {
+    getDocs(q)
+      .then((snap) => {
+        if (!active) return;
         const rows: CabinetOption[] = snap.docs
           .map((docSnap) => {
             const data = docSnap.data();
@@ -229,12 +286,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           .sort((a, b) => b.createdMs - a.createdMs)
           .map((item) => ({ id: item.id, name: item.name }));
         setCabinets(rows);
-      },
-      () => {
+      })
+      .catch(() => {
+        if (!active) return;
         setError("載入櫃子清單時發生錯誤");
-      }
-    );
-    return () => unSub();
+        setCabinets([]);
+      });
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   useEffect(() => {
@@ -290,8 +350,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           : [];
         const loadedAppearances = mapFirestoreAppearances(data.appearances);
 
+        const cabinetIdValue =
+          typeof data.cabinetId === "string" ? data.cabinetId : "";
         setForm({
-          cabinetId: (data.cabinetId as string) ?? "",
+          cabinetId: cabinetIdValue,
           titleZh: (data.titleZh as string) ?? "",
           titleAlt: (data.titleAlt as string) ?? "",
           author: (data.author as string) ?? "",
@@ -327,6 +389,17 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             : []
         );
         setAppearances(loadedAppearances);
+        if (cabinetIdValue) {
+          fetchCabinetTags(cabinetIdValue)
+            .then((tags) => {
+              if (!active) return;
+              tagsCacheRef.current[cabinetIdValue] = tags;
+              setCabinetTags(tags);
+            })
+            .catch(() => {
+              if (!active) return;
+            });
+        }
       })
       .catch(() => {
         if (!active) return;
@@ -339,7 +412,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     return () => {
       active = false;
     };
-  }, [user, itemId]);
+  }, [user, itemId, fetchCabinetTags]);
 
   useEffect(() => {
     setDeleteError(null);
@@ -350,41 +423,51 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     const previousCabinetId = previousCabinetIdRef.current;
     if (previousCabinetId && previousCabinetId !== form.cabinetId) {
       setForm((prev) => ({ ...prev, selectedTags: [] }));
+      setTagQuery("");
+      setTagStatus({ message: null, error: null, saving: false });
     }
     previousCabinetIdRef.current = form.cabinetId;
   }, [form.cabinetId]);
 
   useEffect(() => {
-    if (!form.cabinetId) {
+    if (!user) {
+      tagsCacheRef.current = {};
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const currentCabinetId = form.cabinetId;
+    if (!currentCabinetId || !user) {
       setCabinetTags([]);
+      setIsFetchingTags(false);
       return;
     }
-    const cabinetRef = doc(db, "cabinet", form.cabinetId);
-    const unsub = onSnapshot(
-      cabinetRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setCabinetTags([]);
-          return;
-        }
-        const data = snap.data();
-        const tags = Array.isArray(data?.tags)
-          ? Array.from(
-              new Set(
-                data.tags
-                  .map((tag: unknown) => String(tag ?? "").trim())
-                  .filter((tag: string) => tag.length > 0)
-              )
-            ).sort((a, b) => a.localeCompare(b, "zh-Hant"))
-          : [];
+    const cached = tagsCacheRef.current[currentCabinetId];
+    if (cached) {
+      setCabinetTags(cached);
+      setIsFetchingTags(false);
+      return;
+    }
+    let active = true;
+    setIsFetchingTags(true);
+    fetchCabinetTags(currentCabinetId, true)
+      .then((tags) => {
+        if (!active) return;
+        tagsCacheRef.current[currentCabinetId] = tags;
         setCabinetTags(tags);
-      },
-      () => {
+      })
+      .catch(() => {
+        if (!active) return;
         setCabinetTags([]);
-      }
-    );
-    return () => unsub();
-  }, [form.cabinetId]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsFetchingTags(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.cabinetId, user, fetchCabinetTags]);
 
   const cabinetOptions = useMemo(() => cabinets, [cabinets]);
 
@@ -395,72 +478,25 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setSectionOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const CollapsibleSection = ({
-    sectionKey,
-    title,
-    children,
-    actions,
-    containerClass,
-    contentClass,
-    titleClass,
-  }: {
-    sectionKey: SectionKey;
-    title: string;
-    children: ReactNode;
-    actions?: ReactNode;
-    containerClass?: string;
-    contentClass?: string;
-    titleClass?: string;
-  }) => {
-    const isOpen = sectionOpen[sectionKey];
-    const contentId = `${sectionKey}-content`;
-    return (
-      <section
-        className={`${baseSectionClass} ${containerClass ?? ""}`.trim()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => toggleSection(sectionKey)}
-            className="flex flex-1 items-center justify-between gap-3 text-left"
-            aria-expanded={isOpen}
-            aria-controls={contentId}
-          >
-            <span className={`text-xl font-semibold ${titleClass ?? "text-gray-900"}`}>
-              {title}
-            </span>
-            <span
-              aria-hidden
-              className={`flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-transform ${
-                isOpen ? "rotate-180" : ""
-              }`}
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M5 8l5 5 5-5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </button>
-          {actions ? <div className="shrink-0">{actions}</div> : null}
-        </div>
-        {isOpen ? (
-          <div id={contentId} className={`mt-6 ${contentClass ?? "space-y-6"}`}>
-            {children}
-          </div>
-        ) : null}
-      </section>
+  const selectedTagSet = useMemo(
+    () => new Set(form.selectedTags),
+    [form.selectedTags]
+  );
+
+  const availableTagSuggestions = useMemo(
+    () => cabinetTags.filter((tag) => !selectedTagSet.has(tag)),
+    [cabinetTags, selectedTagSet]
+  );
+
+  const filteredTagSuggestions = useMemo(() => {
+    const query = tagQuery.trim().toLowerCase();
+    if (!query) {
+      return availableTagSuggestions;
+    }
+    return availableTagSuggestions.filter((tag) =>
+      tag.toLowerCase().includes(query)
     );
-  };
+  }, [availableTagSuggestions, tagQuery]);
 
   if (!authChecked) {
     return (
@@ -685,23 +721,137 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
   }
 
-  function toggleTag(tag: string) {
-    setForm((prev) => {
-      const exists = prev.selectedTags.includes(tag);
-      return {
-        ...prev,
-        selectedTags: exists
-          ? prev.selectedTags.filter((item) => item !== tag)
-          : [...prev.selectedTags, tag],
-      };
-    });
-  }
-
   function handleAddAppearance() {
     setAppearances((prev) => [
       ...prev,
       { id: generateLocalId(), name: "", thumbUrl: "", note: "" },
     ]);
+  }
+
+  async function handleCommitTag(rawTag: string) {
+    const value = rawTag.trim();
+    if (!value) {
+      setTagStatus({ message: null, error: "請輸入標籤名稱", saving: false });
+      return;
+    }
+    if (!form.cabinetId) {
+      setTagStatus({ message: null, error: "請先選擇櫃子", saving: false });
+      return;
+    }
+    if (tagStatus.saving) {
+      return;
+    }
+    setTagStatus({ message: null, error: null, saving: false });
+    let alreadySelected = false;
+    setForm((prev) => {
+      if (prev.selectedTags.includes(value)) {
+        alreadySelected = true;
+        return prev;
+      }
+      return { ...prev, selectedTags: [...prev.selectedTags, value] };
+    });
+    setTagQuery("");
+    if (alreadySelected) {
+      setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      return;
+    }
+    if (cabinetTags.includes(value)) {
+      setTagStatus({ message: `已加入 #${value}`, error: null, saving: false });
+      return;
+    }
+    const previousTags = cabinetTags;
+    const nextTags = normalizeCabinetTags([...previousTags, value]);
+    setTagStatus({ message: null, error: null, saving: true });
+    setCabinetTags(nextTags);
+    tagsCacheRef.current[form.cabinetId] = nextTags;
+    try {
+      await updateDoc(doc(db, "cabinet", form.cabinetId), {
+        tags: nextTags,
+        updatedAt: serverTimestamp(),
+      });
+      setTagStatus({ message: `已新增 #${value}`, error: null, saving: false });
+    } catch (err) {
+      console.error("新增標籤失敗", err);
+      setTagStatus({
+        message: null,
+        error: "新增標籤時發生錯誤，請稍後再試",
+        saving: false,
+      });
+      setCabinetTags(previousTags);
+      tagsCacheRef.current[form.cabinetId] = previousTags;
+      setForm((prev) => ({
+        ...prev,
+        selectedTags: prev.selectedTags.filter((tag) => tag !== value),
+      }));
+    }
+  }
+
+  function handleRemoveSelectedTag(tag: string) {
+    setForm((prev) => ({
+      ...prev,
+      selectedTags: prev.selectedTags.filter((item) => item !== tag),
+    }));
+    setTagStatus({ message: null, error: null, saving: false });
+  }
+
+  function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleCommitTag(tagQuery);
+    }
+  }
+
+  function handleAppearanceDragStart(index: number) {
+    draggingAppearanceIndexRef.current = index;
+    setDraggingAppearanceId(appearances[index]?.id ?? null);
+  }
+
+  function handleAppearanceDragEnter(index: number) {
+    const sourceIndex = draggingAppearanceIndexRef.current;
+    if (sourceIndex === null || sourceIndex === index) {
+      return;
+    }
+    setAppearances((prev) => {
+      if (sourceIndex === null) {
+        return prev;
+      }
+      if (
+        sourceIndex < 0 ||
+        sourceIndex >= prev.length ||
+        index < 0 ||
+        index >= prev.length
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(index, 0, moved);
+      const newIndex = sourceIndex < index ? index - 1 : index;
+      draggingAppearanceIndexRef.current = newIndex;
+      return next;
+    });
+  }
+
+  function handleAppearanceDragEnterEnd() {
+    const sourceIndex = draggingAppearanceIndexRef.current;
+    if (sourceIndex === null) {
+      return;
+    }
+    setAppearances((prev) => {
+      if (sourceIndex < 0 || sourceIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.push(moved);
+      draggingAppearanceIndexRef.current = next.length - 1;
+      return next;
+    });
+  }
+
+  function handleAppearanceDragEnd() {
+    draggingAppearanceIndexRef.current = null;
+    setDraggingAppearanceId(null);
   }
 
   function handleAppearanceChange(
@@ -716,63 +866,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
   function handleRemoveAppearance(index: number) {
     setAppearances((prev) => prev.filter((_, idx) => idx !== index));
-    setDraggingAppearanceIndex(null);
-  }
-
-  function handleAppearanceDrop(
-    event: DragEvent<HTMLDivElement>,
-    targetIndex: number
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-    const sourceIndex = draggingAppearanceIndex;
-    if (sourceIndex === null) {
-      return;
-    }
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const shouldPlaceAfter =
-      event.clientY > bounds.top + bounds.height / 2;
-
-    setAppearances((prev) => {
-      if (
-        sourceIndex < 0 ||
-        sourceIndex >= prev.length ||
-        targetIndex < 0 ||
-        targetIndex >= prev.length
-      ) {
-        return prev;
-      }
-      const next = [...prev];
-      const [moved] = next.splice(sourceIndex, 1);
-      let insertionIndex = shouldPlaceAfter ? targetIndex + 1 : targetIndex;
-      if (insertionIndex > next.length) {
-        insertionIndex = next.length;
-      }
-      if (sourceIndex < insertionIndex) {
-        insertionIndex -= 1;
-      }
-      next.splice(insertionIndex, 0, moved);
-      return next;
-    });
-    setDraggingAppearanceIndex(null);
-  }
-
-  function handleAppearanceDropToEnd(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    if (draggingAppearanceIndex === null) {
-      return;
-    }
-    const sourceIndex = draggingAppearanceIndex;
-    setAppearances((prev) => {
-      if (sourceIndex < 0 || sourceIndex >= prev.length) {
-        return prev;
-      }
-      const next = [...prev];
-      const [moved] = next.splice(sourceIndex, 1);
-      next.push(moved);
-      return next;
-    });
-    setDraggingAppearanceIndex(null);
+    draggingAppearanceIndexRef.current = null;
+    setDraggingAppearanceId(null);
   }
 
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
@@ -828,7 +923,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <CollapsibleSection sectionKey="basic" title="基本資訊">
+            <CollapsibleSection
+              sectionKey="basic"
+              title="基本資訊"
+              isOpen={sectionOpen.basic}
+              onToggle={() => toggleSection("basic")}
+              baseClass={baseSectionClass}
+            >
               <div className="space-y-1">
                 <label className="text-base">所屬櫃子</label>
                 <select
@@ -885,7 +986,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 </label>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-base">標籤</span>
                   {form.cabinetId && (
@@ -897,46 +998,112 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                     </Link>
                   )}
                 </div>
-                {cabinetTags.length > 0 ? (
+
+                {form.selectedTags.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {cabinetTags.map((tag) => {
-                      const selected = form.selectedTags.includes(tag);
-                      return (
+                    {form.selectedTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm text-blue-700"
+                      >
+                        #{tag}
                         <button
-                          key={tag}
                           type="button"
-                          onClick={() => toggleTag(tag)}
-                          className={`rounded-full border px-3 py-1 text-sm transition ${
-                            selected
-                              ? "border-blue-500 bg-blue-50 text-blue-700"
-                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                          }`}
+                          onClick={() => handleRemoveSelectedTag(tag)}
+                          className="rounded-full p-1 text-blue-500 transition hover:bg-blue-100"
+                          aria-label={`移除標籤 ${tag}`}
                         >
-                          #{tag}
+                          ✕
                         </button>
-                      );
-                    })}
+                      </span>
+                    ))}
                   </div>
-                ) : form.cabinetId ? (
-                  <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-500">
-                    此櫃尚未建立標籤，請先前往標籤管理新增。
-                  </p>
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-500">
-                    請先選擇櫃子以載入標籤。
+                    尚未選擇標籤，可直接輸入新增或從下方列表挑選。
                   </p>
                 )}
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="flex flex-1 items-center gap-2">
+                    <input
+                      value={tagQuery}
+                      onChange={(event) => {
+                        setTagQuery(event.target.value);
+                        setTagStatus({ message: null, error: null, saving: false });
+                      }}
+                      onKeyDown={handleTagKeyDown}
+                      placeholder={
+                        form.cabinetId ? "輸入或搜尋標籤" : "請先選擇櫃子"
+                      }
+                      className={inputClass}
+                      disabled={!form.cabinetId}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleCommitTag(tagQuery)}
+                    className="h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm text-blue-700 transition hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!form.cabinetId || tagStatus.saving || !tagQuery.trim()}
+                  >
+                    {tagStatus.saving ? "處理中…" : "加入標籤"}
+                  </button>
+                </div>
+
+                {tagStatus.error ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {tagStatus.error}
+                  </div>
+                ) : null}
+                {tagStatus.message ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                    {tagStatus.message}
+                  </div>
+                ) : null}
+
                 {form.selectedTags.some((tag) => !cabinetTags.includes(tag)) && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
                     有部分標籤已於此櫃的標籤管理中移除，儲存時將自動忽略。
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-gray-100 bg-white/80 px-4 py-4">
+                  {!form.cabinetId ? (
+                    <p className="text-sm text-gray-500">請先選擇櫃子以載入標籤。</p>
+                  ) : isFetchingTags ? (
+                    <p className="text-sm text-gray-500">載入標籤中…</p>
+                  ) : cabinetTags.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      此櫃尚未建立標籤，可直接輸入上方欄位新增。
+                    </p>
+                  ) : filteredTagSuggestions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => void handleCommitTag(tag)}
+                          className="rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600 transition hover:border-blue-200 hover:text-blue-600"
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      找不到符合的標籤，可直接輸入新增。
+                    </p>
+                  )}
+                </div>
               </div>
             </CollapsibleSection>
 
             <CollapsibleSection
               sectionKey="links"
               title="來源連結"
+              isOpen={sectionOpen.links}
+              onToggle={() => toggleSection("links")}
+              baseClass={baseSectionClass}
               actions={
                 <button
                   type="button"
@@ -1039,7 +1206,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection sectionKey="mediaNotes" title="縮圖與備註">
+            <CollapsibleSection
+              sectionKey="mediaNotes"
+              title="縮圖與備註"
+              isOpen={sectionOpen.mediaNotes}
+              onToggle={() => toggleSection("mediaNotes")}
+              baseClass={baseSectionClass}
+            >
               <ThumbLinkField
                 value={form.thumbUrl}
                 onChange={(value) => setForm((prev) => ({ ...prev, thumbUrl: value }))}
@@ -1072,6 +1245,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             <CollapsibleSection
               sectionKey="appearances"
               title="登場列表"
+              isOpen={sectionOpen.appearances}
+              onToggle={() => toggleSection("appearances")}
+              baseClass={baseSectionClass}
               actions={
                 <button
                   type="button"
@@ -1091,28 +1267,21 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   目前尚未新增登場物件。
                 </p>
               ) : (
-                <div
-                  className="space-y-3"
-                  onDragOver={(event) => {
-                    if (draggingAppearanceIndex !== null) {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                    }
-                  }}
-                  onDrop={handleAppearanceDropToEnd}
-                >
+                <div className="space-y-3">
                   {appearances.map((appearance, index) => {
-                    const isDragging = draggingAppearanceIndex === index;
+                    const isDragging = draggingAppearanceId === appearance.id;
                     return (
                       <div
                         key={appearance.id}
+                        draggable
+                        onDragStart={() => handleAppearanceDragStart(index)}
+                        onDragEnter={() => handleAppearanceDragEnter(index)}
                         onDragOver={(event) => {
-                          if (draggingAppearanceIndex !== null) {
+                          if (draggingAppearanceId) {
                             event.preventDefault();
-                            event.dataTransfer.dropEffect = "move";
                           }
                         }}
-                        onDrop={(event) => handleAppearanceDrop(event, index)}
+                        onDragEnd={handleAppearanceDragEnd}
                         className={`space-y-3 rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
                           isDragging
                             ? "border-blue-300 bg-blue-50/60"
@@ -1122,16 +1291,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-2 text-sm text-gray-500">
                             <div
-                              draggable
-                              onDragStart={(event) => {
-                                event.dataTransfer.effectAllowed = "move";
-                                event.dataTransfer.setData("text/plain", String(index));
-                                setDraggingAppearanceIndex(index);
-                              }}
-                              onDragEnd={() => setDraggingAppearanceIndex(null)}
-                              className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm active:cursor-grabbing"
-                              aria-label="拖曳以調整順序"
-                              title="拖曳以調整順序"
+                              className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm"
+                              aria-hidden
                             >
                               <span className="text-base leading-none">≡</span>
                             </div>
@@ -1181,6 +1342,19 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                       </div>
                     );
                   })}
+                  {draggingAppearanceId ? (
+                    <div
+                      onDragEnter={handleAppearanceDragEnterEnd}
+                      onDragOver={(event) => {
+                        if (draggingAppearanceId) {
+                          event.preventDefault();
+                        }
+                      }}
+                      className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/40 px-4 py-3 text-center text-xs text-blue-600"
+                    >
+                      拖曳到此可放到列表最後
+                    </div>
+                  ) : null}
                 </div>
               )}
             </CollapsibleSection>
@@ -1188,6 +1362,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             <CollapsibleSection
               sectionKey="insight"
               title="心得 / 筆記"
+              isOpen={sectionOpen.insight}
+              onToggle={() => toggleSection("insight")}
+              baseClass={baseSectionClass}
               containerClass="border-2 border-amber-200 bg-amber-50/60"
               titleClass="text-amber-800"
               contentClass="space-y-3"
@@ -1206,7 +1383,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               />
             </CollapsibleSection>
 
-            <CollapsibleSection sectionKey="status" title="狀態與更新">
+            <CollapsibleSection
+              sectionKey="status"
+              title="狀態與更新"
+              isOpen={sectionOpen.status}
+              onToggle={() => toggleSection("status")}
+              baseClass={baseSectionClass}
+            >
               <div className="grid gap-6 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-base">評分 (0-10)</span>
@@ -1293,6 +1476,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             <CollapsibleSection
               sectionKey="progressManager"
               title="進度管理"
+              isOpen={sectionOpen.progressManager}
+              onToggle={() => toggleSection("progressManager")}
+              baseClass={baseSectionClass}
               contentClass="space-y-4"
             >
               <p className="text-sm text-gray-500">
@@ -1303,6 +1489,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             <CollapsibleSection
               sectionKey="dangerZone"
               title="刪除物件"
+              isOpen={sectionOpen.dangerZone}
+              onToggle={() => toggleSection("dangerZone")}
+              baseClass={baseSectionClass}
               containerClass="border-red-100 bg-red-50/80"
               titleClass="text-red-700"
               contentClass="space-y-4"
@@ -1343,4 +1532,78 @@ function formatDateToInput(date: Date): string {
   const hours = pad(date.getHours());
   const minutes = pad(date.getMinutes());
   return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+type CollapsibleSectionProps = {
+  sectionKey: SectionKey;
+  title: string;
+  children: ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+  baseClass: string;
+  actions?: ReactNode;
+  containerClass?: string;
+  contentClass?: string;
+  titleClass?: string;
+};
+
+function CollapsibleSection({
+  sectionKey,
+  title,
+  children,
+  isOpen,
+  onToggle,
+  baseClass,
+  actions,
+  containerClass,
+  contentClass,
+  titleClass,
+}: CollapsibleSectionProps) {
+  const contentId = `${sectionKey}-content`;
+  return (
+    <section className={`${baseClass} ${containerClass ?? ""}`.trim()}>
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex flex-1 items-center justify-between gap-3 text-left"
+          aria-expanded={isOpen}
+          aria-controls={contentId}
+        >
+          <span
+            className={`text-xl font-semibold ${titleClass ?? "text-gray-900"}`}
+          >
+            {title}
+          </span>
+          <span
+            aria-hidden
+            className={`flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-transform ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M5 8l5 5 5-5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </button>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </div>
+      {isOpen ? (
+        <div id={contentId} className={`mt-6 ${contentClass ?? "space-y-6"}`}>
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
 }
