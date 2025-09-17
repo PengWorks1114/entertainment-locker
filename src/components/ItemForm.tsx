@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DragEvent,
+  FormEvent,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -30,12 +38,73 @@ import {
 import {
   parseItemForm,
   ValidationError,
+  type AppearanceFormData,
   type ItemFormData,
 } from "@/lib/validators";
 import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 type CabinetOption = { id: string; name: string };
 type LinkState = { label: string; url: string; isPrimary: boolean };
+
+type AppearanceState = {
+  id: string;
+  name: string;
+  thumbUrl: string;
+  note: string;
+};
+
+type SectionKey =
+  | "basic"
+  | "links"
+  | "mediaNotes"
+  | "appearances"
+  | "insight"
+  | "status"
+  | "progressManager"
+  | "dangerZone";
+
+function generateLocalId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function mapFirestoreAppearances(value: unknown): AppearanceState[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const record = entry as { name?: unknown; thumbUrl?: unknown; note?: unknown };
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const thumbUrl =
+        typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
+      const note = typeof record.note === "string" ? record.note.trim() : "";
+      if (!name && !thumbUrl && !note) {
+        return null;
+      }
+      return {
+        id: generateLocalId(),
+        name,
+        thumbUrl,
+        note,
+      } satisfies AppearanceState;
+    })
+    .filter((entry): entry is AppearanceState => Boolean(entry));
+}
+
+function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {
+  return list.map((entry) => ({
+    id: generateLocalId(),
+    name: entry.name,
+    thumbUrl: entry.thumbUrl ?? "",
+    note: entry.note ?? "",
+  }));
+}
 
 function normalizePrimaryLinks(list: LinkState[]): LinkState[] {
   if (list.length === 0) {
@@ -103,6 +172,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     createDefaultState(initialCabinetId)
   );
   const [links, setLinks] = useState<LinkState[]>([]);
+  const [appearances, setAppearances] = useState<AppearanceState[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(itemId));
@@ -110,6 +180,19 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
+  const [draggingAppearanceIndex, setDraggingAppearanceIndex] = useState<number | null>(
+    null
+  );
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
+    basic: true,
+    links: true,
+    mediaNotes: true,
+    appearances: true,
+    insight: true,
+    status: true,
+    progressManager: true,
+    dangerZone: true,
+  });
   const previousCabinetIdRef = useRef<string | null>(null);
 
   const mode = itemId ? "edit" : "create";
@@ -205,6 +288,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               )
             )
           : [];
+        const loadedAppearances = mapFirestoreAppearances(data.appearances);
 
         setForm({
           cabinetId: (data.cabinetId as string) ?? "",
@@ -242,6 +326,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               )
             : []
         );
+        setAppearances(loadedAppearances);
       })
       .catch(() => {
         if (!active) return;
@@ -302,6 +387,80 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   }, [form.cabinetId]);
 
   const cabinetOptions = useMemo(() => cabinets, [cabinets]);
+
+  const baseSectionClass =
+    "rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm";
+
+  const toggleSection = (key: SectionKey) => {
+    setSectionOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const CollapsibleSection = ({
+    sectionKey,
+    title,
+    children,
+    actions,
+    containerClass,
+    contentClass,
+    titleClass,
+  }: {
+    sectionKey: SectionKey;
+    title: string;
+    children: ReactNode;
+    actions?: ReactNode;
+    containerClass?: string;
+    contentClass?: string;
+    titleClass?: string;
+  }) => {
+    const isOpen = sectionOpen[sectionKey];
+    const contentId = `${sectionKey}-content`;
+    return (
+      <section
+        className={`${baseSectionClass} ${containerClass ?? ""}`.trim()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => toggleSection(sectionKey)}
+            className="flex flex-1 items-center justify-between gap-3 text-left"
+            aria-expanded={isOpen}
+            aria-controls={contentId}
+          >
+            <span className={`text-xl font-semibold ${titleClass ?? "text-gray-900"}`}>
+              {title}
+            </span>
+            <span
+              aria-hidden
+              className={`flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-transform ${
+                isOpen ? "rotate-180" : ""
+              }`}
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M5 8l5 5 5-5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
+          {actions ? <div className="shrink-0">{actions}</div> : null}
+        </div>
+        {isOpen ? (
+          <div id={contentId} className={`mt-6 ${contentClass ?? "space-y-6"}`}>
+            {children}
+          </div>
+        ) : null}
+      </section>
+    );
+  };
 
   if (!authChecked) {
     return (
@@ -394,6 +553,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       nextUpdateDate = parsed;
     }
 
+    const appearancePayload = appearances.map((entry) => ({
+      name: entry.name,
+      thumbUrl: entry.thumbUrl,
+      note: entry.note,
+    }));
+
     try {
       const parsedData: ItemFormData = parseItemForm({
         cabinetId: form.cabinetId,
@@ -406,6 +571,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         progressNote: form.progressNote,
         insightNote: form.insightNote,
         note: form.note,
+        appearances: appearancePayload,
         rating: form.rating ? Number(form.rating) : undefined,
         status: form.status,
         updateFrequency: form.updateFrequency ? form.updateFrequency : null,
@@ -424,6 +590,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         progressNote: parsedData.progressNote ?? null,
         insightNote: parsedData.insightNote ?? null,
         note: parsedData.note ?? null,
+        appearances: parsedData.appearances.map((entry) => ({
+          name: entry.name,
+          thumbUrl: entry.thumbUrl ?? null,
+          note: entry.note ?? null,
+        })),
         rating:
           parsedData.rating !== undefined ? parsedData.rating : null,
         status: parsedData.status,
@@ -476,6 +647,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           }))
         )
       );
+      setAppearances(mapFormAppearances(parsedData.appearances));
     } catch (err) {
       if (err instanceof ValidationError) {
         setError(err.message);
@@ -513,10 +685,98 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
   }
 
+  function toggleTag(tag: string) {
+    setForm((prev) => {
+      const exists = prev.selectedTags.includes(tag);
+      return {
+        ...prev,
+        selectedTags: exists
+          ? prev.selectedTags.filter((item) => item !== tag)
+          : [...prev.selectedTags, tag],
+      };
+    });
+  }
+
+  function handleAddAppearance() {
+    setAppearances((prev) => [
+      ...prev,
+      { id: generateLocalId(), name: "", thumbUrl: "", note: "" },
+    ]);
+  }
+
+  function handleAppearanceChange(
+    index: number,
+    field: "name" | "thumbUrl" | "note",
+    value: string
+  ) {
+    setAppearances((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, [field]: value } : item))
+    );
+  }
+
+  function handleRemoveAppearance(index: number) {
+    setAppearances((prev) => prev.filter((_, idx) => idx !== index));
+    setDraggingAppearanceIndex(null);
+  }
+
+  function handleAppearanceDrop(
+    event: DragEvent<HTMLDivElement>,
+    targetIndex: number
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceIndex = draggingAppearanceIndex;
+    if (sourceIndex === null) {
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const shouldPlaceAfter =
+      event.clientY > bounds.top + bounds.height / 2;
+
+    setAppearances((prev) => {
+      if (
+        sourceIndex < 0 ||
+        sourceIndex >= prev.length ||
+        targetIndex < 0 ||
+        targetIndex >= prev.length
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      let insertionIndex = shouldPlaceAfter ? targetIndex + 1 : targetIndex;
+      if (insertionIndex > next.length) {
+        insertionIndex = next.length;
+      }
+      if (sourceIndex < insertionIndex) {
+        insertionIndex -= 1;
+      }
+      next.splice(insertionIndex, 0, moved);
+      return next;
+    });
+    setDraggingAppearanceIndex(null);
+  }
+
+  function handleAppearanceDropToEnd(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (draggingAppearanceIndex === null) {
+      return;
+    }
+    const sourceIndex = draggingAppearanceIndex;
+    setAppearances((prev) => {
+      if (sourceIndex < 0 || sourceIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.push(moved);
+      return next;
+    });
+    setDraggingAppearanceIndex(null);
+  }
+
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
   const textAreaClass = "min-h-[100px] w-full rounded-xl border px-4 py-3 text-base";
-  const sectionClass =
-    "space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm";
 
   return (
     <main className="min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
@@ -568,7 +828,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <section className={sectionClass}>
+            <CollapsibleSection sectionKey="basic" title="基本資訊">
               <div className="space-y-1">
                 <label className="text-base">所屬櫃子</label>
                 <select
@@ -672,11 +932,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   </div>
                 )}
               </div>
-            </section>
+            </CollapsibleSection>
 
-            <section className={sectionClass}>
-              <div className="flex items-center justify-between">
-                <span className="text-base">來源連結</span>
+            <CollapsibleSection
+              sectionKey="links"
+              title="來源連結"
+              actions={
                 <button
                   type="button"
                   onClick={() =>
@@ -691,13 +952,18 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 >
                   新增連結
                 </button>
-              </div>
+              }
+              contentClass="space-y-4"
+            >
               {links.length === 0 && (
                 <p className="text-sm text-gray-500">目前尚未新增連結。</p>
               )}
               <div className="space-y-3">
                 {links.map((link, index) => (
-                  <div key={index} className="space-y-3 rounded-xl border bg-white/80 p-4">
+                  <div
+                    key={index}
+                    className="space-y-3 rounded-xl border bg-white/80 p-4"
+                  >
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <label className="flex-1 space-y-1">
                         <span className="text-sm text-gray-600">標籤</span>
@@ -751,29 +1017,29 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                         <span>作為「點我觀看」按鈕</span>
                       </label>
                       <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLinks((prev) => {
-                            const next = prev.filter((_, idx) => idx !== index);
-                            if (next.length > 0) {
-                              return normalizePrimaryLinks(next);
-                            }
-                            return next;
-                          })
-                        }
-                        className="h-10 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
-                      >
-                        移除
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLinks((prev) => {
+                              const next = prev.filter((_, idx) => idx !== index);
+                              if (next.length > 0) {
+                                return normalizePrimaryLinks(next);
+                              }
+                              return next;
+                            })
+                          }
+                          className="h-10 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
+                        >
+                          移除
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
 
-            <section className={sectionClass}>
+            <CollapsibleSection sectionKey="mediaNotes" title="縮圖與備註">
               <ThumbLinkField
                 value={form.thumbUrl}
                 onChange={(value) => setForm((prev) => ({ ...prev, thumbUrl: value }))}
@@ -801,15 +1067,134 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   placeholder="自由填寫"
                 />
               </div>
-            </section>
+            </CollapsibleSection>
 
-            <section className="space-y-3 rounded-3xl border-2 border-amber-200 bg-amber-50/60 p-6 shadow-sm">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-amber-800">心得 / 筆記</h2>
-                <p className="text-sm text-amber-700">
-                  以更自由的篇幅整理觀後感、推薦理由或紀錄重點，僅於詳細頁面顯示。
+            <CollapsibleSection
+              sectionKey="appearances"
+              title="登場列表"
+              actions={
+                <button
+                  type="button"
+                  onClick={handleAddAppearance}
+                  className="h-10 rounded-lg border px-3 text-sm text-gray-700 transition hover:border-gray-300"
+                >
+                  新增登場物件
+                </button>
+              }
+              contentClass="space-y-4"
+            >
+              <p className="text-sm text-gray-500">
+                新增角色、地點或專有名詞資訊，可拖曳左側手把調整顯示順序，新增的項目會放在列表底部。
+              </p>
+              {appearances.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-gray-200 bg-white/60 px-4 py-4 text-center text-sm text-gray-500">
+                  目前尚未新增登場物件。
                 </p>
-              </div>
+              ) : (
+                <div
+                  className="space-y-3"
+                  onDragOver={(event) => {
+                    if (draggingAppearanceIndex !== null) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }
+                  }}
+                  onDrop={handleAppearanceDropToEnd}
+                >
+                  {appearances.map((appearance, index) => {
+                    const isDragging = draggingAppearanceIndex === index;
+                    return (
+                      <div
+                        key={appearance.id}
+                        onDragOver={(event) => {
+                          if (draggingAppearanceIndex !== null) {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "move";
+                          }
+                        }}
+                        onDrop={(event) => handleAppearanceDrop(event, index)}
+                        className={`space-y-3 rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
+                          isDragging
+                            ? "border-blue-300 bg-blue-50/60"
+                            : "border-gray-200 hover:border-blue-200"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <div
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", String(index));
+                                setDraggingAppearanceIndex(index);
+                              }}
+                              onDragEnd={() => setDraggingAppearanceIndex(null)}
+                              className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm active:cursor-grabbing"
+                              aria-label="拖曳以調整順序"
+                              title="拖曳以調整順序"
+                            >
+                              <span className="text-base leading-none">≡</span>
+                            </div>
+                            <span>項目 {index + 1}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAppearance(index)}
+                            className="h-9 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
+                          >
+                            移除
+                          </button>
+                        </div>
+                        <label className="space-y-1">
+                          <span className="text-sm text-gray-600">名稱 *</span>
+                          <input
+                            value={appearance.name}
+                            onChange={(e) =>
+                              handleAppearanceChange(index, "name", e.target.value)
+                            }
+                            className={inputClass}
+                            placeholder="例如：主角名稱"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-sm text-gray-600">縮圖連結</span>
+                          <input
+                            value={appearance.thumbUrl}
+                            onChange={(e) =>
+                              handleAppearanceChange(index, "thumbUrl", e.target.value)
+                            }
+                            className={inputClass}
+                            placeholder="https://"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-sm text-gray-600">備註</span>
+                          <textarea
+                            value={appearance.note}
+                            onChange={(e) =>
+                              handleAppearanceChange(index, "note", e.target.value)
+                            }
+                            className="min-h-[100px] w-full rounded-xl border px-4 py-3 text-base"
+                            placeholder="補充相關背景或描述"
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              sectionKey="insight"
+              title="心得 / 筆記"
+              containerClass="border-2 border-amber-200 bg-amber-50/60"
+              titleClass="text-amber-800"
+              contentClass="space-y-3"
+            >
+              <p className="text-sm text-amber-700">
+                以更自由的篇幅整理觀後感、推薦理由或紀錄重點，僅於詳細頁面顯示。
+              </p>
               <textarea
                 value={form.insightNote}
                 onChange={(e) =>
@@ -819,9 +1204,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 placeholder="分享一些觀後感、推薦理由等"
                 aria-label="心得 / 筆記"
               />
-            </section>
+            </CollapsibleSection>
 
-            <section className={sectionClass}>
+            <CollapsibleSection sectionKey="status" title="狀態與更新">
               <div className="grid gap-6 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-base">評分 (0-10)</span>
@@ -891,7 +1276,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   />
                 </label>
               </div>
-            </section>
+            </CollapsibleSection>
 
             <button
               type="submit"
@@ -905,20 +1290,26 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
         {mode === "edit" && itemId ? (
           <>
-            <section className="space-y-4 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-gray-900">進度管理</h2>
+            <CollapsibleSection
+              sectionKey="progressManager"
+              title="進度管理"
+              contentClass="space-y-4"
+            >
               <p className="text-sm text-gray-500">
                 可於此管理多平台進度，並設定主進度供列表顯示與一鍵 +1。
               </p>
               <ProgressEditor itemId={itemId} />
-            </section>
-            <section className="space-y-4 rounded-3xl border border-red-100 bg-red-50/80 p-6 shadow-sm">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-red-700">刪除物件</h2>
-                <p className="text-sm text-red-600">
-                  刪除後將移除此物件及所有進度記錄，操作無法復原。
-                </p>
-              </div>
+            </CollapsibleSection>
+            <CollapsibleSection
+              sectionKey="dangerZone"
+              title="刪除物件"
+              containerClass="border-red-100 bg-red-50/80"
+              titleClass="text-red-700"
+              contentClass="space-y-4"
+            >
+              <p className="text-sm text-red-600">
+                刪除後將移除此物件及所有進度記錄，操作無法復原。
+              </p>
               {deleteError && (
                 <div className="rounded-xl bg-red-100 px-4 py-3 text-sm text-red-700">
                   {deleteError}
@@ -932,7 +1323,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               >
                 {deleting ? "刪除中…" : "永久刪除此物件"}
               </button>
-            </section>
+            </CollapsibleSection>
           </>
         ) : null}
       </div>

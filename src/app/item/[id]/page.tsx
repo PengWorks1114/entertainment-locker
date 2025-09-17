@@ -182,6 +182,43 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               return normalized;
             })()
           : [];
+        const appearances = Array.isArray(data.appearances)
+          ? data.appearances
+              .map((entry) => {
+                if (!entry || typeof entry !== "object") {
+                  return null;
+                }
+                const recordEntry = entry as {
+                  name?: unknown;
+                  thumbUrl?: unknown;
+                  note?: unknown;
+                };
+                const name =
+                  typeof recordEntry.name === "string"
+                    ? recordEntry.name.trim()
+                    : "";
+                if (!name) {
+                  return null;
+                }
+                const thumbUrl =
+                  typeof recordEntry.thumbUrl === "string"
+                    ? recordEntry.thumbUrl.trim()
+                    : "";
+                const note =
+                  typeof recordEntry.note === "string"
+                    ? recordEntry.note.trim()
+                    : "";
+                return {
+                  name,
+                  thumbUrl: thumbUrl || null,
+                  note: note || null,
+                };
+              })
+              .filter(
+                (entry): entry is { name: string; thumbUrl?: string | null; note?: string | null } =>
+                  Boolean(entry)
+              )
+          : [];
         const record: ItemRecord = {
           id: snap.id,
           uid: typeof data.uid === "string" ? data.uid : user.uid,
@@ -196,6 +233,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           progressNote: typeof data.progressNote === "string" ? data.progressNote : null,
           insightNote: typeof data.insightNote === "string" ? data.insightNote : null,
           note: typeof data.note === "string" ? data.note : null,
+          appearances,
           rating: ratingValue,
           status: statusValue,
           updateFrequency: updateFrequencyValue,
@@ -400,8 +438,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const updatedAtText = formatDateTime(item.updatedAt);
   const tags = item.tags ?? [];
   const links = item.links ?? [];
+  const appearances = item.appearances ?? [];
   const insightNote = item.insightNote ?? "";
   const hasInsightNote = insightNote.trim().length > 0;
+  const hasAppearances = appearances.length > 0;
   const tagLinkBase = item.cabinetId
     ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
     : null;
@@ -616,6 +656,43 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
           )}
         </section>
+
+        {hasAppearances && (
+          <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-900">登場列表</h2>
+              <p className="text-sm text-gray-500">依編輯順序列出重要角色、地點或其他物件。</p>
+            </div>
+            <div className="space-y-4">
+              {appearances.map((entry, index) => (
+                <div
+                  key={`${entry.name}-${index}`}
+                  className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm"
+                >
+                  {entry.thumbUrl ? (
+                    <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={entry.thumbUrl}
+                        alt={`${entry.name} 縮圖`}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="flex-1 space-y-2">
+                    <div className="text-base font-medium text-gray-900">{entry.name}</div>
+                    {entry.note && (
+                      <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                        {entry.note}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">

@@ -58,6 +58,12 @@ export type ItemLink = {
   isPrimary?: boolean;
 };
 
+export type AppearanceRecord = {
+  name: string;
+  thumbUrl?: string | null;
+  note?: string | null;
+};
+
 export type ItemRecord = {
   id: string;
   uid: string;
@@ -71,6 +77,7 @@ export type ItemRecord = {
   progressNote?: string | null;
   insightNote?: string | null;
   note?: string | null;
+  appearances: AppearanceRecord[];
   rating?: number | null;
   status: ItemStatus;
   updateFrequency?: UpdateFrequency | null;

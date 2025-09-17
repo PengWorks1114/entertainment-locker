@@ -8,6 +8,18 @@ import {
   type UpdateFrequency,
 } from "./types";
 
+export type AppearanceFormInput = {
+  name?: string | undefined;
+  thumbUrl?: string | undefined;
+  note?: string | undefined;
+};
+
+export type AppearanceFormData = {
+  name: string;
+  thumbUrl?: string;
+  note?: string;
+};
+
 export type ItemFormInput = {
   cabinetId: string;
   titleZh: string;
@@ -19,6 +31,7 @@ export type ItemFormInput = {
   progressNote?: string | undefined;
   insightNote?: string | undefined;
   note?: string | undefined;
+  appearances?: AppearanceFormInput[] | undefined;
   rating?: number | null | undefined;
   status: ItemStatus;
   updateFrequency: UpdateFrequency | null;
@@ -36,6 +49,7 @@ export type ItemFormData = {
   progressNote?: string;
   insightNote?: string;
   note?: string;
+  appearances: AppearanceFormData[];
   rating?: number;
   status: ItemStatus;
   updateFrequency: UpdateFrequency | null;
@@ -127,6 +141,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     updateFrequency,
     tags: [],
     links: [],
+    appearances: [],
   };
 
   if (input.titleAlt) {
@@ -205,6 +220,44 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     if (note) {
       data.note = note;
     }
+  }
+
+  if (input.appearances) {
+    if (!Array.isArray(input.appearances)) {
+      throw new ValidationError("登場列表格式錯誤");
+    }
+    const appearances: AppearanceFormData[] = [];
+    input.appearances.forEach((entry, index) => {
+      if (!entry) {
+        return;
+      }
+      const record = entry as AppearanceFormInput;
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const thumbUrl =
+        typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
+      const note = typeof record.note === "string" ? record.note.trim() : "";
+
+      if (!name) {
+        if (thumbUrl || note) {
+          throw new ValidationError("登場物件需填寫名稱", {
+            path: ["appearances", index, "name"],
+            message: "登場物件需填寫名稱",
+          });
+        }
+        return;
+      }
+
+      if (thumbUrl) {
+        validateUrl(thumbUrl, "請輸入有效的登場物件縮圖網址");
+      }
+
+      appearances.push({
+        name,
+        thumbUrl: thumbUrl || undefined,
+        note: note || undefined,
+      });
+    });
+    data.appearances = appearances;
   }
 
   if (input.rating !== undefined && input.rating !== null) {
