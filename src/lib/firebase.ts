@@ -27,6 +27,8 @@ const REQUIRED_ENV_KEYS: FirebaseEnvKey[] = [
   "NEXT_PUBLIC_FIREBASE_APP_ID",
 ];
 
+let hasLoggedMissingConfig = false;
+
 function readFirebaseConfig(): Nullable<{
   apiKey: string;
   authDomain: string;
@@ -38,8 +40,9 @@ function readFirebaseConfig(): Nullable<{
   const missingKeys = REQUIRED_ENV_KEYS.filter((key) => !process.env[key]);
 
   if (missingKeys.length > 0) {
-    if (process.env.NODE_ENV !== "test") {
-      console.error(
+    if (!hasLoggedMissingConfig && process.env.NODE_ENV !== "test") {
+      hasLoggedMissingConfig = true;
+      console.warn(
         `Firebase 環境變數缺失：${missingKeys.join(", ")}`,
         "請確認 .env.local 是否存在並包含所需設定。"
       );
@@ -47,6 +50,7 @@ function readFirebaseConfig(): Nullable<{
     return null;
   }
 
+  hasLoggedMissingConfig = false;
   return {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
