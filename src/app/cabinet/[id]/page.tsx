@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/types";
 
 type CabinetPageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 type SortOption = "updated" | "title" | "rating" | "nextUpdate";
@@ -52,6 +52,7 @@ const defaultFilters: FilterState = {
 };
 
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
+  const { id: cabinetId } = use(params);
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
@@ -84,7 +85,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setCabinetLoading(true);
     setCabinetError(null);
     setCanView(false);
-    const cabinetRef = doc(db, "cabinet", params.id);
+    const cabinetRef = doc(db, "cabinet", cabinetId);
     getDoc(cabinetRef)
       .then((snap) => {
         if (!active) return;
@@ -112,7 +113,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return () => {
       active = false;
     };
-  }, [user, params.id]);
+  }, [user, cabinetId]);
 
   useEffect(() => {
     if (!user || !canView) {
@@ -124,7 +125,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     const q = query(
       collection(db, "item"),
       where("uid", "==", user.uid),
-      where("cabinetId", "==", params.id)
+      where("cabinetId", "==", cabinetId)
     );
     const unsub = onSnapshot(
       q,
@@ -163,7 +164,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           return {
             id: docSnap.id,
             uid: typeof data.uid === "string" ? data.uid : user.uid,
-            cabinetId: typeof data.cabinetId === "string" ? data.cabinetId : params.id,
+            cabinetId: typeof data.cabinetId === "string" ? data.cabinetId : cabinetId,
             titleZh:
               typeof data.titleZh === "string" && data.titleZh ? data.titleZh : "(未命名物件)",
             titleAlt: typeof data.titleAlt === "string" ? data.titleAlt : null,
@@ -198,7 +199,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       }
     );
     return () => unsub();
-  }, [user, canView, params.id]);
+  }, [user, canView, cabinetId]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -361,14 +362,14 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
-            <p className="text-sm text-gray-500">櫃子 ID：{params.id}</p>
+            <p className="text-sm text-gray-500">櫃子 ID：{cabinetId}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             <Link href="/cabinets" className={secondaryButtonClass}>
               返回櫃子列表
             </Link>
             <Link
-              href={`/item/new?cabinetId=${encodeURIComponent(params.id)}`}
+              href={`/item/new?cabinetId=${encodeURIComponent(cabinetId)}`}
               className={secondaryButtonClass}
             >
               在此櫃子新增物件

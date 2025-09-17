@@ -233,7 +233,7 @@ export default function ItemCard({ item }: ItemCardProps) {
             {updating ? "+1…" : "+1"}
           </button>
           <Link
-            href={`/item/${item.id}`}
+            href={`/item/${item.id}/edit`}
             className="text-xs text-gray-500 underline-offset-4 hover:underline"
           >
             編輯物件

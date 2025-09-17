@@ -335,7 +335,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           createdAt: serverTimestamp(),
         });
         setMessage("已建立，已自動切換至編輯頁面");
-        router.replace(`/item/${docRef.id}`);
+        router.replace(`/item/${docRef.id}/edit`);
       }
 
       setForm((prev) => ({
