@@ -15,6 +15,7 @@ import {
 
 import ItemCard from "@/components/ItemCard";
 import { auth, db } from "@/lib/firebase";
+import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
@@ -40,7 +41,32 @@ type FilterState = {
   sort: SortOption;
 };
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 10;
+
+function getPaginationRange(totalPages: number, currentPage: number): (number | "ellipsis")[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const pages: (number | "ellipsis")[] = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) {
+    pages.push("ellipsis");
+  }
+
+  for (let page = start; page <= end; page += 1) {
+    pages.push(page);
+  }
+
+  if (end < totalPages - 1) {
+    pages.push("ellipsis");
+  }
+
+  pages.push(totalPages);
+  return pages;
+}
 
 const defaultFilters: FilterState = {
   search: "",
@@ -63,7 +89,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -202,8 +228,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   }, [user, canView, cabinetId]);
 
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [filters.search, filters.status, filters.ratingMin, filters.ratingMax, filters.hasNextUpdate, filters.sort]);
+    setCurrentPage(1);
+  }, [
+    filters.search,
+    filters.status,
+    filters.ratingMin,
+    filters.ratingMax,
+    filters.hasNextUpdate,
+    filters.sort,
+  ]);
 
   const filteredItems = useMemo(() => {
     const searchTerm = filters.search.trim().toLowerCase();
@@ -275,8 +308,18 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return sorted;
   }, [items, filters]);
 
-  const visibleItems = filteredItems.slice(0, visibleCount);
-  const hasMore = filteredItems.length > visibleCount;
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const visibleItems = filteredItems.slice(startIndex, startIndex + PAGE_SIZE);
+  const pageRange = getPaginationRange(totalPages, currentPage);
+  const rangeStart = filteredItems.length === 0 ? 0 : startIndex + 1;
+  const rangeEnd = Math.min(filteredItems.length, startIndex + visibleItems.length);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
   const hasActiveFilters =
     filters.search.trim().length > 0 ||
     filters.status !== "all" ||
@@ -296,10 +339,6 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
   const selectClass = "h-12 w-full rounded-xl border px-4 text-base";
   const smallInputClass = "h-10 w-full rounded-lg border px-3 text-sm";
-  const secondaryButtonClass =
-    "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
-  const subtleButtonClass =
-    "rounded-lg border px-3 py-2 text-sm text-gray-600 transition hover:border-gray-300 hover:text-gray-900";
 
   if (!authChecked) {
     return (
@@ -351,7 +390,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             {cabinetError}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/cabinets" className={`${secondaryButtonClass} w-full sm:w-auto`}>
+            <Link href="/cabinets" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
               返回櫃子列表
             </Link>
           </div>
@@ -366,18 +405,18 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
-            <Link href="/cabinets" className={`${secondaryButtonClass} w-full sm:w-auto`}>
+            <Link href="/cabinets" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
               返回櫃子列表
             </Link>
             <Link
               href={`/item/new?cabinetId=${encodeURIComponent(cabinetId)}`}
-              className={`${secondaryButtonClass} w-full sm:w-auto`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
               在此櫃子新增物件
             </Link>
             <Link
               href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
-              className={`${secondaryButtonClass} w-full sm:w-auto`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
               編輯櫃子
             </Link>
@@ -469,7 +508,11 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
             <span>共 {filteredItems.length} 件物件</span>
             {hasActiveFilters && (
-              <button type="button" onClick={resetFilters} className={subtleButtonClass}>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className={buttonClass({ variant: "subtle", size: "sm" })}
+              >
                 重設篩選
               </button>
             )}
@@ -498,16 +541,65 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               ))}
             </div>
           )}
-
-          {hasMore && !itemsLoading && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
-                className="h-12 rounded-xl border px-6 text-sm text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
-              >
-                載入更多
-              </button>
+          {!itemsLoading && visibleItems.length > 0 && (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border bg-white/70 p-4 text-sm text-gray-600 sm:flex-row sm:justify-between">
+              <div>
+                顯示第 {rangeStart} - {rangeEnd} 筆，共 {filteredItems.length} 件
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  最前頁
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  前頁
+                </button>
+                {pageRange.map((entry, index) =>
+                  entry === "ellipsis" ? (
+                    <span key={`ellipsis-${index}`} className="px-1 text-gray-400">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={entry}
+                      type="button"
+                      onClick={() => setCurrentPage(entry)}
+                      className={
+                        entry === currentPage
+                          ? buttonClass({ variant: "primary", size: "sm" })
+                          : buttonClass({ variant: "secondary", size: "sm" })
+                      }
+                    >
+                      {entry}
+                    </button>
+                  )
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  次頁
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  最後頁
+                </button>
+              </div>
             </div>
           )}
         </section>

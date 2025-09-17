@@ -25,6 +25,7 @@ import {
   type ItemRecord,
   type ProgressType,
 } from "@/lib/types";
+import { buttonClass } from "@/lib/ui";
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
   try {
@@ -224,7 +225,7 @@ export default function ItemCard({ item }: ItemCardProps) {
           type="button"
           onClick={handleIncrement}
           disabled={updating || progressLoading}
-          className="inline-flex h-10 items-center justify-center rounded-xl bg-gray-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className={buttonClass({ variant: "primary" })}
         >
           {updating ? "+1…" : "+1"}
         </button>
@@ -283,11 +284,11 @@ export default function ItemCard({ item }: ItemCardProps) {
             </div>
 
             {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+              <div className="flex min-w-0 flex-wrap gap-2 text-xs text-gray-500">
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-gray-600"
+                    className="inline-flex shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-gray-600"
                   >
                     #{tag}
                   </span>
@@ -301,7 +302,7 @@ export default function ItemCard({ item }: ItemCardProps) {
         <div className="flex w-full flex-col items-stretch gap-2 md:w-48">
           <Link
             href={`/item/${item.id}`}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+            className={buttonClass({ variant: "secondary" })}
           >
             查看詳細頁面
           </Link>
@@ -310,7 +311,7 @@ export default function ItemCard({ item }: ItemCardProps) {
               href={primaryLink.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-gray-200 px-4 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+              className={buttonClass({ variant: "secondary" })}
             >
               點我觀看
             </a>
@@ -318,7 +319,7 @@ export default function ItemCard({ item }: ItemCardProps) {
             <button
               type="button"
               disabled
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-dashed border-gray-200 px-4 text-sm font-medium text-gray-400"
+              className={`${buttonClass({ variant: "secondary" })} border-dashed text-gray-400`}
             >
               尚未提供連結
             </button>

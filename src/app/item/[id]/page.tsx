@@ -15,6 +15,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
@@ -38,9 +39,6 @@ const updateFrequencyLabelMap = new Map(
 const progressTypeLabelMap = new Map(
   PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
 );
-
-const secondaryButtonClass =
-  "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
 
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
@@ -350,7 +348,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div className="flex flex-wrap gap-2 text-sm">
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                className={secondaryButtonClass}
+                className={buttonClass({ variant: "secondary" })}
               >
                 檢視櫃子
               </Link>
@@ -410,7 +408,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 href={primaryLink.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`${secondaryButtonClass} w-full sm:w-auto`}
+                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
               >
                 點我觀看
               </a>
@@ -418,14 +416,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             {item.cabinetId && !cabinetMissing && (
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                className={`${secondaryButtonClass} w-full sm:w-auto`}
+                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
               >
                 檢視櫃子
               </Link>
             )}
             <Link
               href={`/item/${encodeURIComponent(item.id)}/edit`}
-              className={`${secondaryButtonClass} w-full sm:w-auto`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
               編輯物件
             </Link>
@@ -435,7 +433,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         <section className="rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
           <div className="flex flex-col gap-6 md:flex-row">
             {item.thumbUrl && (
-              <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden rounded-xl border bg-white/80 md:w-56">
+              <div className="relative mx-auto aspect-[3/4] w-40 shrink-0 overflow-hidden rounded-xl border bg-white/80 sm:w-48 md:mx-0 md:w-56">
                 {canUseOptimizedThumb ? (
                   <Image
                     src={item.thumbUrl}
@@ -565,15 +563,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               {progressError}
             </div>
           )}
-
-          <div className="flex justify-end">
-            <Link
-              href={`/item/${encodeURIComponent(item.id)}/edit`}
-              className={`${secondaryButtonClass} w-full sm:w-auto`}
-            >
-              前往編輯頁面
-            </Link>
-          </div>
         </section>
       </div>
     </main>

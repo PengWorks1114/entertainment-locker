@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
+import { buttonClass } from "@/lib/ui";
 
 type Cabinet = { id: string; name: string };
 
@@ -109,10 +110,6 @@ export default function CabinetsPage() {
   }
 
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
-  const primaryButtonClass =
-    "h-12 rounded-xl bg-black px-6 text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
-  const secondaryButtonClass =
-    "inline-flex h-10 items-center justify-center rounded-full border border-gray-200 bg-white px-4 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
 
   const hasCabinet = list.length > 0;
   const feedbackNode = useMemo(() => {
@@ -168,7 +165,7 @@ export default function CabinetsPage() {
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
             <button
               onClick={clearCache}
-              className={`${secondaryButtonClass} w-full sm:w-auto`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
               title="清除本機 Firestore 快取並重新載入"
             >
               清除快取
@@ -187,7 +184,10 @@ export default function CabinetsPage() {
                 className={inputClass}
               />
             </label>
-            <button onClick={addCabinet} className={primaryButtonClass}>
+            <button
+              onClick={addCabinet}
+              className={buttonClass({ variant: "primary", size: "lg" })}
+            >
               新增櫃子
             </button>
           </div>
@@ -216,13 +216,13 @@ export default function CabinetsPage() {
                       <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
                         <Link
                           href={`/cabinet/${encodedId}`}
-                          className={`${secondaryButtonClass} w-full sm:w-auto`}
+                          className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
                         >
                           查看物件
                         </Link>
                         <Link
                           href={`/cabinet/${encodedId}/edit`}
-                          className={`${secondaryButtonClass} w-full sm:w-auto`}
+                          className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
                         >
                           編輯櫃子
                         </Link>

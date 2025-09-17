@@ -34,6 +34,7 @@ import {
   type ProgressFormData,
 } from "@/lib/validators";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
+import { buttonClass, pillBadgeClass } from "@/lib/ui";
 
 const defaultType: ProgressType = "chapter";
 
@@ -235,7 +236,7 @@ function ProgressRow({
             type="button"
             onClick={() => onSave(record.id, form)}
             disabled={busy}
-            className="h-10 rounded-lg border px-3 text-sm"
+            className={buttonClass({ variant: "primary", size: "sm" })}
           >
             {saving ? "儲存中…" : "儲存"}
           </button>
@@ -243,12 +244,12 @@ function ProgressRow({
             type="button"
             onClick={() => onDelete(record.id)}
             disabled={busy}
-            className="h-10 rounded-lg border px-3 text-sm text-red-600"
+            className={buttonClass({ variant: "outlineDanger", size: "sm" })}
           >
             {deleting ? "刪除中…" : "刪除"}
           </button>
           {record.isPrimary ? (
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-700">
+            <span className={pillBadgeClass}>
               主進度
             </span>
           ) : (
@@ -256,7 +257,7 @@ function ProgressRow({
               type="button"
               onClick={() => onSetPrimary(record.id)}
               disabled={primaryBusy}
-              className="h-10 rounded-lg border px-3 text-sm"
+              className={buttonClass({ variant: "secondary", size: "sm" })}
             >
               {primaryUpdatingId === record.id ? "設定中…" : "設為主進度"}
             </button>
@@ -589,7 +590,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
               type="button"
               onClick={handleCancelNewForm}
               disabled={creating}
-              className="text-sm text-gray-500 underline-offset-4 hover:underline disabled:cursor-not-allowed"
+              className={buttonClass({ variant: "subtle", size: "sm" })}
             >
               收合
             </button>
@@ -629,7 +630,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
                 type="button"
                 onClick={handleCreate}
                 disabled={creating || Boolean(primaryUpdatingId)}
-                className="h-12 w-full rounded-xl bg-black text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+                className={`${buttonClass({ variant: "primary", size: "lg" })} w-full sm:w-auto`}
               >
                 {creating ? "新增中…" : "儲存進度"}
               </button>
@@ -637,7 +638,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
                 type="button"
                 onClick={handleCancelNewForm}
                 disabled={creating}
-                className="h-12 w-full rounded-xl border border-gray-300 text-base text-gray-700 transition hover:border-gray-400 hover:text-gray-900 disabled:cursor-not-allowed sm:w-auto"
+                className={`${buttonClass({ variant: "secondary", size: "lg" })} w-full sm:w-auto`}
               >
                 取消
               </button>
@@ -648,7 +649,7 @@ export default function ProgressEditor({ itemId }: ProgressEditorProps) {
             type="button"
             onClick={handleOpenNewForm}
             disabled={Boolean(primaryUpdatingId)}
-            className="h-12 w-full rounded-xl bg-black text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className={buttonClass({ variant: "primary", size: "lg" })}
           >
             新增進度
           </button>

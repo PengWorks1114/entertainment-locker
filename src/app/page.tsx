@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export default function Home() {
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -9,27 +7,6 @@ export default function Home() {
           <p className="text-base text-gray-600">
             統整漫畫、小說、影視與遊戲進度，支援多平台同步與提醒。
           </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Link
-            href="/login"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-4 text-base text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-          >
-            登入或註冊
-          </Link>
-          <Link
-            href="/cabinets"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-4 text-base text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-          >
-            查看櫃子列表
-          </Link>
-          <Link
-            href="/item/new"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-4 text-base text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-          >
-            建立新物件
-          </Link>
         </div>
 
         <p className="text-sm text-gray-500">
