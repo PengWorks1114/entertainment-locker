@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
-import { auth, db } from "@/lib/firebase";
-import { onAuthStateChanged, User } from "firebase/auth";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   addDoc,
   clearIndexedDbPersistence,
@@ -14,59 +15,87 @@ import {
   where,
 } from "firebase/firestore";
 
+import { auth, db } from "@/lib/firebase";
+
 type Cabinet = { id: string; name: string };
+
+type Feedback = {
+  type: "error" | "success";
+  message: string;
+};
 
 export default function CabinetsPage() {
   const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [name, setName] = useState("");
   const [list, setList] = useState<Cabinet[]>([]);
-  const [msg, setMsg] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   useEffect(() => {
-    const unAuth = onAuthStateChanged(auth, (u) => setUser(u));
+    const unAuth = onAuthStateChanged(auth, (current) => {
+      setUser(current);
+      setAuthChecked(true);
+    });
     return () => unAuth();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setList([]);
+      return;
+    }
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
-    const unSub = onSnapshot(q, (snap) => {
-      const rows: Cabinet[] = snap.docs
-        .map((d) => {
-          const data = d.data();
-          const createdAt = data?.createdAt;
-          const createdMs =
-            createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
-          return {
-            id: d.id,
-            name: (data?.name as string) || "",
-            createdMs,
-          };
-        })
-        .sort((a, b) => b.createdMs - a.createdMs)
-        .map((item) => ({ id: item.id, name: item.name }));
-      setList(rows);
-    });
+    const unSub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: Cabinet[] = snap.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const createdAt = data?.createdAt;
+            const createdMs =
+              createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+            return {
+              id: docSnap.id,
+              name: (data?.name as string) || "",
+              createdMs,
+            };
+          })
+          .sort((a, b) => b.createdMs - a.createdMs)
+          .map((item) => ({ id: item.id, name: item.name }));
+        setList(rows);
+        setFeedback((prev) => (prev?.type === "error" ? null : prev));
+      },
+      () => {
+        setFeedback({ type: "error", message: "載入櫃子清單時發生錯誤" });
+      }
+    );
     return () => unSub();
   }, [user]);
 
   async function addCabinet() {
     if (!user) {
-      setMsg("請先登入");
+      setFeedback({ type: "error", message: "請先登入" });
       return;
     }
-    if (!name.trim()) {
-      setMsg("名稱不可為空");
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setFeedback({ type: "error", message: "名稱不可為空" });
       return;
     }
-    setMsg("");
-    await addDoc(collection(db, "cabinet"), {
-      uid: user.uid,
-      name: name.trim(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    setName("");
+    setFeedback(null);
+    try {
+      await addDoc(collection(db, "cabinet"), {
+        uid: user.uid,
+        name: trimmed,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setName("");
+      setFeedback({ type: "success", message: "已新增櫃子" });
+    } catch (err) {
+      console.error("新增櫃子時發生錯誤", err);
+      setFeedback({ type: "error", message: "新增櫃子時發生錯誤" });
+    }
   }
 
   async function clearCache() {
@@ -79,62 +108,139 @@ export default function CabinetsPage() {
     location.reload();
   }
 
+  const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
+  const primaryButtonClass =
+    "h-12 rounded-xl bg-black px-6 text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
+  const secondaryButtonClass =
+    "h-10 rounded-full border border-gray-200 bg-white px-4 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
+
+  const hasCabinet = list.length > 0;
+  const feedbackNode = useMemo(() => {
+    if (!feedback) return null;
+    const baseClass =
+      feedback.type === "error"
+        ? "rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
+        : "rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700";
+    return <div className={baseClass}>{feedback.message}</div>;
+  }, [feedback]);
+
+  if (!authChecked) {
+    return (
+      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+        <div className="mx-auto w-full max-w-2xl rounded-2xl border bg-white/70 p-6 text-base shadow-sm">
+          正在確認登入狀態…
+        </div>
+      </main>
+    );
+  }
+
   if (!user) {
     return (
-      <main className="min-h-[100dvh] p-6">
-        <h1 className="text-2xl font-semibold">櫃子</h1>
-        <p className="mt-4 text-base">
-          未登入。請前往{" "}
-          <a href="/login" className="underline">
-            /login
-          </a>
-        </p>
+      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <h1 className="text-2xl font-semibold text-gray-900">櫃子</h1>
+          <p className="text-base text-gray-600">
+            未登入。請前往
+            <Link href="/login" className="ml-1 underline">
+              /login
+            </Link>
+            以管理櫃子。
+          </p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-[100dvh] p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">櫃子</h1>
-        <button
-          onClick={clearCache}
-          className="h-10 px-3 rounded border text-sm"
-          title="清除本機 Firestore 快取並重新載入"
-        >
-          清除快取
-        </button>
-      </div>
+    <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-gray-900">櫃子</h1>
+            <p className="text-sm text-gray-500">
+              建立不同作品分類，方便在物件列表間切換與整理。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Link href="/item/new" className={secondaryButtonClass}>
+              快速新增物件
+            </Link>
+            <button
+              onClick={clearCache}
+              className={secondaryButtonClass}
+              title="清除本機 Firestore 快取並重新載入"
+            >
+              清除快取
+            </button>
+          </div>
+        </header>
 
-      <div className="flex gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="輸入櫃子名稱（例如：漫畫）"
-          className="flex-1 h-12 rounded-xl border px-4 text-base"
-        />
-        <button
-          onClick={addCabinet}
-          className="h-12 px-5 rounded-xl bg-black text-white text-base"
-        >
-          新增
-        </button>
-      </div>
-      {msg && <div className="text-sm">{msg}</div>}
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex-1 space-y-1">
+              <span className="text-sm text-gray-600">櫃子名稱</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="例如：漫畫、小說、遊戲"
+                className={inputClass}
+              />
+            </label>
+            <button onClick={addCabinet} className={primaryButtonClass}>
+              新增櫃子
+            </button>
+          </div>
+          {feedbackNode}
+        </section>
 
-      <ul className="space-y-3">
-        {list.map((row) => (
-          <li
-            key={row.id}
-            className="h-16 rounded-xl border px-4 flex items-center text-base"
-          >
-            {row.name}
-          </li>
-        ))}
-        {list.length === 0 && (
-          <li className="text-sm text-gray-500">尚無資料</li>
-        )}
-      </ul>
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900">我的櫃子</h2>
+          {hasCabinet ? (
+            <ul className="space-y-4">
+              {list.map((row) => {
+                const displayName = row.name || "未命名櫃子";
+                const encodedId = encodeURIComponent(row.id);
+                return (
+                  <li
+                    key={row.id}
+                    className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <Link
+                          href={`/cabinet/${encodedId}`}
+                          className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                        >
+                          {displayName}
+                        </Link>
+                        <p className="text-xs text-gray-500">ID：{row.id}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-sm">
+                        <Link
+                          href={`/cabinet/${encodedId}`}
+                          className={secondaryButtonClass}
+                        >
+                          查看物件
+                        </Link>
+                        <Link
+                          href={`/item/new?cabinetId=${encodedId}`}
+                          className={secondaryButtonClass}
+                        >
+                          新增物件
+                        </Link>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+              尚未建立櫃子，先新增一個分類吧！
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   );
 }
