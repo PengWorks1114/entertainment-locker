@@ -11,10 +11,10 @@ export const ITEM_STATUS_VALUES = [
 export type ItemStatus = (typeof ITEM_STATUS_VALUES)[number];
 
 export const ITEM_STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
-  { value: "planning", label: "待開啟" },
-  { value: "in-progress", label: "進行中" },
-  { value: "completed", label: "已完成" },
-  { value: "on-hold", label: "暫停" },
+  { value: "planning", label: "待觀看" },
+  { value: "in-progress", label: "連載中" },
+  { value: "completed", label: "已完結" },
+  { value: "on-hold", label: "停更" },
   { value: "dropped", label: "棄追" },
 ];
 
@@ -55,6 +55,7 @@ export const PROGRESS_TYPE_OPTIONS: { value: ProgressType; label: string }[] = [
 export type ItemLink = {
   label: string;
   url: string;
+  isPrimary?: boolean;
 };
 
 export type ItemRecord = {

@@ -155,6 +155,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     if (!Array.isArray(input.links)) {
       throw new ValidationError("連結格式錯誤");
     }
+    let hasPrimary = false;
     const links: ItemLink[] = input.links.map((link) => {
       const label = assertString(link.label, "連結標籤需為文字").trim();
       const url = assertString(link.url, "連結網址需為文字").trim();
@@ -162,8 +163,16 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
         throw new ValidationError("連結需同時填寫標籤與網址");
       }
       validateUrl(url, "請輸入有效的連結網址");
-      return { label, url };
+      const requestedPrimary = Boolean(link.isPrimary);
+      const isPrimary = requestedPrimary && !hasPrimary;
+      if (isPrimary) {
+        hasPrimary = true;
+      }
+      return { label, url, isPrimary };
     });
+    if (!hasPrimary && links.length > 0) {
+      links[0] = { ...links[0], isPrimary: true };
+    }
     data.links = links;
   }
 

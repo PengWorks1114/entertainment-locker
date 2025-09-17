@@ -35,7 +35,25 @@ import {
 import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 type CabinetOption = { id: string; name: string };
-type LinkState = { label: string; url: string };
+type LinkState = { label: string; url: string; isPrimary: boolean };
+
+function normalizePrimaryLinks(list: LinkState[]): LinkState[] {
+  if (list.length === 0) {
+    return list;
+  }
+  let primaryFound = false;
+  const normalized = list.map((link) => {
+    if (link.isPrimary && !primaryFound) {
+      primaryFound = true;
+      return { ...link, isPrimary: true };
+    }
+    return { ...link, isPrimary: false };
+  });
+  if (!primaryFound) {
+    normalized[0] = { ...normalized[0], isPrimary: true };
+  }
+  return normalized;
+}
 
 type ItemFormState = {
   cabinetId: string;
@@ -195,13 +213,20 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         });
         setLinks(
           Array.isArray(data.links)
-            ? data.links.map((link: unknown) => {
-                const record = link as { label?: unknown; url?: unknown };
-                return {
-                  label: typeof record?.label === "string" ? record.label : "",
-                  url: typeof record?.url === "string" ? record.url : "",
-                };
-              })
+            ? normalizePrimaryLinks(
+                data.links.map((link: unknown) => {
+                  const record = link as {
+                    label?: unknown;
+                    url?: unknown;
+                    isPrimary?: unknown;
+                  };
+                  return {
+                    label: typeof record?.label === "string" ? record.label : "",
+                    url: typeof record?.url === "string" ? record.url : "",
+                    isPrimary: Boolean(record?.isPrimary),
+                  };
+                })
+              )
             : []
         );
       })
@@ -270,6 +295,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     const normalizedLinks = links.map((link) => ({
       label: link.label.trim(),
       url: link.url.trim(),
+      isPrimary: link.isPrimary,
     }));
 
     const hasHalfFilled = normalizedLinks.some(
@@ -281,9 +307,23 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       return;
     }
 
-    const filteredLinks = normalizedLinks.filter(
+    let filteredLinks = normalizedLinks.filter(
       (link) => link.label && link.url
     );
+
+    if (filteredLinks.length > 0) {
+      let hasPrimary = false;
+      filteredLinks = filteredLinks.map((link) => {
+        if (link.isPrimary && !hasPrimary) {
+          hasPrimary = true;
+          return { ...link, isPrimary: true };
+        }
+        return { ...link, isPrimary: false };
+      });
+      if (!hasPrimary) {
+        filteredLinks[0] = { ...filteredLinks[0], isPrimary: true };
+      }
+    }
 
     let nextUpdateDate: Date | undefined;
     if (form.nextUpdateAt) {
@@ -366,7 +406,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           : "",
         thumbUrl: parsedData.thumbUrl ?? "",
       }));
-      setLinks(parsedData.links.map((link) => ({ ...link })));
+      setLinks(
+        normalizePrimaryLinks(
+          parsedData.links.map((link) => ({
+            label: link.label,
+            url: link.url,
+            isPrimary: Boolean(link.isPrimary),
+          }))
+        )
+      );
     } catch (err) {
       if (err instanceof ValidationError) {
         setError(err.message);
@@ -540,7 +588,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 <span className="text-base">來源連結</span>
                 <button
                   type="button"
-                  onClick={() => setLinks((prev) => [...prev, { label: "", url: "" }])}
+                  onClick={() =>
+                    setLinks((prev) =>
+                      normalizePrimaryLinks([
+                        ...prev,
+                        { label: "", url: "", isPrimary: prev.length === 0 },
+                      ])
+                    )
+                  }
                   className="h-10 rounded-lg border px-3 text-sm text-gray-700 transition hover:border-gray-300"
                 >
                   新增連結
@@ -551,7 +606,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               )}
               <div className="space-y-3">
                 {links.map((link, index) => (
-                  <div key={index} className="space-y-2 rounded-xl border bg-white/80 p-4">
+                  <div key={index} className="space-y-3 rounded-xl border bg-white/80 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <label className="flex-1 space-y-1">
                         <span className="text-sm text-gray-600">標籤</span>
@@ -586,16 +641,41 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                         />
                       </label>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <label className="flex items-center gap-2 text-sm text-gray-600">
+                        <input
+                          type="radio"
+                          name="primary-link"
+                          checked={link.isPrimary}
+                          onChange={() =>
+                            setLinks((prev) =>
+                              prev.map((item, idx) => ({
+                                ...item,
+                                isPrimary: idx === index,
+                              }))
+                            )
+                          }
+                          className="h-4 w-4"
+                        />
+                        <span>作為「點我觀看」按鈕</span>
+                      </label>
+                      <div className="flex justify-end">
                       <button
                         type="button"
                         onClick={() =>
-                          setLinks((prev) => prev.filter((_, idx) => idx !== index))
+                          setLinks((prev) => {
+                            const next = prev.filter((_, idx) => idx !== index);
+                            if (next.length > 0) {
+                              return normalizePrimaryLinks(next);
+                            }
+                            return next;
+                          })
                         }
                         className="h-10 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
                       >
                         移除
                       </button>
+                      </div>
                     </div>
                   </div>
                 ))}

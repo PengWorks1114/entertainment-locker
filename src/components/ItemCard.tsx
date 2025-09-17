@@ -160,9 +160,14 @@ export default function ItemCard({ item }: ItemCardProps) {
     if (!item.links || item.links.length === 0) {
       return null;
     }
-    return (
-      item.links.find((link) => link.url && link.url.trim().length > 0) ?? null
+    const validLinks = item.links.filter(
+      (link) => typeof link.url === "string" && link.url.trim().length > 0
     );
+    if (validLinks.length === 0) {
+      return null;
+    }
+    const flagged = validLinks.find((link) => link.isPrimary);
+    return flagged ?? validLinks[0];
   }, [item.links]);
 
   async function handleIncrement() {
@@ -284,15 +289,18 @@ export default function ItemCard({ item }: ItemCardProps) {
             </div>
 
             {tags.length > 0 && (
-              <div className="flex min-w-0 flex-wrap gap-2 text-xs text-gray-500">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex shrink-0 items-center rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-gray-600"
-                  >
-                    #{tag}
-                  </span>
-                ))}
+              <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                <span className="text-xs font-medium text-gray-500">標籤</span>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 sm:grid-cols-3 lg:grid-cols-5">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-1"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 

@@ -152,14 +152,35 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               .filter((tag) => tag.length > 0)
           : [];
         const links = Array.isArray(data.links)
-          ? data.links
-              .map((link) => {
-                const record = link as { label?: unknown; url?: unknown };
-                const label = typeof record.label === "string" ? record.label : "";
-                const url = typeof record.url === "string" ? record.url : "";
-                return { label, url };
-              })
-              .filter((link) => link.label && link.url)
+          ? (() => {
+              const mapped = data.links
+                .map((link) => {
+                  const record = link as {
+                    label?: unknown;
+                    url?: unknown;
+                    isPrimary?: unknown;
+                  };
+                  const label = typeof record.label === "string" ? record.label : "";
+                  const url = typeof record.url === "string" ? record.url : "";
+                  return { label, url, isPrimary: Boolean(record.isPrimary) };
+                })
+                .filter((link) => link.label && link.url);
+              if (mapped.length === 0) {
+                return [];
+              }
+              let hasPrimary = false;
+              const normalized = mapped.map((link) => {
+                if (link.isPrimary && !hasPrimary) {
+                  hasPrimary = true;
+                  return { ...link, isPrimary: true };
+                }
+                return { ...link, isPrimary: false };
+              });
+              if (!hasPrimary) {
+                normalized[0] = { ...normalized[0], isPrimary: true };
+              }
+              return normalized;
+            })()
           : [];
         const record: ItemRecord = {
           id: snap.id,
@@ -290,9 +311,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     if (!item || !Array.isArray(item.links)) {
       return null;
     }
-    return (
-      item.links.find((link) => link.url && link.url.trim().length > 0) ?? null
+    const validLinks = item.links.filter(
+      (link) => typeof link.url === "string" && link.url.trim().length > 0
     );
+    if (validLinks.length === 0) {
+      return null;
+    }
+    const flagged = validLinks.find((link) => link.isPrimary);
+    return flagged ?? validLinks[0];
   }, [item]);
 
   if (!authChecked) {
@@ -431,7 +457,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         </header>
 
         <section className="rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
-          <div className="flex flex-col gap-6 md:flex-row">
+          <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
             {item.thumbUrl && (
               <div className="relative mx-auto aspect-[3/4] w-40 shrink-0 overflow-hidden rounded-xl border bg-white/80 sm:w-48 md:mx-0 md:w-56">
                 {canUseOptimizedThumb ? (
@@ -508,7 +534,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   <div className="text-sm text-gray-500">來源連結</div>
                   <ul className="space-y-2 text-sm">
                     {links.map((link) => (
-                      <li key={`${link.label}-${link.url}`}>
+                      <li
+                        key={`${link.label}-${link.url}`}
+                        className="flex flex-wrap items-center gap-2"
+                      >
                         <a
                           href={link.url}
                           target="_blank"
@@ -517,6 +546,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         >
                           {link.label}
                         </a>
+                        {link.isPrimary && (
+                          <span className="text-xs text-emerald-600">（點我觀看）</span>
+                        )}
                       </li>
                     ))}
                   </ul>
