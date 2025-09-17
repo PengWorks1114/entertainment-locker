@@ -32,6 +32,7 @@ import {
   ValidationError,
   type ItemFormData,
 } from "@/lib/validators";
+import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 type CabinetOption = { id: string; name: string };
 type LinkState = { label: string; url: string };
@@ -86,6 +87,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(itemId));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const mode = itemId ? "edit" : "create";
 
@@ -214,6 +217,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       active = false;
     };
   }, [user, itemId]);
+
+  useEffect(() => {
+    setDeleteError(null);
+    setDeleting(false);
+  }, [itemId]);
 
   const cabinetOptions = useMemo(() => cabinets, [cabinets]);
 
@@ -370,12 +378,39 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
   }
 
+  async function handleDelete() {
+    if (!itemId || !user || deleting) {
+      return;
+    }
+    if (
+      !window.confirm("確認刪除此物件？會一併刪除相關進度資料，且無法復原。")
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteItemWithProgress(itemId, user.uid);
+      router.replace("/cabinets");
+    } catch (err) {
+      console.error("刪除物件失敗", err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "刪除物件時發生錯誤";
+      setDeleteError(message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
   const textAreaClass = "min-h-[100px] w-full rounded-xl border px-4 py-3 text-base";
-  const sectionClass = "space-y-6 rounded-2xl border bg-white/70 p-6 shadow-sm";
+  const sectionClass =
+    "space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm";
 
   return (
-    <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+    <main className="min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         <section className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -393,12 +428,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               )}
             </div>
             <div className="flex flex-wrap gap-2 text-sm">
-              <Link
-                href="/cabinets"
-                className="rounded-full border border-gray-200 bg-white px-4 py-2 text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-              >
-                返回櫃子列表
-              </Link>
+              {mode === "edit" && itemId && (
+                <Link
+                  href={`/item/${itemId}`}
+                  className="rounded-full border border-gray-200 bg-white px-4 py-2 text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
+                >
+                  查看詳細頁面
+                </Link>
+              )}
               {mode === "edit" && form.cabinetId && (
                 <Link
                   href={`/cabinet/${form.cabinetId}`}
@@ -679,13 +716,36 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         </section>
 
         {mode === "edit" && itemId ? (
-          <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900">進度管理</h2>
-            <p className="text-sm text-gray-500">
-              可於此管理多平台進度，並設定主進度供列表顯示與一鍵 +1。
-            </p>
-            <ProgressEditor itemId={itemId} />
-          </section>
+          <>
+            <section className="space-y-4 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-gray-900">進度管理</h2>
+              <p className="text-sm text-gray-500">
+                可於此管理多平台進度，並設定主進度供列表顯示與一鍵 +1。
+              </p>
+              <ProgressEditor itemId={itemId} />
+            </section>
+            <section className="space-y-4 rounded-3xl border border-red-100 bg-red-50/80 p-6 shadow-sm">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-red-700">刪除物件</h2>
+                <p className="text-sm text-red-600">
+                  刪除後將移除此物件及所有進度記錄，操作無法復原。
+                </p>
+              </div>
+              {deleteError && (
+                <div className="rounded-xl bg-red-100 px-4 py-3 text-sm text-red-700">
+                  {deleteError}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-red-600 px-6 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+              >
+                {deleting ? "刪除中…" : "永久刪除此物件"}
+              </button>
+            </section>
+          </>
         ) : null}
       </div>
     </main>

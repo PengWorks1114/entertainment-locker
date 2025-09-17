@@ -166,9 +166,6 @@ export default function CabinetsPage() {
             </p>
           </div>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
-            <Link href="/item/new" className={`${secondaryButtonClass} w-full sm:w-auto`}>
-              快速新增物件
-            </Link>
             <button
               onClick={clearCache}
               className={`${secondaryButtonClass} w-full sm:w-auto`}

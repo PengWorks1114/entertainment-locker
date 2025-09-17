@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -24,7 +25,15 @@ import {
   type ItemRecord,
   type ProgressType,
 } from "@/lib/types";
-import { deleteItemWithProgress } from "@/lib/firestore-utils";
+function isOptimizedImageUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === "i.imgur.com";
+  } catch {
+    return false;
+  }
+}
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -79,7 +88,6 @@ export default function ItemCard({ item }: ItemCardProps) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -187,27 +195,6 @@ export default function ItemCard({ item }: ItemCardProps) {
     }
   }
 
-  async function handleDelete() {
-    if (deleting) return;
-    if (!window.confirm("確認刪除此物件？會一併刪除相關進度資料。")) {
-      return;
-    }
-    setError(null);
-    setSuccess(null);
-    setDeleting(true);
-    try {
-      await deleteItemWithProgress(item.id, item.uid);
-      setSuccess("已刪除物件");
-    } catch (err) {
-      console.error("刪除物件失敗", err);
-      const message =
-        err instanceof Error && err.message ? err.message : "刪除物件時發生錯誤";
-      setError(message);
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   const tags = item.tags ?? [];
   const ratingText =
     typeof item.rating === "number" && Number.isFinite(item.rating)
@@ -222,67 +209,95 @@ export default function ItemCard({ item }: ItemCardProps) {
   const updateFrequencyLabel = item.updateFrequency
     ? updateFrequencyLabelMap.get(item.updateFrequency) ?? item.updateFrequency
     : "未設定";
+  const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
 
   return (
-    <article className="space-y-5 rounded-2xl border bg-white/70 p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Link
-              href={`/item/${item.id}`}
-              className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
-            >
-              {item.titleZh}
-            </Link>
-            {item.titleAlt && (
-              <p className="text-sm text-gray-500">{item.titleAlt}</p>
+    <article className="space-y-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-1 gap-4">
+          <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner">
+            {item.thumbUrl ? (
+              canUseOptimizedThumb ? (
+                <Image
+                  src={item.thumbUrl}
+                  alt={`${item.titleZh} 縮圖`}
+                  fill
+                  sizes="64px"
+                  className="object-cover"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={item.thumbUrl}
+                  alt={`${item.titleZh} 縮圖`}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              )
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+                無封面
+              </div>
             )}
           </div>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Link
+                href={`/item/${item.id}`}
+                className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+              >
+                {item.titleZh}
+              </Link>
+              {item.titleAlt && (
+                <p className="text-sm text-gray-500">{item.titleAlt}</p>
+              )}
+            </div>
 
-          <div className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">狀態</span>
-              <span className="block font-medium text-gray-900">{statusLabel}</span>
+            <div className="grid gap-3 text-sm sm:grid-cols-2">
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">狀態</span>
+                <span className="block font-medium text-gray-900">{statusLabel}</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">更新頻率</span>
+                <span className="block font-medium text-gray-900">{updateFrequencyLabel}</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">下次更新</span>
+                <span className="block font-medium text-gray-900">{nextUpdateText}</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">評分</span>
+                <span className="block font-medium text-gray-900">{ratingDisplay}</span>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <span className="text-xs text-gray-500">作者 / 製作</span>
+                <span className="block font-medium text-gray-900">{authorDisplay}</span>
+              </div>
             </div>
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">更新頻率</span>
-              <span className="block font-medium text-gray-900">{updateFrequencyLabel}</span>
-            </div>
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">下次更新</span>
-              <span className="block font-medium text-gray-900">{nextUpdateText}</span>
-            </div>
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">評分</span>
-              <span className="block font-medium text-gray-900">{ratingDisplay}</span>
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <span className="text-xs text-gray-500">作者 / 製作</span>
-              <span className="block font-medium text-gray-900">{authorDisplay}</span>
-            </div>
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-gray-600"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-gray-200 px-3 py-1 text-gray-600"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+        <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
           {primaryLink && (
             <a
               href={primaryLink.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-700 shadow-sm transition hover:border-gray-400 hover:text-gray-900 sm:w-auto"
+              className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 md:w-auto"
             >
               點我觀看
             </a>
@@ -290,29 +305,21 @@ export default function ItemCard({ item }: ItemCardProps) {
           <button
             type="button"
             onClick={handleIncrement}
-            disabled={updating || progressLoading || deleting}
-            className="h-12 w-full rounded-xl bg-black text-sm text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+            disabled={updating || progressLoading}
+            className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-gray-900 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 md:w-auto"
           >
             {updating ? "+1…" : "+1"}
           </button>
           <Link
-            href={`/item/${item.id}/edit`}
-            className="text-center text-xs text-gray-500 underline-offset-4 hover:underline sm:text-right"
+            href={`/item/${item.id}`}
+            className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-gray-200 px-4 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900 md:w-auto"
           >
-            編輯物件
+            查看詳細頁面
           </Link>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="text-center text-xs text-red-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-red-400 sm:text-right"
-          >
-            {deleting ? "刪除中…" : "刪除物件"}
-          </button>
         </div>
       </div>
 
-      <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3">
+      <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>
         <div className="text-sm text-gray-700">{progressSummary}</div>
         {primary?.updatedAt && (
@@ -323,19 +330,19 @@ export default function ItemCard({ item }: ItemCardProps) {
       </div>
 
       {item.progressNote && (
-        <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
           進度備註：{item.progressNote}
         </div>
       )}
       {item.note && (
-        <div className="rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
+        <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
           備註：{item.note}
         </div>
       )}
 
       {(error || success) && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm ${
+          className={`rounded-2xl px-4 py-3 text-sm ${
             error
               ? "bg-red-50 text-red-700"
               : "bg-emerald-50 text-emerald-700"

@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -27,7 +26,6 @@ import {
   UPDATE_FREQUENCY_OPTIONS,
   UPDATE_FREQUENCY_VALUES,
 } from "@/lib/types";
-import { deleteItemWithProgress } from "@/lib/firestore-utils";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -43,8 +41,6 @@ const progressTypeLabelMap = new Map(
 
 const secondaryButtonClass =
   "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900";
-const dangerButtonClass =
-  "inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
 
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
@@ -91,7 +87,6 @@ type PrimaryProgressState = {
 
 export default function ItemDetailPage({ params }: ItemPageProps) {
   const { id: itemId } = use(params);
-  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [item, setItem] = useState<ItemRecord | null>(null);
@@ -102,8 +97,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [progressError, setProgressError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (current) => {
@@ -112,11 +105,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     });
     return () => unsub();
   }, []);
-
-  useEffect(() => {
-    setDeleting(false);
-    setDeleteError(null);
-  }, [itemId]);
 
   useEffect(() => {
     if (!user) {
@@ -309,37 +297,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     );
   }, [item]);
 
-  async function handleDeleteItem() {
-    if (!item || !user || deleting) {
-      return;
-    }
-    if (
-      !window.confirm(
-        "確認刪除此物件？會一併刪除相關進度資料，且無法復原。"
-      )
-    ) {
-      return;
-    }
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteItemWithProgress(item.id, user.uid);
-      const target = item.cabinetId
-        ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
-        : "/cabinets";
-      router.push(target);
-    } catch (err) {
-      console.error("刪除物件失敗", err);
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "刪除物件時發生錯誤";
-      setDeleteError(message);
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -389,19 +346,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {itemError ?? "找不到物件資料"}
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Link href="/cabinets" className={secondaryButtonClass}>
-              返回櫃子列表
-            </Link>
-            {item?.cabinetId && (
+          {item?.cabinetId && (
+            <div className="flex flex-wrap gap-2 text-sm">
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
                 className={secondaryButtonClass}
               >
                 檢視櫃子
               </Link>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </main>
     );
@@ -425,7 +379,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-        <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <header className="flex flex-col gap-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div className="space-y-3">
             <h1 className="text-3xl font-semibold text-gray-900">{item.titleZh}</h1>
             {item.titleAlt && <p className="text-base text-gray-500">{item.titleAlt}</p>}
@@ -461,9 +415,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 點我觀看
               </a>
             )}
-            <Link href="/cabinets" className={`${secondaryButtonClass} w-full sm:w-auto`}>
-              返回櫃子列表
-            </Link>
             {item.cabinetId && !cabinetMissing && (
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
@@ -478,24 +429,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             >
               編輯物件
             </Link>
-            <button
-              type="button"
-              onClick={handleDeleteItem}
-              disabled={deleting}
-              className={`${dangerButtonClass} w-full sm:w-auto`}
-            >
-              {deleting ? "刪除中…" : "刪除此物件"}
-            </button>
           </div>
         </header>
 
-        {deleteError && (
-          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {deleteError}
-          </div>
-        )}
-
-        <section className="rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <section className="rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
           <div className="flex flex-col gap-6 md:flex-row">
             {item.thumbUrl && (
               <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden rounded-xl border bg-white/80 md:w-56">
