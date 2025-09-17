@@ -134,8 +134,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     }
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("名稱不可為空");
-      setMessage(null);
+      setMessage("名稱不可為空");
       return;
     }
     setSaving(true);
@@ -146,15 +145,25 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         name: trimmed,
         updatedAt: serverTimestamp(),
       });
-      setMessage("已更新櫃子名稱");
       setName(trimmed);
+      setMessage("已更新櫃子名稱");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
-      setError("儲存櫃子資料時發生錯誤");
+      setMessage("儲存櫃子資料時發生錯誤");
     } finally {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.alert(message);
+    }
+    setMessage(null);
+  }, [message]);
 
   async function handleAddTag() {
     if (!user || !canEdit || tagSaving) {
@@ -402,12 +411,6 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         {error && (
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
-          </div>
-        )}
-
-        {message && (
-          <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {message}
           </div>
         )}
 

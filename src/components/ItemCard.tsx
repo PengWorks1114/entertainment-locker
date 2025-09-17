@@ -101,96 +101,37 @@ export default function ItemCard({ item }: ItemCardProps) {
         </button>
       </div>
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-start">
-        <div className="flex flex-1 gap-4">
-          <Link
-            href={detailHref}
-            className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
-          >
-            {item.thumbUrl ? (
-              canUseOptimizedThumb ? (
-                <Image
-                  src={item.thumbUrl}
-                  alt={`${item.titleZh} 縮圖`}
-                  fill
-                  sizes="64px"
-                  className="object-cover"
-                />
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={item.thumbUrl}
-                  alt={`${item.titleZh} 縮圖`}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              )
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <Link
+          href={detailHref}
+          className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
+        >
+          {item.thumbUrl ? (
+            canUseOptimizedThumb ? (
+              <Image
+                src={item.thumbUrl}
+                alt={`${item.titleZh} 縮圖`}
+                fill
+                sizes="64px"
+                className="object-cover"
+              />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
-                無封面
-              </div>
-            )}
-          </Link>
-
-          <div className="flex flex-1 flex-col gap-4">
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-900">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">狀態</span>
-                <span className="font-medium text-gray-900">{statusLabel}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">更新頻率</span>
-                <span className="font-medium text-gray-900">{updateFrequencyLabel}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">下次更新</span>
-                <span className="font-medium text-gray-900">{nextUpdateText}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">評分</span>
-                <span className="font-medium text-gray-900">{ratingDisplay}</span>
-              </div>
-              <div className="flex items-center gap-2 basis-full text-sm text-gray-900">
-                <span className="text-xs text-gray-500">作者 / 製作</span>
-                <span className="font-medium text-gray-900">{authorDisplay}</span>
-              </div>
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={item.thumbUrl}
+                alt={`${item.titleZh} 縮圖`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            )
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+              無封面
             </div>
+          )}
+        </Link>
 
-            {tags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <span className="text-xs text-gray-500">標籤</span>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => {
-                    if (!item.cabinetId) {
-                      return (
-                        <span
-                          key={tag}
-                          className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
-                        >
-                          #{tag}
-                        </span>
-                      );
-                    }
-                    const tagHref = `/cabinet/${encodeURIComponent(
-                      item.cabinetId
-                    )}?tag=${encodeURIComponent(tag)}`;
-                    return (
-                      <Link
-                        key={tag}
-                        href={tagHref}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-                      >
-                        #{tag}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex w-full flex-col items-stretch gap-2 md:w-48">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-48">
           <Link href={detailHref} className={buttonClass({ variant: "secondary" })}>
             查看詳細頁面
           </Link>
@@ -214,6 +155,65 @@ export default function ItemCard({ item }: ItemCardProps) {
           )}
         </div>
       </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+        <div className="space-y-3 text-sm text-gray-900">
+          <div className="grid grid-cols-2 gap-x-6 text-xs text-gray-500">
+            <span>狀態</span>
+            <span>更新頻率</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 font-medium text-gray-900">
+            <span>{statusLabel}</span>
+            <span>{updateFrequencyLabel}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 text-xs text-gray-500">
+            <span>下次更新</span>
+            <span>評分</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 font-medium text-gray-900">
+            <span>{nextUpdateText}</span>
+            <span>{ratingDisplay}</span>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-gray-500">作者 / 製作</div>
+            <div className="font-medium text-gray-900">{authorDisplay}</div>
+          </div>
+        </div>
+      </div>
+
+      {tags.length > 0 && (
+        <div className="rounded-2xl border border-gray-100 bg-white/80 p-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+            <span className="text-xs text-gray-500">標籤</span>
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => {
+                if (!item.cabinetId) {
+                  return (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
+                    >
+                      #{tag}
+                    </span>
+                  );
+                }
+                const tagHref = `/cabinet/${encodeURIComponent(
+                  item.cabinetId
+                )}?tag=${encodeURIComponent(tag)}`;
+                return (
+                  <Link
+                    key={tag}
+                    href={tagHref}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    #{tag}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>

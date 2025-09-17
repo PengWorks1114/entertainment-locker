@@ -736,7 +736,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               <button
                 type="button"
                 onClick={handleTagSubmit}
-                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-pre-line text-center sm:w-auto`}
+                className={`${buttonClass({ variant: "secondary" })} h-auto min-h-[2.5rem] w-full flex-col whitespace-pre-line text-center leading-tight sm:w-auto`}
               >
                 {"加入\n標籤"}
               </button>
