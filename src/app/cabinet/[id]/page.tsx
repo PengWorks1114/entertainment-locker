@@ -27,6 +27,7 @@ import {
   type ItemStatus,
   type UpdateFrequency,
 } from "@/lib/types";
+import { normalizeThumbTransform } from "@/lib/image-utils";
 
 type CabinetPageProps = {
   params: Promise<{ id: string }>;
@@ -293,6 +294,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             tags,
             links,
             thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
+            thumbTransform: data.thumbTransform
+              ? normalizeThumbTransform(data.thumbTransform)
+              : null,
             progressNote:
               typeof data.progressNote === "string" ? data.progressNote : null,
             insightNote:

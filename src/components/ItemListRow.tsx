@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
-import { isOptimizedImageUrl } from "@/lib/image-utils";
+import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import type { ItemRecord } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
 
@@ -32,6 +32,14 @@ export default function ItemListRow({ item }: ItemListRowProps) {
   }, [item.links]);
 
   const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
+  const thumbTransform = item.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+  const thumbStyle = useMemo(
+    () => ({
+      transform: `translate(${thumbTransform.offsetX}%, ${thumbTransform.offsetY}%) scale(${thumbTransform.scale})`,
+      transformOrigin: "center",
+    }),
+    [thumbTransform.offsetX, thumbTransform.offsetY, thumbTransform.scale]
+  );
   const tags = item.tags ?? [];
   const detailHref = `/item/${item.id}`;
 
@@ -51,14 +59,18 @@ export default function ItemListRow({ item }: ItemListRowProps) {
                   fill
                   sizes="48px"
                   className="object-cover"
+                  style={thumbStyle}
+                  draggable={false}
                 />
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={item.thumbUrl}
                   alt={`${item.titleZh} 縮圖`}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full select-none object-cover"
+                  style={thumbStyle}
                   loading="lazy"
+                  draggable={false}
                 />
               )
             ) : (

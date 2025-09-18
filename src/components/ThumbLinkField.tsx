@@ -6,14 +6,20 @@ type ThumbLinkFieldProps = {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  onEdit?: () => void;
 };
 
 export default function ThumbLinkField({
   value,
   onChange,
   disabled,
+  onEdit,
 }: ThumbLinkFieldProps) {
   const canOpen = useMemo(() => value.trim().length > 0, [value]);
+  const canEdit = useMemo(
+    () => Boolean(onEdit) && canOpen && !disabled,
+    [onEdit, canOpen, disabled]
+  );
 
   return (
     <div className="space-y-2">
@@ -41,6 +47,18 @@ export default function ThumbLinkField({
           >
             開啟
           </a>
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={!canEdit}
+            className={`h-12 w-[104px] shrink-0 rounded-xl border text-base font-medium transition ${
+              canEdit
+                ? "bg-white text-gray-700 hover:border-blue-300 hover:text-blue-700"
+                : "cursor-not-allowed border-dashed text-gray-400"
+            }`}
+          >
+            圖片編輯
+          </button>
         </div>
       </label>
       <p className="text-xs text-gray-500">

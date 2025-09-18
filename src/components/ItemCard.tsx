@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { Timestamp } from "firebase/firestore";
 
 import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
-import { isOptimizedImageUrl } from "@/lib/image-utils";
+import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import {
   ITEM_STATUS_OPTIONS,
   UPDATE_FREQUENCY_OPTIONS,
@@ -50,6 +50,14 @@ export default function ItemCard({ item }: ItemCardProps) {
   const { primary, summary, updating, loading, error, success, increment } =
     usePrimaryProgress(item);
   const statusLabel = statusLabelMap.get(item.status) ?? item.status;
+  const thumbTransform = item.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+  const thumbStyle = useMemo(
+    () => ({
+      transform: `translate(${thumbTransform.offsetX}%, ${thumbTransform.offsetY}%) scale(${thumbTransform.scale})`,
+      transformOrigin: "center",
+    }),
+    [thumbTransform.offsetX, thumbTransform.offsetY, thumbTransform.scale]
+  );
 
   const primaryLink = useMemo(() => {
     if (!item.links || item.links.length === 0) {
@@ -121,14 +129,18 @@ export default function ItemCard({ item }: ItemCardProps) {
                 fill
                 sizes="80px"
                 className="object-cover"
+                style={thumbStyle}
+                draggable={false}
               />
             ) : (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={item.thumbUrl}
                 alt={`${item.titleZh} 縮圖`}
-                className="h-full w-full object-cover"
+                className="h-full w-full select-none object-cover"
+                style={thumbStyle}
                 loading="lazy"
+                draggable={false}
               />
             )
           ) : (

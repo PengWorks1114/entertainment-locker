@@ -190,13 +190,15 @@ export default function LoginPage() {
               />
             </label>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-12 w-full rounded-xl bg-gray-900 text-base font-medium text-white shadow transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading ? `${modeLabel}中…` : `${modeLabel}並前往我的櫃子`}
-            </button>
+            <div className="pt-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="h-12 w-full rounded-xl bg-gray-900 text-base font-medium text-white shadow transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {loading ? `${modeLabel}中…` : `${modeLabel}並前往我的櫃子`}
+              </button>
+            </div>
           </form>
 
           {error && (

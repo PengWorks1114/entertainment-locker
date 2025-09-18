@@ -28,6 +28,7 @@ import {
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import ThumbLinkField from "./ThumbLinkField";
+import ThumbEditorDialog from "./ThumbEditorDialog";
 import ProgressEditor from "./ProgressEditor";
 import {
   ITEM_STATUS_OPTIONS,
@@ -35,8 +36,15 @@ import {
   UPDATE_FREQUENCY_OPTIONS,
   UPDATE_FREQUENCY_VALUES,
   type ItemStatus,
+  type ThumbTransform,
   type UpdateFrequency,
 } from "@/lib/types";
+import {
+  clampThumbTransform,
+  DEFAULT_THUMB_TRANSFORM,
+  normalizeThumbTransform,
+  prepareThumbTransform,
+} from "@/lib/image-utils";
 import {
   parseItemForm,
   ValidationError,
@@ -135,6 +143,7 @@ type ItemFormState = {
   updateFrequency: UpdateFrequency | "";
   nextUpdateAt: string;
   thumbUrl: string;
+  thumbTransform: ThumbTransform;
 };
 
 type ItemFormProps = {
@@ -157,6 +166,7 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     updateFrequency: "",
     nextUpdateAt: "",
     thumbUrl: "",
+    thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
   };
 }
 
@@ -191,6 +201,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [draggingAppearanceId, setDraggingAppearanceId] = useState<string | null>(
     null
   );
+  const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
   const tagsCacheRef = useRef<Record<string, string[]>>({});
   const draggingAppearanceIndexRef = useRef<number | null>(null);
   const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
@@ -383,6 +394,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               ? formatTimestampToInput(data.nextUpdateAt)
               : "",
           thumbUrl: (data.thumbUrl as string) ?? "",
+          thumbTransform: data.thumbTransform
+            ? normalizeThumbTransform(data.thumbTransform)
+            : { ...DEFAULT_THUMB_TRANSFORM },
         });
         setLinks(
           Array.isArray(data.links)
@@ -618,6 +632,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         tags,
         links: filteredLinks,
         thumbUrl: form.thumbUrl,
+        thumbTransform: form.thumbTransform,
         progressNote: form.progressNote,
         insightNote: form.insightNote,
         note: form.note,
@@ -637,6 +652,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         tags: parsedData.tags,
         links: parsedData.links,
         thumbUrl: parsedData.thumbUrl ?? null,
+        thumbTransform: parsedData.thumbUrl
+          ? prepareThumbTransform(parsedData.thumbTransform)
+          : null,
         progressNote: parsedData.progressNote ?? null,
         insightNote: parsedData.insightNote ?? null,
         note: parsedData.note ?? null,
@@ -691,6 +709,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           ? formatDateToInput(parsedData.nextUpdateAt)
           : "",
         thumbUrl: parsedData.thumbUrl ?? "",
+        thumbTransform: parsedData.thumbUrl
+          ? clampThumbTransform(parsedData.thumbTransform)
+          : { ...DEFAULT_THUMB_TRANSFORM },
       }));
       setLinks(
         normalizePrimaryLinks(
@@ -1244,7 +1265,30 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             >
               <ThumbLinkField
                 value={form.thumbUrl}
-                onChange={(value) => setForm((prev) => ({ ...prev, thumbUrl: value }))}
+                onChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    thumbUrl: value,
+                    thumbTransform: value.trim()
+                      ? prev.thumbTransform
+                      : { ...DEFAULT_THUMB_TRANSFORM },
+                  }))
+                }
+                onEdit={() => setThumbEditorOpen(true)}
+              />
+
+              <ThumbEditorDialog
+                open={thumbEditorOpen}
+                imageUrl={form.thumbUrl.trim()}
+                value={form.thumbTransform}
+                onClose={() => setThumbEditorOpen(false)}
+                onApply={(next) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    thumbTransform: clampThumbTransform(next),
+                  }));
+                  setThumbEditorOpen(false);
+                }}
               />
 
               <div className="space-y-1">

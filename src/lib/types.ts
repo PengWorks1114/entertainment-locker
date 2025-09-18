@@ -52,6 +52,12 @@ export const PROGRESS_TYPE_OPTIONS: { value: ProgressType; label: string }[] = [
   { value: "level", label: "等級" },
 ];
 
+export type ThumbTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
 export type ItemLink = {
   label: string;
   url: string;
@@ -74,6 +80,7 @@ export type ItemRecord = {
   tags: string[];
   links: ItemLink[];
   thumbUrl?: string | null;
+  thumbTransform?: ThumbTransform | null;
   progressNote?: string | null;
   insightNote?: string | null;
   note?: string | null;

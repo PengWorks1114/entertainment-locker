@@ -30,6 +30,7 @@ import {
   UPDATE_FREQUENCY_OPTIONS,
   UPDATE_FREQUENCY_VALUES,
 } from "@/lib/types";
+import { DEFAULT_THUMB_TRANSFORM, normalizeThumbTransform } from "@/lib/image-utils";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -109,6 +110,20 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+  const thumbStyle = useMemo(
+    () => ({
+      transform: `translate(${derivedThumbTransform.offsetX}%, ${derivedThumbTransform.offsetY}%) scale(${derivedThumbTransform.scale})`,
+      transformOrigin: "center",
+    }),
+    [
+      derivedThumbTransform.offsetX,
+      derivedThumbTransform.offsetY,
+      derivedThumbTransform.scale,
+    ]
+  );
+  const canUseOptimizedThumb = isOptimizedImageUrl(item?.thumbUrl);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -223,6 +238,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           tags,
           links,
           thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
+          thumbTransform: data.thumbTransform
+            ? normalizeThumbTransform(data.thumbTransform)
+            : null,
           progressNote: typeof data.progressNote === "string" ? data.progressNote : null,
           insightNote: typeof data.insightNote === "string" ? data.insightNote : null,
           note: typeof data.note === "string" ? data.note : null,
@@ -504,7 +522,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     );
   }
 
-  const canUseOptimizedThumb = isOptimizedImageUrl(item.thumbUrl);
   const statusLabel = statusLabelMap.get(item.status) ?? item.status;
   const ratingText =
     typeof item.rating === "number" && Number.isFinite(item.rating)
@@ -593,14 +610,18 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     fill
                     sizes="(min-width: 768px) 14rem, 100vw"
                     className="object-cover"
+                    style={thumbStyle}
+                    draggable={false}
                   />
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img
                     src={item.thumbUrl}
                     alt={`${item.titleZh} 封面`}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full select-none object-cover"
+                    style={thumbStyle}
                     loading="lazy"
+                    draggable={false}
                   />
                 )}
               </div>

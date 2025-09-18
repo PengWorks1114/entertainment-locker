@@ -195,6 +195,7 @@ export default function QuickAddItemPage() {
         tags: [],
         links,
         thumbUrl: thumbUrl || null,
+        thumbTransform: null,
         progressNote: null,
         insightNote: null,
         note: null,

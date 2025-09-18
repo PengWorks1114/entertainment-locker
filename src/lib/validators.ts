@@ -5,8 +5,13 @@ import {
   type ItemLink,
   type ItemStatus,
   type ProgressType,
+  type ThumbTransform,
   type UpdateFrequency,
 } from "./types";
+import {
+  clampThumbTransform,
+  DEFAULT_THUMB_TRANSFORM,
+} from "./image-utils";
 
 export type AppearanceFormInput = {
   name?: string | undefined;
@@ -28,6 +33,7 @@ export type ItemFormInput = {
   tags?: string[] | undefined;
   links?: ItemLink[] | undefined;
   thumbUrl?: string | undefined;
+  thumbTransform?: ThumbTransform | undefined;
   progressNote?: string | undefined;
   insightNote?: string | undefined;
   note?: string | undefined;
@@ -46,6 +52,7 @@ export type ItemFormData = {
   tags: string[];
   links: ItemLink[];
   thumbUrl?: string;
+  thumbTransform: ThumbTransform;
   progressNote?: string;
   insightNote?: string;
   note?: string;
@@ -142,6 +149,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     tags: [],
     links: [],
     appearances: [],
+    thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
   };
 
   if (input.titleAlt) {
@@ -199,6 +207,27 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       validateUrl(thumbUrl, "請輸入有效的縮圖網址");
       data.thumbUrl = thumbUrl;
     }
+  }
+
+  if (input.thumbTransform) {
+    const transform = input.thumbTransform;
+    const scale =
+      typeof transform.scale === "number" && Number.isFinite(transform.scale)
+        ? transform.scale
+        : DEFAULT_THUMB_TRANSFORM.scale;
+    const offsetX =
+      typeof transform.offsetX === "number" && Number.isFinite(transform.offsetX)
+        ? transform.offsetX
+        : DEFAULT_THUMB_TRANSFORM.offsetX;
+    const offsetY =
+      typeof transform.offsetY === "number" && Number.isFinite(transform.offsetY)
+        ? transform.offsetY
+        : DEFAULT_THUMB_TRANSFORM.offsetY;
+    data.thumbTransform = clampThumbTransform({
+      scale,
+      offsetX,
+      offsetY,
+    });
   }
 
   if (input.progressNote) {
