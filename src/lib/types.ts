@@ -11,7 +11,7 @@ export const ITEM_STATUS_VALUES = [
 export type ItemStatus = (typeof ITEM_STATUS_VALUES)[number];
 
 export const ITEM_STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
-  { value: "planning", label: "待觀看" },
+  { value: "planning", label: "尚未發布" },
   { value: "in-progress", label: "連載中" },
   { value: "completed", label: "已完結" },
   { value: "on-hold", label: "停更" },
@@ -37,6 +37,7 @@ export const UPDATE_FREQUENCY_OPTIONS: { value: UpdateFrequency; label: string }
 export const PROGRESS_TYPE_VALUES = [
   "chapter",
   "episode",
+  "story",
   "percent",
   "page",
   "level",
@@ -47,6 +48,7 @@ export type ProgressType = (typeof PROGRESS_TYPE_VALUES)[number];
 export const PROGRESS_TYPE_OPTIONS: { value: ProgressType; label: string }[] = [
   { value: "chapter", label: "章節" },
   { value: "episode", label: "集數" },
+  { value: "story", label: "話" },
   { value: "percent", label: "百分比" },
   { value: "page", label: "頁數" },
   { value: "level", label: "等級" },

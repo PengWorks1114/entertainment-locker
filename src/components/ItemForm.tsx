@@ -173,7 +173,7 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     insightNote: "",
     note: "",
     rating: "",
-    status: "planning",
+    status: "in-progress",
     updateFrequency: "",
     nextUpdateAt: "",
     thumbUrl: "",

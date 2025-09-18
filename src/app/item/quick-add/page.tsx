@@ -17,6 +17,7 @@ import {
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { fetchOpenGraphImage } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
+import type { ProgressType } from "@/lib/types";
 
 type CabinetOption = { id: string; name: string };
 
@@ -25,7 +26,12 @@ type FormState = {
   titleZh: string;
   sourceUrl: string;
   thumbUrl: string;
+  progressValue: string;
 };
+
+const QUICK_ADD_PROGRESS_PLATFORM = "未設定";
+const QUICK_ADD_PROGRESS_UNIT = "集數";
+const QUICK_ADD_PROGRESS_TYPE: ProgressType = "story";
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -47,6 +53,7 @@ export default function QuickAddItemPage() {
     titleZh: "",
     sourceUrl: "",
     thumbUrl: "",
+    progressValue: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +176,17 @@ export default function QuickAddItemPage() {
       return;
     }
 
+    const progressValueInput = form.progressValue.trim();
+    let parsedProgressValue: number | null = null;
+    if (progressValueInput) {
+      const parsedValue = Number(progressValueInput);
+      if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+        setError("請輸入有效的進度數值");
+        return;
+      }
+      parsedProgressValue = parsedValue;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -210,12 +228,25 @@ export default function QuickAddItemPage() {
         note: null,
         appearances: [],
         rating: null,
-        status: "planning",
+        status: "in-progress",
         updateFrequency: null,
         nextUpdateAt: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      if (parsedProgressValue !== null) {
+        await addDoc(collection(db, "item", docRef.id, "progress"), {
+          platform: QUICK_ADD_PROGRESS_PLATFORM,
+          type: QUICK_ADD_PROGRESS_TYPE,
+          value: parsedProgressValue,
+          unit: QUICK_ADD_PROGRESS_UNIT,
+          note: null,
+          link: null,
+          isPrimary: true,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       router.replace(`/item/${docRef.id}`);
     } catch (err) {
@@ -362,6 +393,23 @@ export default function QuickAddItemPage() {
                 value={form.thumbUrl}
                 onChange={(event) => handleInputChange("thumbUrl", event.target.value)}
                 placeholder="https://i.imgur.com/..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="progressValue" className="text-sm font-medium text-gray-700">
+                新增進度（可不填）
+              </label>
+              <input
+                id="progressValue"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                className={inputClass}
+                value={form.progressValue}
+                onChange={(event) => handleInputChange("progressValue", event.target.value)}
+                placeholder="例如：12"
               />
             </div>
 
