@@ -25,6 +25,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import ThumbLinkField from "./ThumbLinkField";
 import ProgressEditor from "./ProgressEditor";
@@ -85,30 +86,12 @@ function generateLocalId(): string {
 }
 
 function mapFirestoreAppearances(value: unknown): AppearanceState[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-      const record = entry as { name?: unknown; thumbUrl?: unknown; note?: unknown };
-      const name = typeof record.name === "string" ? record.name.trim() : "";
-      const thumbUrl =
-        typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
-      const note = typeof record.note === "string" ? record.note.trim() : "";
-      if (!name && !thumbUrl && !note) {
-        return null;
-      }
-      return {
-        id: generateLocalId(),
-        name,
-        thumbUrl,
-        note,
-      } satisfies AppearanceState;
-    })
-    .filter((entry): entry is AppearanceState => Boolean(entry));
+  return normalizeAppearanceRecords(value).map((entry) => ({
+    id: generateLocalId(),
+    name: entry.name,
+    thumbUrl: entry.thumbUrl ?? "",
+    note: entry.note ?? "",
+  }));
 }
 
 function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {

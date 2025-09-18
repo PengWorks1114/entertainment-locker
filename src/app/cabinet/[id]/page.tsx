@@ -16,13 +16,13 @@ import {
 
 import ItemCard from "@/components/ItemCard";
 import ItemListRow from "@/components/ItemListRow";
+import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   UPDATE_FREQUENCY_VALUES,
-  type AppearanceRecord,
   type ItemRecord,
   type ItemStatus,
   type UpdateFrequency,
@@ -269,39 +269,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 })
                 .filter((link) => link.label && link.url)
             : [];
-          const appearances: AppearanceRecord[] = [];
-          if (Array.isArray(data.appearances)) {
-            for (const entry of data.appearances) {
-              if (!entry || typeof entry !== "object") {
-                continue;
-              }
-              const recordEntry = entry as {
-                name?: unknown;
-                thumbUrl?: unknown;
-                note?: unknown;
-              };
-              const name =
-                typeof recordEntry.name === "string"
-                  ? recordEntry.name.trim()
-                  : "";
-              if (!name) {
-                continue;
-              }
-              const thumbUrl =
-                typeof recordEntry.thumbUrl === "string"
-                  ? recordEntry.thumbUrl.trim()
-                  : "";
-              const note =
-                typeof recordEntry.note === "string"
-                  ? recordEntry.note.trim()
-                  : "";
-              appearances.push({
-                name,
-                thumbUrl: thumbUrl || null,
-                note: note || null,
-              });
-            }
-          }
+          const appearances = normalizeAppearanceRecords(data.appearances);
           return {
             id: docSnap.id,
             uid: typeof data.uid === "string" ? data.uid : user.uid,

@@ -14,13 +14,13 @@ import {
   Timestamp,
   where,
 } from "firebase/firestore";
+import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   PROGRESS_TYPE_OPTIONS,
-  type AppearanceRecord,
   type ItemRecord,
   type ItemStatus,
   type ProgressType,
@@ -198,39 +198,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               return normalized;
             })()
           : [];
-        const appearances: AppearanceRecord[] = [];
-        if (Array.isArray(data.appearances)) {
-          for (const entry of data.appearances) {
-            if (!entry || typeof entry !== "object") {
-              continue;
-            }
-            const recordEntry = entry as {
-              name?: unknown;
-              thumbUrl?: unknown;
-              note?: unknown;
-            };
-            const name =
-              typeof recordEntry.name === "string"
-                ? recordEntry.name.trim()
-                : "";
-            if (!name) {
-              continue;
-            }
-            const thumbUrl =
-              typeof recordEntry.thumbUrl === "string"
-                ? recordEntry.thumbUrl.trim()
-                : "";
-            const note =
-              typeof recordEntry.note === "string"
-                ? recordEntry.note.trim()
-                : "";
-            appearances.push({
-              name,
-              thumbUrl: thumbUrl || null,
-              note: note || null,
-            });
-          }
-        }
+        const appearances = normalizeAppearanceRecords(data.appearances);
         const record: ItemRecord = {
           id: snap.id,
           uid: typeof data.uid === "string" ? data.uid : user.uid,
