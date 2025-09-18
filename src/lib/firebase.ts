@@ -1,5 +1,6 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import {
+  getFirestore,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
@@ -18,38 +19,45 @@ type FirebaseEnvKey =
   | "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"
   | "NEXT_PUBLIC_FIREBASE_APP_ID";
 
-const REQUIRED_ENV_KEYS: FirebaseEnvKey[] = [
-  "NEXT_PUBLIC_FIREBASE_API_KEY",
-  "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
-  "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
-  "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
-  "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
-  "NEXT_PUBLIC_FIREBASE_APP_ID",
-];
+const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
+const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
+const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
 
-let hasLoggedMissingConfig = false;
+const missingKeys: FirebaseEnvKey[] = [];
+if (!apiKey) missingKeys.push("NEXT_PUBLIC_FIREBASE_API_KEY");
+if (!authDomain) missingKeys.push("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
+if (!projectId) missingKeys.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+if (!storageBucket) missingKeys.push("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET");
+if (!messagingSenderId)
+  missingKeys.push("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID");
+if (!appId) missingKeys.push("NEXT_PUBLIC_FIREBASE_APP_ID");
 
-function readFirebaseConfig(): Nullable<{
+const firebaseConfig: Nullable<{
   apiKey: string;
   authDomain: string;
   projectId: string;
   storageBucket: string;
   messagingSenderId: string;
   appId: string;
-}> {
-  const envValues: Record<FirebaseEnvKey, string | undefined> = {
-    NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:
-      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  };
+}> =
+  missingKeys.length === 0
+    ? {
+        apiKey: apiKey!,
+        authDomain: authDomain!,
+        projectId: projectId!,
+        storageBucket: storageBucket!,
+        messagingSenderId: messagingSenderId!,
+        appId: appId!,
+      }
+    : null;
 
-  const missingKeys = REQUIRED_ENV_KEYS.filter((key) => !envValues[key]);
+let hasLoggedMissingConfig = false;
 
-  if (missingKeys.length > 0) {
+function createFirebaseApp(): Nullable<FirebaseApp> {
+  if (!firebaseConfig) {
     if (!hasLoggedMissingConfig && process.env.NODE_ENV !== "test") {
       hasLoggedMissingConfig = true;
       console.warn(
@@ -61,28 +69,14 @@ function readFirebaseConfig(): Nullable<{
   }
 
   hasLoggedMissingConfig = false;
-  return {
-    apiKey: envValues.NEXT_PUBLIC_FIREBASE_API_KEY!,
-    authDomain: envValues.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-    projectId: envValues.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-    storageBucket: envValues.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
-    messagingSenderId: envValues.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
-    appId: envValues.NEXT_PUBLIC_FIREBASE_APP_ID!,
-  } as const;
-}
-
-function createFirebaseApp(): Nullable<FirebaseApp> {
-  const config = readFirebaseConfig();
-  if (!config) {
-    return null;
-  }
-  return getApps().length ? getApp() : initializeApp(config);
+  return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 
 let cachedApp: Nullable<FirebaseApp> = null;
 let cachedDb: Nullable<Firestore> = null;
 let cachedAuth: Nullable<Auth> = null;
 let cachedStorage: Nullable<FirebaseStorage> = null;
+let hasWarnedDbFallback = false;
 
 export function getFirebaseApp(): Nullable<FirebaseApp> {
   if (cachedApp) {
@@ -106,11 +100,20 @@ export function getFirebaseDb(): Nullable<Firestore> {
     return null;
   }
 
-  cachedDb = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  try {
+    cachedDb = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch (err) {
+    if (!hasWarnedDbFallback && process.env.NODE_ENV !== "test") {
+      hasWarnedDbFallback = true;
+      console.warn("初始化 Firestore 永久快取失敗，改用預設設定。", err);
+    }
+    cachedDb = getFirestore(app);
+  }
+
   return cachedDb;
 }
 
