@@ -13,16 +13,22 @@ import {
   DEFAULT_THUMB_TRANSFORM,
   normalizeThumbTransform,
 } from "./image-utils";
+import { formatAppearanceLabels } from "./appearances";
 
 export type AppearanceFormInput = {
   name?: string | undefined;
+  nameZh?: string | undefined;
+  nameOriginal?: string | undefined;
+  labels?: string | undefined;
   thumbUrl?: string | undefined;
   thumbTransform?: ThumbTransform | undefined;
   note?: string | undefined;
 };
 
 export type AppearanceFormData = {
-  name: string;
+  nameZh: string;
+  nameOriginal?: string;
+  labels?: string;
   thumbUrl?: string;
   thumbTransform: ThumbTransform;
   note?: string;
@@ -264,17 +270,30 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
         return;
       }
       const record = entry as AppearanceFormInput;
-      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const nameZh =
+        typeof record.nameZh === "string"
+          ? record.nameZh.trim()
+          : typeof record.name === "string"
+            ? record.name.trim()
+            : "";
       const thumbUrl =
         typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
       const note = typeof record.note === "string" ? record.note.trim() : "";
+      const nameOriginal =
+        typeof record.nameOriginal === "string"
+          ? record.nameOriginal.trim()
+          : "";
+      const labels =
+        typeof record.labels === "string"
+          ? formatAppearanceLabels(record.labels)
+          : "";
       const thumbTransform = normalizeThumbTransform(record.thumbTransform);
 
-      if (!name) {
-        if (thumbUrl || note) {
-          throw new ValidationError("登場物件需填寫名稱", {
-            path: ["appearances", index, "name"],
-            message: "登場物件需填寫名稱",
+      if (!nameZh) {
+        if (thumbUrl || note || nameOriginal || labels) {
+          throw new ValidationError("登場物件需填寫中文名稱", {
+            path: ["appearances", index, "nameZh"],
+            message: "登場物件需填寫中文名稱",
           });
         }
         return;
@@ -285,7 +304,9 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       }
 
       appearances.push({
-        name,
+        nameZh,
+        nameOriginal: nameOriginal || undefined,
+        labels: labels || undefined,
         thumbUrl: thumbUrl || undefined,
         thumbTransform,
         note: note || undefined,

@@ -632,11 +632,6 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {cabinetError}
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/cabinets" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
-              返回櫃子列表
-            </Link>
-          </div>
         </div>
       </main>
     );
@@ -653,12 +648,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             )}
           </div>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
-            <Link href="/cabinets" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
-              返回櫃子列表
-            </Link>
             <Link
               href={`/item/new?cabinetId=${encodeURIComponent(cabinetId)}`}
-              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+              className={`${buttonClass({ variant: "accent" })} w-full sm:w-auto`}
             >
               在此櫃子新增物件
             </Link>

@@ -31,6 +31,7 @@ import { fetchOpenGraphImage } from "@/lib/opengraph";
 import ThumbLinkField from "./ThumbLinkField";
 import ThumbEditorDialog from "./ThumbEditorDialog";
 import ProgressEditor from "./ProgressEditor";
+import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
@@ -59,7 +60,9 @@ type LinkState = { label: string; url: string; isPrimary: boolean };
 
 type AppearanceState = {
   id: string;
-  name: string;
+  nameZh: string;
+  nameOriginal: string;
+  labels: string;
   thumbUrl: string;
   thumbTransform: ThumbTransform;
   note: string;
@@ -98,7 +101,9 @@ function generateLocalId(): string {
 function mapFirestoreAppearances(value: unknown): AppearanceState[] {
   return normalizeAppearanceRecords(value).map((entry) => ({
     id: generateLocalId(),
-    name: entry.name,
+    nameZh: entry.nameZh,
+    nameOriginal: entry.nameOriginal ?? "",
+    labels: entry.labels ?? "",
     thumbUrl: entry.thumbUrl ?? "",
     thumbTransform: entry.thumbTransform ?? { ...DEFAULT_THUMB_TRANSFORM },
     note: entry.note ?? "",
@@ -108,7 +113,9 @@ function mapFirestoreAppearances(value: unknown): AppearanceState[] {
 function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {
   return list.map((entry) => ({
     id: generateLocalId(),
-    name: entry.name,
+    nameZh: entry.nameZh,
+    nameOriginal: entry.nameOriginal ?? "",
+    labels: entry.labels ?? "",
     thumbUrl: entry.thumbUrl ?? "",
     thumbTransform: entry.thumbTransform,
     note: entry.note ?? "",
@@ -185,6 +192,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [links, setLinks] = useState<LinkState[]>([]);
   const [appearances, setAppearances] = useState<AppearanceState[]>([]);
   const [message, setMessage] = useState("");
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [, setPendingRedirectId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(itemId));
   const [saving, setSaving] = useState(false);
@@ -542,6 +551,31 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     );
   }, [availableTagSuggestions, tagQuery]);
 
+  const handleMessageDialogClose = useCallback(() => {
+    setMessageDialogOpen(false);
+    setMessage("");
+    setPendingRedirectId((prev) => {
+      if (prev) {
+        router.replace(`/item/${prev}/edit`);
+      }
+      return null;
+    });
+  }, [router]);
+
+  useEffect(() => {
+    if (!messageDialogOpen) {
+      return;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleMessageDialogClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [messageDialogOpen, handleMessageDialogClose]);
+
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] p-6">
@@ -578,6 +612,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setSaving(true);
     setError("");
     setMessage("");
+    setMessageDialogOpen(false);
+    setPendingRedirectId(null);
 
     const allowedTags = new Set(cabinetTags);
     const tags = Array.from(
@@ -691,7 +727,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         insightNote: parsedData.insightNote ?? null,
         note: parsedData.note ?? null,
         appearances: parsedData.appearances.map((entry) => ({
-          name: entry.name,
+          name: entry.nameZh,
+          nameZh: entry.nameZh,
+          nameOriginal: entry.nameOriginal?.trim() ? entry.nameOriginal : null,
+          labels: entry.labels?.trim() ? entry.labels : null,
           thumbUrl: entry.thumbUrl ?? null,
           thumbTransform: entry.thumbUrl
             ? prepareThumbTransform(entry.thumbTransform)
@@ -719,13 +758,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       if (mode === "edit" && itemId) {
         await updateDoc(doc(db, "item", itemId), docData);
         setMessage("已儲存");
+        setMessageDialogOpen(true);
       } else {
         const docRef = await addDoc(collection(db, "item"), {
           ...docData,
           createdAt: serverTimestamp(),
         });
-        setMessage("已建立，已自動切換至編輯頁面");
-        router.replace(`/item/${docRef.id}/edit`);
+        setPendingRedirectId(docRef.id);
+        setMessage("已建立，按「確定」後前往編輯頁面");
+        setMessageDialogOpen(true);
       }
 
       setForm((prev) => ({
@@ -811,7 +852,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       ...prev,
       {
         id: generateLocalId(),
-        name: "",
+        nameZh: "",
+        nameOriginal: "",
+        labels: "",
         thumbUrl: "",
         thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
         note: "",
@@ -951,7 +994,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
   function handleAppearanceChange(
     index: number,
-    field: "name" | "thumbUrl" | "note",
+    field: "nameZh" | "nameOriginal" | "labels" | "thumbUrl" | "note",
     value: string
   ) {
     setAppearances((prev) =>
@@ -1047,12 +1090,6 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               {error}
             </div>
           )}
-          {message && (
-            <div className="break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {message}
-            </div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-6">
             <CollapsibleSection
               sectionKey="basic"
@@ -1462,14 +1499,48 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                           </button>
                         </div>
                         <label className="space-y-1">
-                          <span className="text-sm text-gray-600">名稱 *</span>
+                          <span className="text-sm text-gray-600">中文名稱 *</span>
                           <input
-                            value={appearance.name}
+                            value={appearance.nameZh}
                             onChange={(e) =>
-                              handleAppearanceChange(index, "name", e.target.value)
+                              handleAppearanceChange(
+                                index,
+                                "nameZh",
+                                e.target.value
+                              )
                             }
                             className={inputClass}
                             placeholder="例如：主角名稱"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-sm text-gray-600">原文名稱</span>
+                          <input
+                            value={appearance.nameOriginal}
+                            onChange={(e) =>
+                              handleAppearanceChange(
+                                index,
+                                "nameOriginal",
+                                e.target.value
+                              )
+                            }
+                            className={inputClass}
+                            placeholder="例如：Character Name"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-sm text-gray-600">標籤（以逗號分隔）</span>
+                          <input
+                            value={appearance.labels}
+                            onChange={(e) =>
+                              handleAppearanceChange(
+                                index,
+                                "labels",
+                                e.target.value
+                              )
+                            }
+                            className={inputClass}
+                            placeholder="例如：夥伴, 雙劍使"
                           />
                         </label>
                         <ThumbLinkField
@@ -1693,6 +1764,31 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           </>
         ) : null}
       </div>
+      {messageDialogOpen && message && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          onClick={handleMessageDialogClose}
+        >
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-gray-900">提示</h2>
+            <p className="break-anywhere text-sm text-gray-700">{message}</p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleMessageDialogClose}
+                className={buttonClass({ variant: "primary" })}
+              >
+                確定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

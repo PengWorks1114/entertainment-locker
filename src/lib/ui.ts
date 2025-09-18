@@ -3,7 +3,8 @@ export type ButtonVariant =
   | "secondary"
   | "subtle"
   | "danger"
-  | "outlineDanger";
+  | "outlineDanger"
+  | "accent";
 
 export type ButtonSize = "sm" | "md" | "lg";
 
@@ -24,6 +25,7 @@ const variantStyles: Record<ButtonVariant, string> = {
   danger: "bg-red-600 text-white shadow-sm hover:bg-red-500",
   outlineDanger:
     "border border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50",
+  accent: "bg-blue-600 text-white shadow-lg hover:bg-blue-500",
 };
 
 export function buttonClass(

@@ -19,7 +19,11 @@ import {
 import FavoriteToggleButton from "@/components/FavoriteToggleButton";
 import ThumbEditorDialog from "@/components/ThumbEditorDialog";
 import ThumbLinkField from "@/components/ThumbLinkField";
-import { normalizeAppearanceRecords } from "@/lib/appearances";
+import {
+  normalizeAppearanceRecords,
+  splitAppearanceLabels,
+  formatAppearanceLabels,
+} from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
 import { buttonClass } from "@/lib/ui";
@@ -169,7 +173,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [appearanceEditor, setAppearanceEditor] = useState<{
     index: number;
-    name: string;
+    nameZh: string;
+    nameOriginal: string;
+    labels: string;
     thumbUrl: string;
     thumbTransform: ThumbTransform;
     note: string;
@@ -178,7 +184,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [appearanceThumbEditorOpen, setAppearanceThumbEditorOpen] =
     useState(false);
-  const appearanceNameInputRef = useRef<HTMLInputElement | null>(null);
+  const appearanceNameZhInputRef = useRef<HTMLInputElement | null>(null);
   const [appearanceFeedback, setAppearanceFeedback] =
     useState<NoteFeedback | null>(null);
   const [attributeEditorOpen, setAttributeEditorOpen] = useState(false);
@@ -565,7 +571,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   useEffect(() => {
     if (!appearanceEditor) return;
     const timer = setTimeout(() => {
-      const input = appearanceNameInputRef.current;
+      const input = appearanceNameZhInputRef.current;
       if (input) {
         input.focus();
         const length = input.value.length;
@@ -820,7 +826,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     setAppearanceEditor({
       index,
-      name: target.name,
+      nameZh: target.nameZh,
+      nameOriginal: target.nameOriginal ?? "",
+      labels: target.labels ?? "",
       thumbUrl: target.thumbUrl ?? "",
       thumbTransform: target.thumbTransform
         ? clampThumbTransform(target.thumbTransform)
@@ -904,18 +912,23 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setAppearanceError("找不到登場資料");
       return;
     }
-    const name = appearanceEditor.name.trim();
-    if (!name) {
-      setAppearanceError("請輸入登場名稱");
+    const nameZh = appearanceEditor.nameZh.trim();
+    if (!nameZh) {
+      setAppearanceError("請輸入中文名稱");
       return;
     }
     const noteText = appearanceEditor.note.trim();
     const thumbUrl = appearanceEditor.thumbUrl.trim();
+    const nameOriginal = appearanceEditor.nameOriginal.trim();
+    const labels = formatAppearanceLabels(appearanceEditor.labels);
     const nextTransform = clampThumbTransform(appearanceEditor.thumbTransform);
     const updatedList = currentAppearances.map((entry, idx) => {
       if (idx === appearanceEditor.index) {
         return {
-          name,
+          name: nameZh,
+          nameZh,
+          nameOriginal: nameOriginal ? nameOriginal : null,
+          labels: labels ? labels : null,
           thumbUrl: thumbUrl || null,
           thumbTransform: nextTransform,
           note: noteText ? noteText : null,
@@ -929,8 +942,19 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         typeof entry.note === "string" && entry.note.trim().length > 0
           ? entry.note.trim()
           : null;
+      const existingNameOriginal =
+        typeof entry.nameOriginal === "string" && entry.nameOriginal.trim().length > 0
+          ? entry.nameOriginal.trim()
+          : null;
+      const existingLabels =
+        typeof entry.labels === "string" && entry.labels.trim().length > 0
+          ? formatAppearanceLabels(entry.labels)
+          : "";
       return {
-        name: entry.name,
+        name: entry.nameZh,
+        nameZh: entry.nameZh,
+        nameOriginal: existingNameOriginal,
+        labels: existingLabels ? existingLabels : null,
         thumbUrl: existingThumbUrl,
         thumbTransform: entry.thumbTransform
           ? clampThumbTransform(entry.thumbTransform)
@@ -1368,9 +1392,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   transform: `translate(${appearanceTransform.offsetX}%, ${appearanceTransform.offsetY}%) scale(${appearanceTransform.scale})`,
                   transformOrigin: "center" as const,
                 };
+                const labels = splitAppearanceLabels(entry.labels ?? "");
                 return (
                   <div
-                    key={`${entry.name}-${index}`}
+                    key={`${entry.nameZh}-${index}`}
                     className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
                     onDoubleClick={() => openAppearanceEditor(index)}
                     onKeyDown={(event) => {
@@ -1388,7 +1413,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={entry.thumbUrl}
-                          alt={`${entry.name} 縮圖`}
+                          alt={`${entry.nameZh} 縮圖`}
                           className="h-full w-full select-none object-cover"
                           style={appearanceStyle}
                           loading="lazy"
@@ -1398,8 +1423,25 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     ) : null}
                     <div className="flex-1 space-y-2">
                       <div className="break-anywhere text-base font-medium text-gray-900">
-                        {entry.name}
+                        {entry.nameZh}
                       </div>
+                      {entry.nameOriginal && (
+                        <div className="break-anywhere text-sm text-gray-600">
+                          {entry.nameOriginal}
+                        </div>
+                      )}
+                      {labels.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {labels.map((label, labelIndex) => (
+                            <span
+                              key={`${label}-${labelIndex}`}
+                              className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {entry.note && (
                         <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
                           {entry.note}
@@ -1751,17 +1793,49 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
               <div className="space-y-4">
                 <label className="block space-y-1">
-                  <span className="text-base">名稱</span>
+                  <span className="text-base">中文名稱</span>
                   <input
-                    ref={appearanceNameInputRef}
-                    value={appearanceEditor.name}
+                    ref={appearanceNameZhInputRef}
+                    value={appearanceEditor.nameZh}
                     onChange={(event) =>
                       setAppearanceEditor((prev) =>
-                        prev ? { ...prev, name: event.target.value } : prev
+                        prev ? { ...prev, nameZh: event.target.value } : prev
                       )
                     }
                     className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                    placeholder="輸入登場名稱"
+                    placeholder="輸入中文名稱"
+                    disabled={appearanceSaving}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-base">原文名稱</span>
+                  <input
+                    value={appearanceEditor.nameOriginal}
+                    onChange={(event) =>
+                      setAppearanceEditor((prev) =>
+                        prev
+                          ? { ...prev, nameOriginal: event.target.value }
+                          : prev
+                      )
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="輸入原文名稱"
+                    disabled={appearanceSaving}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-base">標籤（以逗號分隔）</span>
+                  <input
+                    value={appearanceEditor.labels}
+                    onChange={(event) =>
+                      setAppearanceEditor((prev) =>
+                        prev
+                          ? { ...prev, labels: event.target.value }
+                          : prev
+                      )
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="例如：夥伴, 導師"
                     disabled={appearanceSaving}
                   />
                 </label>

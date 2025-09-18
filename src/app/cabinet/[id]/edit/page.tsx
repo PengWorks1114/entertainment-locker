@@ -240,9 +240,6 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             <Link href={`/cabinet/${encodedId}`} className={secondaryButtonClass}>
               返回櫃子內容
             </Link>
-            <Link href="/cabinets" className={secondaryButtonClass}>
-              返回櫃子列表
-            </Link>
           </div>
         </header>
 
