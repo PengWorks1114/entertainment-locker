@@ -145,8 +145,8 @@ export default function ThumbEditorDialog({
 
   const previewClassName =
     shape === "portrait"
-      ? "relative mx-auto mt-6 aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 sm:max-w-md"
-      : "relative mx-auto mt-6 aspect-square w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100";
+      ? "relative mx-auto mt-6 aspect-[3/4] w-full max-w-xs overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 sm:max-w-sm"
+      : "relative mx-auto mt-6 aspect-square w-full max-w-xs overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 sm:max-w-sm";
 
   return (
     <div
@@ -156,7 +156,7 @@ export default function ThumbEditorDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl"
+        className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

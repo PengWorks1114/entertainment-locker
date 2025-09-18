@@ -78,6 +78,23 @@ function formatDateOnly(timestamp?: Timestamp | null): string {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
 }
 
+function formatTimestampToInput(timestamp?: Timestamp | null): string {
+  if (!timestamp) {
+    return "";
+  }
+  return formatDateToInput(timestamp.toDate());
+}
+
+function formatDateToInput(date: Date): string {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 function formatProgressValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
@@ -105,6 +122,14 @@ type ProgressDraftState = {
   type: ProgressType;
   value: string;
   unit: string;
+};
+
+type AttributeDraftState = {
+  status: ItemStatus;
+  rating: string;
+  author: string;
+  updateFrequency: UpdateFrequency | "";
+  nextUpdateAt: string;
 };
 
 const defaultProgressType =
@@ -154,6 +179,18 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     useState(false);
   const appearanceNameInputRef = useRef<HTMLInputElement | null>(null);
   const [appearanceFeedback, setAppearanceFeedback] =
+    useState<NoteFeedback | null>(null);
+  const [attributeEditorOpen, setAttributeEditorOpen] = useState(false);
+  const [attributeSaving, setAttributeSaving] = useState(false);
+  const [attributeError, setAttributeError] = useState<string | null>(null);
+  const [attributeDraft, setAttributeDraft] = useState<AttributeDraftState>({
+    status: ITEM_STATUS_OPTIONS[0]?.value ?? "planning",
+    rating: "",
+    author: "",
+    updateFrequency: "",
+    nextUpdateAt: "",
+  });
+  const [attributeFeedback, setAttributeFeedback] =
     useState<NoteFeedback | null>(null);
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
@@ -407,6 +444,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }, [appearanceFeedback]);
 
   useEffect(() => {
+    if (!attributeFeedback) return;
+    const timer = setTimeout(() => setAttributeFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [attributeFeedback]);
+
+  useEffect(() => {
     if (!progressFeedback) return;
     const timer = setTimeout(() => setProgressFeedback(null), 3000);
     return () => clearTimeout(timer);
@@ -549,6 +592,142 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const flagged = validLinks.find((link) => link.isPrimary);
     return flagged ?? validLinks[0];
   }, [item]);
+
+  function openAttributeEditor() {
+    if (!item) {
+      setAttributeFeedback({
+        type: "error",
+        message: "目前無法編輯屬性",
+      });
+      return;
+    }
+    if (!user) {
+      setAttributeFeedback({
+        type: "error",
+        message: "請先登入後再編輯屬性",
+      });
+      return;
+    }
+    const statusValue = ITEM_STATUS_VALUES.includes(item.status)
+      ? item.status
+      : ITEM_STATUS_OPTIONS[0]?.value ?? "planning";
+    const ratingValue =
+      typeof item.rating === "number" && Number.isFinite(item.rating)
+        ? String(item.rating)
+        : "";
+    const authorValue =
+      typeof item.author === "string" ? item.author : "";
+    const updateFrequencyValue =
+      item.updateFrequency &&
+      UPDATE_FREQUENCY_VALUES.includes(item.updateFrequency)
+        ? item.updateFrequency
+        : "";
+    setAttributeDraft({
+      status: statusValue,
+      rating: ratingValue,
+      author: authorValue,
+      updateFrequency: updateFrequencyValue,
+      nextUpdateAt: formatTimestampToInput(item.nextUpdateAt),
+    });
+    setAttributeError(null);
+    setAttributeEditorOpen(true);
+  }
+
+  const closeAttributeEditor = () => {
+    if (attributeSaving) {
+      return;
+    }
+    setAttributeEditorOpen(false);
+    setAttributeError(null);
+  };
+
+  const handleAttributeSave = async () => {
+    if (!item) {
+      setAttributeError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setAttributeError("請先登入");
+      return;
+    }
+    const statusValue = attributeDraft.status;
+    if (!ITEM_STATUS_VALUES.includes(statusValue)) {
+      setAttributeError("狀態值不在允許範圍");
+      return;
+    }
+    const updateFrequencyValue = attributeDraft.updateFrequency;
+    if (
+      updateFrequencyValue &&
+      !UPDATE_FREQUENCY_VALUES.includes(updateFrequencyValue)
+    ) {
+      setAttributeError("更新頻率值不在允許範圍");
+      return;
+    }
+    const ratingInput = attributeDraft.rating.trim();
+    let ratingValue: number | null = null;
+    if (ratingInput) {
+      const parsedRating = Number(ratingInput);
+      if (Number.isNaN(parsedRating)) {
+        setAttributeError("評分需為數字");
+        return;
+      }
+      if (parsedRating < 0 || parsedRating > 10) {
+        setAttributeError("評分需介於 0 至 10 之間");
+        return;
+      }
+      ratingValue = parsedRating;
+    }
+    const trimmedAuthor = attributeDraft.author.trim();
+    const nextUpdateInput = attributeDraft.nextUpdateAt.trim();
+    let nextUpdateTimestamp: Timestamp | null = null;
+    if (nextUpdateInput) {
+      const parsedDate = new Date(nextUpdateInput);
+      if (Number.isNaN(parsedDate.getTime())) {
+        setAttributeError("下次更新時間格式錯誤");
+        return;
+      }
+      nextUpdateTimestamp = Timestamp.fromDate(parsedDate);
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setAttributeError("Firebase 尚未設定");
+      return;
+    }
+    setAttributeSaving(true);
+    setAttributeError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      const resolvedUpdateFrequency = updateFrequencyValue || null;
+      await updateDoc(itemRef, {
+        status: statusValue,
+        rating: ratingValue !== null ? ratingValue : null,
+        author: trimmedAuthor ? trimmedAuthor : null,
+        updateFrequency: resolvedUpdateFrequency,
+        nextUpdateAt: nextUpdateTimestamp,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: statusValue,
+              rating: ratingValue !== null ? ratingValue : null,
+              author: trimmedAuthor ? trimmedAuthor : null,
+              updateFrequency: resolvedUpdateFrequency,
+              nextUpdateAt: nextUpdateTimestamp,
+              updatedAt: Timestamp.now(),
+            }
+          : prev
+      );
+      setAttributeEditorOpen(false);
+      setAttributeFeedback({ type: "success", message: "已更新屬性" });
+    } catch (err) {
+      console.error("更新屬性時發生錯誤", err);
+      setAttributeError("更新屬性時發生錯誤");
+    } finally {
+      setAttributeSaving(false);
+    }
+  };
 
   function openNoteEditor() {
     if (!item) {
@@ -913,38 +1092,67 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
             )}
             <div className="flex-1 space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">狀態</div>
-                  <div className="break-anywhere text-base text-gray-900">{statusLabel}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">評分</div>
-                  <div className="break-anywhere text-base text-gray-900">{ratingText}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">作者 / 製作</div>
-                  <div className="break-anywhere text-base text-gray-900">
-                    {item.author && item.author.trim().length > 0 ? item.author : "未設定"}
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">雙擊屬性可快速編輯。</p>
+                <div
+                  className="cursor-text rounded-xl bg-gray-50 px-4 py-4 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  onDoubleClick={openAttributeEditor}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openAttributeEditor();
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  title="雙擊以快速編輯屬性"
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">狀態</div>
+                      <div className="break-anywhere text-base text-gray-900">{statusLabel}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">評分</div>
+                      <div className="break-anywhere text-base text-gray-900">{ratingText}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">作者 / 製作</div>
+                      <div className="break-anywhere text-base text-gray-900">
+                        {item.author && item.author.trim().length > 0 ? item.author : "未設定"}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">更新頻率</div>
+                      <div className="break-anywhere text-base text-gray-900">{updateFrequencyLabel}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">下次更新</div>
+                      <div className="break-anywhere text-base text-gray-900">{nextUpdateText}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">最後更新時間</div>
+                      <div className="break-anywhere text-base text-gray-900">{updatedAtText}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">建立時間</div>
+                      <div className="break-anywhere text-base text-gray-900">{createdAtText}</div>
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">更新頻率</div>
-                  <div className="break-anywhere text-base text-gray-900">{updateFrequencyLabel}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">下次更新</div>
-                  <div className="break-anywhere text-base text-gray-900">{nextUpdateText}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">最後更新時間</div>
-                  <div className="break-anywhere text-base text-gray-900">{updatedAtText}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-gray-500">建立時間</div>
-                  <div className="break-anywhere text-base text-gray-900">{createdAtText}</div>
-                </div>
               </div>
+
+              {attributeFeedback && (
+                <div
+                  className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                    attributeFeedback.type === "success"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-red-50 text-red-700"
+                  }`}
+                >
+                  {attributeFeedback.message}
+                </div>
+              )}
 
               {tags.length > 0 && (
                 <div className="space-y-2">
@@ -1099,7 +1307,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 return (
                   <div
                     key={`${entry.name}-${index}`}
-                    className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                    className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
                     onDoubleClick={() => openAppearanceEditor(index)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -1190,6 +1398,146 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
       </div>
+
+      {attributeEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeAttributeEditor}
+        >
+          <div
+            className="w-full max-w-xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attribute-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="attribute-editor-title" className="text-xl font-semibold text-gray-900">
+                編輯屬性
+              </h2>
+              <p className="text-sm text-gray-500">
+                更新後會立即儲存至雲端，並同步更新最後編輯時間。
+              </p>
+            </div>
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">狀態 *</span>
+                <select
+                  value={attributeDraft.status}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      status: event.target.value as ItemStatus,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={attributeSaving}
+                >
+                  {ITEM_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">評分 (0-10)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={attributeDraft.rating}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      rating: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="選填"
+                  disabled={attributeSaving}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">作者 / 製作</span>
+                <input
+                  value={attributeDraft.author}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      author: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="選填"
+                  disabled={attributeSaving}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">更新頻率</span>
+                <select
+                  value={attributeDraft.updateFrequency}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      updateFrequency: event.target.value as UpdateFrequency | "",
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={attributeSaving}
+                >
+                  <option value="">未設定</option>
+                  {UPDATE_FREQUENCY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">下次預計更新時間</span>
+                <input
+                  type="datetime-local"
+                  value={attributeDraft.nextUpdateAt}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      nextUpdateAt: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={attributeSaving}
+                />
+              </label>
+            </div>
+            {attributeError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {attributeError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeAttributeEditor}
+                disabled={attributeSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleAttributeSave}
+                disabled={attributeSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {attributeSaving ? "儲存中…" : "儲存變更"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {progressEditorOpen && (
         <div

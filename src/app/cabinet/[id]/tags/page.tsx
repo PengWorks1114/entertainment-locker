@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -49,6 +49,9 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
   const [tagSaving, setTagSaving] = useState(false);
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const PAGE_SIZE = 20;
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -167,6 +170,10 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
         updatedAt: serverTimestamp(),
       });
       setTags(nextTags);
+      const insertedIndex = nextTags.indexOf(trimmed);
+      if (insertedIndex >= 0) {
+        setCurrentPage(Math.floor(insertedIndex / PAGE_SIZE) + 1);
+      }
       setTagInput("");
       setTagMessage("已新增標籤");
     } catch (err) {
@@ -309,6 +316,120 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
   const inputClass =
     "h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none";
 
+  const filterQuery = tagInput.trim().toLowerCase();
+  const filteredTags = useMemo(() => {
+    if (!filterQuery) {
+      return tags;
+    }
+    return tags.filter((tag) => tag.toLowerCase().includes(filterQuery));
+  }, [tags, filterQuery]);
+
+  const totalPages = filteredTags.length === 0 ? 1 : Math.ceil(filteredTags.length / PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage((prev) => {
+      const nextPage = Math.min(Math.max(prev, 1), totalPages);
+      return nextPage === prev ? prev : nextPage;
+    });
+  }, [totalPages]);
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const windowSize = 5;
+    if (totalPages <= windowSize) {
+      for (let page = 1; page <= totalPages; page += 1) {
+        pages.push(page);
+      }
+      return pages;
+    }
+    const half = Math.floor(windowSize / 2);
+    let start = Math.max(1, currentPage - half);
+    let end = start + windowSize - 1;
+    if (end > totalPages) {
+      end = totalPages;
+      start = end - windowSize + 1;
+    }
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
+    return pages;
+  }, [currentPage, totalPages]);
+
+  const paginatedTags = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredTags.slice(start, start + PAGE_SIZE);
+  }, [filteredTags, currentPage]);
+
+  const showStartEllipsis = pageNumbers.length > 0 && pageNumbers[0] > 1;
+  const showEndEllipsis =
+    pageNumbers.length > 0 && pageNumbers[pageNumbers.length - 1] < totalPages;
+
+  const renderPagination = (position: "top" | "bottom") => {
+    if (totalPages <= 1) {
+      return null;
+    }
+    return (
+      <nav
+        className={`flex flex-wrap items-center gap-1 text-xs text-gray-600 ${
+          position === "top" ? "" : "mt-2"
+        }`}
+        aria-label="標籤分頁"
+      >
+        <button
+          type="button"
+          onClick={() => setCurrentPage(1)}
+          disabled={currentPage === 1}
+          className="rounded-full border border-gray-200 px-3 py-1 transition hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          最前頁
+        </button>
+        <button
+          type="button"
+          onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+          disabled={currentPage === 1}
+          className="rounded-full border border-gray-200 px-3 py-1 transition hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          前頁
+        </button>
+        {showStartEllipsis && <span className="px-2">…</span>}
+        {pageNumbers.map((page) => {
+          const isActive = page === currentPage;
+          return (
+            <button
+              key={`pagination-${page}`}
+              type="button"
+              onClick={() => setCurrentPage(page)}
+              className={`rounded-full border px-3 py-1 transition ${
+                isActive
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-gray-200 text-gray-600 hover:border-gray-300"
+              }`}
+            >
+              {page}
+            </button>
+          );
+        })}
+        {showEndEllipsis && <span className="px-2">…</span>}
+        <button
+          type="button"
+          onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={currentPage === totalPages}
+          className="rounded-full border border-gray-200 px-3 py-1 transition hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          次頁
+        </button>
+        <button
+          type="button"
+          onClick={() => setCurrentPage(totalPages)}
+          disabled={currentPage === totalPages}
+          className="rounded-full border border-gray-200 px-3 py-1 transition hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          最後頁
+        </button>
+      </nav>
+    );
+  };
+
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -394,7 +515,10 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input
                   value={tagInput}
-                  onChange={(event) => setTagInput(event.target.value)}
+                  onChange={(event) => {
+                    setTagInput(event.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="輸入新標籤，例如：漫畫、輕小說"
                   className={inputClass}
                 />
@@ -413,13 +537,23 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
                   目前尚未建立任何標籤。
                 </p>
               ) : (
-                <ul className="space-y-3">
-                  {tags.map((tag) => {
-                    const isEditing = editingTag === tag;
-                    return (
-                      <li
-                        key={tag}
-                        className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm"
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                    <span>共 {filteredTags.length} 個標籤</span>
+                    {renderPagination("top")}
+                  </div>
+                  {filterQuery && filteredTags.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-6 text-center text-sm text-gray-500">
+                      找不到符合的標籤，可直接輸入新增。
+                    </p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {paginatedTags.map((tag) => {
+                        const isEditing = editingTag === tag;
+                        return (
+                          <li
+                            key={tag}
+                            className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm"
                       >
                         {isEditing ? (
                           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
@@ -453,11 +587,11 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
                         ) : (
                           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:min-w-0">
                             <span className="break-anywhere text-sm font-medium text-gray-900 sm:min-w-0 sm:flex-1">#{tag}</span>
-                            <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingTag(tag);
+                              <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTag(tag);
                                   setEditingValue(tag);
                                   setTagError(null);
                                   setTagMessage(null);
@@ -478,10 +612,13 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
                             </div>
                           </div>
                         )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {renderPagination("bottom")}
+                </div>
               )}
             </>
           )}
