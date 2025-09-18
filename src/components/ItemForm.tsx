@@ -27,6 +27,7 @@ import {
 } from "firebase/firestore";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { fetchOpenGraphImage } from "@/lib/opengraph";
 import ThumbLinkField from "./ThumbLinkField";
 import ThumbEditorDialog from "./ThumbEditorDialog";
 import ProgressEditor from "./ProgressEditor";
@@ -659,6 +660,21 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         nextUpdateAt: nextUpdateDate,
       });
 
+      let resolvedThumbUrl = parsedData.thumbUrl;
+      let resolvedThumbTransform = parsedData.thumbTransform;
+      if (mode === "create" && !resolvedThumbUrl) {
+        const primaryLink =
+          parsedData.links.find((link) => link.isPrimary) ??
+          parsedData.links[0];
+        if (primaryLink) {
+          const autoThumb = await fetchOpenGraphImage(primaryLink.url);
+          if (autoThumb) {
+            resolvedThumbUrl = autoThumb;
+            resolvedThumbTransform = { ...DEFAULT_THUMB_TRANSFORM };
+          }
+        }
+      }
+
       const docData: Record<string, unknown> = {
         uid: user.uid,
         cabinetId: parsedData.cabinetId,
@@ -667,9 +683,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         author: parsedData.author ?? null,
         tags: parsedData.tags,
         links: parsedData.links,
-        thumbUrl: parsedData.thumbUrl ?? null,
-        thumbTransform: parsedData.thumbUrl
-          ? prepareThumbTransform(parsedData.thumbTransform)
+        thumbUrl: resolvedThumbUrl ?? null,
+        thumbTransform: resolvedThumbUrl
+          ? prepareThumbTransform(resolvedThumbTransform)
           : null,
         progressNote: parsedData.progressNote ?? null,
         insightNote: parsedData.insightNote ?? null,
@@ -731,9 +747,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         nextUpdateAt: parsedData.nextUpdateAt
           ? formatDateToInput(parsedData.nextUpdateAt)
           : "",
-        thumbUrl: parsedData.thumbUrl ?? "",
-        thumbTransform: parsedData.thumbUrl
-          ? clampThumbTransform(parsedData.thumbTransform)
+        thumbUrl: resolvedThumbUrl ?? "",
+        thumbTransform: resolvedThumbUrl
+          ? clampThumbTransform(resolvedThumbTransform)
           : { ...DEFAULT_THUMB_TRANSFORM },
       }));
       setLinks(

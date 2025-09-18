@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { fetchOpenGraphImage } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 
 type CabinetOption = { id: string; name: string };
@@ -162,8 +163,8 @@ export default function QuickAddItemPage() {
       return;
     }
 
-    const thumbUrl = form.thumbUrl.trim();
-    if (thumbUrl && !isValidHttpUrl(thumbUrl)) {
+    const thumbUrlInput = form.thumbUrl.trim();
+    if (thumbUrlInput && !isValidHttpUrl(thumbUrlInput)) {
       setError("請輸入有效的縮圖連結");
       return;
     }
@@ -186,6 +187,14 @@ export default function QuickAddItemPage() {
           ]
         : [];
 
+      let resolvedThumbUrl = thumbUrlInput;
+      if (!resolvedThumbUrl && sourceUrl) {
+        const autoThumb = await fetchOpenGraphImage(sourceUrl);
+        if (autoThumb) {
+          resolvedThumbUrl = autoThumb;
+        }
+      }
+
       const docRef = await addDoc(collection(db, "item"), {
         uid: user.uid,
         cabinetId,
@@ -194,7 +203,7 @@ export default function QuickAddItemPage() {
         author: null,
         tags: [],
         links,
-        thumbUrl: thumbUrl || null,
+        thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
         progressNote: null,
         insightNote: null,
