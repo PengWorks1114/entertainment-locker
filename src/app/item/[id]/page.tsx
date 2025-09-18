@@ -16,6 +16,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import ThumbEditorDialog from "@/components/ThumbEditorDialog";
+import ThumbLinkField from "@/components/ThumbLinkField";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
@@ -29,8 +31,13 @@ import {
   type UpdateFrequency,
   UPDATE_FREQUENCY_OPTIONS,
   UPDATE_FREQUENCY_VALUES,
+  type ThumbTransform,
 } from "@/lib/types";
-import { DEFAULT_THUMB_TRANSFORM, normalizeThumbTransform } from "@/lib/image-utils";
+import {
+  clampThumbTransform,
+  DEFAULT_THUMB_TRANSFORM,
+  normalizeThumbTransform,
+} from "@/lib/image-utils";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -110,6 +117,20 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [appearanceEditor, setAppearanceEditor] = useState<{
+    index: number;
+    name: string;
+    thumbUrl: string;
+    thumbTransform: ThumbTransform;
+    note: string;
+  } | null>(null);
+  const [appearanceError, setAppearanceError] = useState<string | null>(null);
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
+  const [appearanceThumbEditorOpen, setAppearanceThumbEditorOpen] =
+    useState(false);
+  const appearanceNameInputRef = useRef<HTMLInputElement | null>(null);
+  const [appearanceFeedback, setAppearanceFeedback] =
+    useState<NoteFeedback | null>(null);
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
   const thumbStyle = useMemo(
@@ -356,6 +377,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }, [noteFeedback]);
 
   useEffect(() => {
+    if (!appearanceFeedback) return;
+    const timer = setTimeout(() => setAppearanceFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [appearanceFeedback]);
+
+  useEffect(() => {
     if (!noteEditorOpen) return;
     const timer = setTimeout(() => {
       noteTextareaRef.current?.focus();
@@ -367,6 +394,19 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }, 0);
     return () => clearTimeout(timer);
   }, [noteEditorOpen]);
+
+  useEffect(() => {
+    if (!appearanceEditor) return;
+    const timer = setTimeout(() => {
+      const input = appearanceNameInputRef.current;
+      if (input) {
+        input.focus();
+        const length = input.value.length;
+        input.setSelectionRange(length, length);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [appearanceEditor]);
 
   const progressSummary = useMemo(() => {
     if (progressLoading) {
@@ -417,6 +457,51 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     setNoteError(null);
   }
 
+  function openAppearanceEditor(index: number) {
+    if (!user) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "請先登入後再編輯登場物件",
+      });
+      return;
+    }
+    if (!item) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "目前無法編輯登場物件",
+      });
+      return;
+    }
+    const target = item.appearances?.[index];
+    if (!target) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "找不到登場資料",
+      });
+      return;
+    }
+    setAppearanceEditor({
+      index,
+      name: target.name,
+      thumbUrl: target.thumbUrl ?? "",
+      thumbTransform: target.thumbTransform
+        ? clampThumbTransform(target.thumbTransform)
+        : { ...DEFAULT_THUMB_TRANSFORM },
+      note: target.note ?? "",
+    });
+    setAppearanceError(null);
+    setAppearanceThumbEditorOpen(false);
+  }
+
+  function closeAppearanceEditor() {
+    if (appearanceSaving) {
+      return;
+    }
+    setAppearanceEditor(null);
+    setAppearanceError(null);
+    setAppearanceThumbEditorOpen(false);
+  }
+
   async function handleNoteSave() {
     if (!item) {
       setNoteError("找不到物件資料");
@@ -455,6 +540,93 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setNoteError("更新心得 / 筆記時發生錯誤");
     } finally {
       setNoteSaving(false);
+    }
+  }
+
+  async function handleAppearanceSave() {
+    if (!appearanceEditor) {
+      setAppearanceError("找不到登場資料");
+      return;
+    }
+    if (!item) {
+      setAppearanceError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setAppearanceError("請先登入");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setAppearanceError("Firebase 尚未設定");
+      return;
+    }
+    const currentAppearances = item.appearances ?? [];
+    if (!currentAppearances[appearanceEditor.index]) {
+      setAppearanceError("找不到登場資料");
+      return;
+    }
+    const name = appearanceEditor.name.trim();
+    if (!name) {
+      setAppearanceError("請輸入登場名稱");
+      return;
+    }
+    const noteText = appearanceEditor.note.trim();
+    const thumbUrl = appearanceEditor.thumbUrl.trim();
+    const nextTransform = clampThumbTransform(appearanceEditor.thumbTransform);
+    const updatedList = currentAppearances.map((entry, idx) => {
+      if (idx === appearanceEditor.index) {
+        return {
+          name,
+          thumbUrl: thumbUrl || null,
+          thumbTransform: nextTransform,
+          note: noteText ? noteText : null,
+        };
+      }
+      const existingThumbUrl =
+        typeof entry.thumbUrl === "string" && entry.thumbUrl.trim().length > 0
+          ? entry.thumbUrl.trim()
+          : null;
+      const existingNote =
+        typeof entry.note === "string" && entry.note.trim().length > 0
+          ? entry.note.trim()
+          : null;
+      return {
+        name: entry.name,
+        thumbUrl: existingThumbUrl,
+        thumbTransform: entry.thumbTransform
+          ? clampThumbTransform(entry.thumbTransform)
+          : null,
+        note: existingNote,
+      };
+    });
+    setAppearanceSaving(true);
+    setAppearanceError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        appearances: updatedList,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              appearances: updatedList,
+            }
+          : prev
+      );
+      setAppearanceEditor(null);
+      setAppearanceThumbEditorOpen(false);
+      setAppearanceFeedback({
+        type: "success",
+        message: "已更新登場物件",
+      });
+    } catch (err) {
+      console.error("更新登場物件時發生錯誤", err);
+      setAppearanceError("更新登場物件時發生錯誤");
+    } finally {
+      setAppearanceSaving(false);
     }
   }
 
@@ -763,7 +935,19 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900">登場列表</h2>
               <p className="text-sm text-gray-500">依編輯順序列出重要角色、地點或其他物件。</p>
+              <p className="text-xs text-gray-500">雙擊項目可快速編輯。</p>
             </div>
+            {appearanceFeedback && (
+              <div
+                className={`rounded-xl px-3 py-2 text-sm ${
+                  appearanceFeedback.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {appearanceFeedback.message}
+              </div>
+            )}
             <div className="space-y-4">
               {appearances.map((entry, index) => {
                 const appearanceTransform =
@@ -775,7 +959,17 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 return (
                   <div
                     key={`${entry.name}-${index}`}
-                    className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm"
+                    className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                    onDoubleClick={() => openAppearanceEditor(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openAppearanceEditor(index);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title="雙擊以編輯此登場物件"
                   >
                     {entry.thumbUrl ? (
                       <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
@@ -854,6 +1048,109 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
       </div>
+
+      {appearanceEditor && (
+        <>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+            onClick={closeAppearanceEditor}
+          >
+            <div
+              className="w-full max-w-2xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="appearance-editor-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="space-y-2">
+                <h2 id="appearance-editor-title" className="text-xl font-semibold text-gray-900">
+                  編輯登場物件
+                </h2>
+                <p className="text-sm text-gray-500">僅更新此列表項目的資訊。</p>
+              </div>
+              <div className="space-y-4">
+                <label className="block space-y-1">
+                  <span className="text-base">名稱</span>
+                  <input
+                    ref={appearanceNameInputRef}
+                    value={appearanceEditor.name}
+                    onChange={(event) =>
+                      setAppearanceEditor((prev) =>
+                        prev ? { ...prev, name: event.target.value } : prev
+                      )
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="輸入登場名稱"
+                    disabled={appearanceSaving}
+                  />
+                </label>
+                <ThumbLinkField
+                  value={appearanceEditor.thumbUrl}
+                  onChange={(value) =>
+                    setAppearanceEditor((prev) =>
+                      prev ? { ...prev, thumbUrl: value } : prev
+                    )
+                  }
+                  disabled={appearanceSaving}
+                  onEdit={() => setAppearanceThumbEditorOpen(true)}
+                />
+                <label className="block space-y-1">
+                  <span className="text-base">備註</span>
+                  <textarea
+                    value={appearanceEditor.note}
+                    onChange={(event) =>
+                      setAppearanceEditor((prev) =>
+                        prev ? { ...prev, note: event.target.value } : prev
+                      )
+                    }
+                    className="h-36 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="補充說明或紀錄"
+                    disabled={appearanceSaving}
+                  />
+                </label>
+              </div>
+              {appearanceError && (
+                <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {appearanceError}
+                </div>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeAppearanceEditor}
+                  disabled={appearanceSaving}
+                  className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAppearanceSave}
+                  disabled={appearanceSaving}
+                  className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+                >
+                  {appearanceSaving ? "儲存中…" : "儲存變更"}
+                </button>
+              </div>
+            </div>
+          </div>
+          <ThumbEditorDialog
+            open={
+              appearanceThumbEditorOpen &&
+              appearanceEditor.thumbUrl.trim().length > 0
+            }
+            imageUrl={appearanceEditor.thumbUrl.trim()}
+            value={appearanceEditor.thumbTransform}
+            onClose={() => setAppearanceThumbEditorOpen(false)}
+            onApply={(next) => {
+              setAppearanceEditor((prev) =>
+                prev ? { ...prev, thumbTransform: clampThumbTransform(next) } : prev
+              );
+              setAppearanceThumbEditorOpen(false);
+            }}
+          />
+        </>
+      )}
 
       {noteEditorOpen && (
         <div

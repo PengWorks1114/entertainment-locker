@@ -171,7 +171,7 @@ export default function ThumbEditorDialog({
 
         <div
           ref={containerRef}
-          className="relative mx-auto mt-6 aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100"
+          className="relative mx-auto mt-6 aspect-square w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
