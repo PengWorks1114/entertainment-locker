@@ -765,32 +765,42 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <p className="text-sm text-gray-500">依編輯順序列出重要角色、地點或其他物件。</p>
             </div>
             <div className="space-y-4">
-              {appearances.map((entry, index) => (
-                <div
-                  key={`${entry.name}-${index}`}
-                  className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm"
-                >
-                  {entry.thumbUrl ? (
-                    <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={entry.thumbUrl}
-                        alt={`${entry.name} 縮圖`}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    </div>
-                  ) : null}
-                  <div className="flex-1 space-y-2">
-                    <div className="text-base font-medium text-gray-900">{entry.name}</div>
-                    {entry.note && (
-                      <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
-                        {entry.note}
+              {appearances.map((entry, index) => {
+                const appearanceTransform =
+                  entry.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+                const appearanceStyle = {
+                  transform: `translate(${appearanceTransform.offsetX}%, ${appearanceTransform.offsetY}%) scale(${appearanceTransform.scale})`,
+                  transformOrigin: "center" as const,
+                };
+                return (
+                  <div
+                    key={`${entry.name}-${index}`}
+                    className="flex gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm"
+                  >
+                    {entry.thumbUrl ? (
+                      <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={entry.thumbUrl}
+                          alt={`${entry.name} 縮圖`}
+                          className="h-full w-full select-none object-cover"
+                          style={appearanceStyle}
+                          loading="lazy"
+                          draggable={false}
+                        />
                       </div>
-                    )}
+                    ) : null}
+                    <div className="flex-1 space-y-2">
+                      <div className="text-base font-medium text-gray-900">{entry.name}</div>
+                      {entry.note && (
+                        <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                          {entry.note}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

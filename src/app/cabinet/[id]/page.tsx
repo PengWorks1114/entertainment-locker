@@ -143,7 +143,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     tags: parseTagsFromParams(searchParams),
   }));
   const [currentPage, setCurrentPage] = useState(1);
-  const [tagInput, setTagInput] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
@@ -389,6 +389,19 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
   }, [items, cabinetTags]);
 
+  const filteredAvailableTags = useMemo(() => {
+    const query = tagQuery.trim().toLowerCase();
+    return availableTags.filter((tag) => {
+      if (filters.tags.includes(tag)) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return tag.toLowerCase().includes(query);
+    });
+  }, [availableTags, filters.tags, tagQuery]);
+
   const filteredItems = useMemo(() => {
     const searchTerm = filters.search.trim().toLowerCase();
     const ratingMinValue = Number.parseFloat(filters.ratingMin);
@@ -532,14 +545,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   }
 
   function handleTagSubmit() {
-    if (!tagInput.trim()) return;
-    addTagFilter(tagInput);
-    setTagInput("");
+    const trimmed = tagQuery.trim();
+    if (!trimmed) return;
+    addTagFilter(trimmed);
+    setTagQuery("");
   }
 
   function resetFilters() {
     setFilters({ ...defaultFilters });
-    setTagInput("");
+    setTagQuery("");
   }
 
   const inputClass = "h-12 rounded-xl border px-4 text-base";
@@ -624,6 +638,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
               在此櫃子新增物件
+            </Link>
+            <Link
+              href={`/cabinet/${encodeURIComponent(cabinetId)}/tags`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+            >
+              標籤管理
             </Link>
             <Link
               href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
@@ -778,15 +798,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:flex-nowrap">
               <input
-                value={tagInput}
-                onChange={(event) => setTagInput(event.target.value)}
+                value={tagQuery}
+                onChange={(event) => setTagQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
                     handleTagSubmit();
                   }
                 }}
-                placeholder="輸入標籤名稱"
+                placeholder="輸入或搜尋標籤"
                 className={`${inputClass} flex-1 min-w-[8rem]`}
               />
               <button
@@ -798,28 +818,32 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               </button>
             </div>
             {availableTags.length > 0 && (
-              <div className="space-y-1">
-                <span className="text-xs text-gray-500">快速加入：</span>
-                <div className="flex flex-wrap gap-2">
-                  {availableTags.map((tag) => {
-                    const isSelected = filters.tags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleTagFilter(tag)}
-                        className={`rounded-full border px-3 py-1 text-xs transition ${
-                          isSelected
-                            ? "border-blue-500 bg-blue-50 text-blue-700"
-                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                        }`}
-                      >
-                        #{tag}
-                      </button>
-                    );
-                  })}
+              filteredAvailableTags.length > 0 ? (
+                <div className="space-y-1">
+                  <span className="text-xs text-gray-500">快速加入：</span>
+                  <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
+                    {filteredAvailableTags.map((tag) => {
+                      const isSelected = filters.tags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleTagFilter(tag)}
+                          className={`rounded-full border px-3 py-1 text-xs transition ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          #{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="text-xs text-gray-400">找不到符合的標籤，可直接輸入新增。</p>
+              )
             )}
           </div>
 

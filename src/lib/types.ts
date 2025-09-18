@@ -67,6 +67,7 @@ export type ItemLink = {
 export type AppearanceRecord = {
   name: string;
   thumbUrl?: string | null;
+  thumbTransform?: ThumbTransform | null;
   note?: string | null;
 };
 

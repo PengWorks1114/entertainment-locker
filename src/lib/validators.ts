@@ -11,17 +11,20 @@ import {
 import {
   clampThumbTransform,
   DEFAULT_THUMB_TRANSFORM,
+  normalizeThumbTransform,
 } from "./image-utils";
 
 export type AppearanceFormInput = {
   name?: string | undefined;
   thumbUrl?: string | undefined;
+  thumbTransform?: ThumbTransform | undefined;
   note?: string | undefined;
 };
 
 export type AppearanceFormData = {
   name: string;
   thumbUrl?: string;
+  thumbTransform: ThumbTransform;
   note?: string;
 };
 
@@ -265,6 +268,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       const thumbUrl =
         typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
       const note = typeof record.note === "string" ? record.note.trim() : "";
+      const thumbTransform = normalizeThumbTransform(record.thumbTransform);
 
       if (!name) {
         if (thumbUrl || note) {
@@ -283,6 +287,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       appearances.push({
         name,
         thumbUrl: thumbUrl || undefined,
+        thumbTransform,
         note: note || undefined,
       });
     });

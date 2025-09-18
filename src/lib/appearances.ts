@@ -1,3 +1,4 @@
+import { normalizeThumbTransform } from "./image-utils";
 import type { AppearanceRecord } from "./types";
 
 export function normalizeAppearanceRecords(value: unknown): AppearanceRecord[] {
@@ -13,6 +14,7 @@ export function normalizeAppearanceRecords(value: unknown): AppearanceRecord[] {
     const record = entry as {
       name?: unknown;
       thumbUrl?: unknown;
+      thumbTransform?: unknown;
       note?: unknown;
     };
     const name =
@@ -24,10 +26,12 @@ export function normalizeAppearanceRecords(value: unknown): AppearanceRecord[] {
       typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
     const note =
       typeof record.note === "string" ? record.note.trim() : "";
+    const thumbTransform = normalizeThumbTransform(record.thumbTransform);
 
     result.push({
       name,
       thumbUrl: thumbUrl || null,
+      thumbTransform,
       note: note || null,
     });
   }

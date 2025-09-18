@@ -60,6 +60,7 @@ type AppearanceState = {
   id: string;
   name: string;
   thumbUrl: string;
+  thumbTransform: ThumbTransform;
   note: string;
 };
 
@@ -98,6 +99,7 @@ function mapFirestoreAppearances(value: unknown): AppearanceState[] {
     id: generateLocalId(),
     name: entry.name,
     thumbUrl: entry.thumbUrl ?? "",
+    thumbTransform: entry.thumbTransform ?? { ...DEFAULT_THUMB_TRANSFORM },
     note: entry.note ?? "",
   }));
 }
@@ -107,6 +109,7 @@ function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {
     id: generateLocalId(),
     name: entry.name,
     thumbUrl: entry.thumbUrl ?? "",
+    thumbTransform: entry.thumbTransform,
     note: entry.note ?? "",
   }));
 }
@@ -202,6 +205,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     null
   );
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
+  const [appearanceEditorIndex, setAppearanceEditorIndex] = useState<number | null>(
+    null
+  );
   const tagsCacheRef = useRef<Record<string, string[]>>({});
   const draggingAppearanceIndexRef = useRef<number | null>(null);
   const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
@@ -464,6 +470,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   }, [user]);
 
   useEffect(() => {
+    if (appearanceEditorIndex === null) {
+      return;
+    }
+    if (!appearances[appearanceEditorIndex]) {
+      setAppearanceEditorIndex(null);
+    }
+  }, [appearanceEditorIndex, appearances]);
+
+  useEffect(() => {
     const currentCabinetId = form.cabinetId;
     if (!currentCabinetId || !user) {
       setCabinetTags([]);
@@ -618,9 +633,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
 
     const appearancePayload = appearances.map((entry) => ({
-      name: entry.name,
-      thumbUrl: entry.thumbUrl,
-      note: entry.note,
+      name: entry.name.trim(),
+      thumbUrl: entry.thumbUrl.trim(),
+      thumbTransform: entry.thumbTransform,
+      note: entry.note.trim(),
     }));
 
     try {
@@ -661,6 +677,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         appearances: parsedData.appearances.map((entry) => ({
           name: entry.name,
           thumbUrl: entry.thumbUrl ?? null,
+          thumbTransform: entry.thumbUrl
+            ? prepareThumbTransform(entry.thumbTransform)
+            : null,
           note: entry.note ?? null,
         })),
         rating:
@@ -770,7 +789,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   function handleAddAppearance() {
     setAppearances((prev) => [
       ...prev,
-      { id: generateLocalId(), name: "", thumbUrl: "", note: "" },
+      {
+        id: generateLocalId(),
+        name: "",
+        thumbUrl: "",
+        thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
+        note: "",
+      },
     ]);
   }
 
@@ -910,18 +935,54 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     value: string
   ) {
     setAppearances((prev) =>
-      prev.map((item, idx) => (idx === index ? { ...item, [field]: value } : item))
+      prev.map((item, idx) => {
+        if (idx !== index) {
+          return item;
+        }
+        if (field === "thumbUrl") {
+          const trimmed = value.trim();
+          return {
+            ...item,
+            thumbUrl: value,
+            thumbTransform: trimmed
+              ? item.thumbTransform
+              : { ...DEFAULT_THUMB_TRANSFORM },
+          };
+        }
+        return { ...item, [field]: value };
+      })
     );
+    if (field === "thumbUrl" && !value.trim() && appearanceEditorIndex === index) {
+      setAppearanceEditorIndex(null);
+    }
   }
 
   function handleRemoveAppearance(index: number) {
     setAppearances((prev) => prev.filter((_, idx) => idx !== index));
     draggingAppearanceIndexRef.current = null;
     setDraggingAppearanceId(null);
+    setAppearanceEditorIndex((prev) => {
+      if (prev === null) {
+        return prev;
+      }
+      if (prev === index) {
+        return null;
+      }
+      if (prev > index) {
+        return prev - 1;
+      }
+      return prev;
+    });
   }
 
   const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
   const textAreaClass = "min-h-[100px] w-full rounded-xl border px-4 py-3 text-base";
+  const activeAppearanceEditor =
+    appearanceEditorIndex !== null ? appearances[appearanceEditorIndex] : null;
+  const activeAppearanceImageUrl =
+    activeAppearanceEditor?.thumbUrl.trim() ?? "";
+  const activeAppearanceTransform =
+    activeAppearanceEditor?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
 
   return (
     <main className="min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
@@ -1041,7 +1102,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   <span className="text-base">標籤</span>
                   {form.cabinetId && (
                     <Link
-                      href={`/cabinet/${encodeURIComponent(form.cabinetId)}/edit#tag-manager`}
+                      href={`/cabinet/${encodeURIComponent(form.cabinetId)}/tags`}
                       className="text-xs text-blue-600 underline-offset-4 hover:underline"
                     >
                       管理標籤
@@ -1390,17 +1451,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                             placeholder="例如：主角名稱"
                           />
                         </label>
-                        <label className="space-y-1">
-                          <span className="text-sm text-gray-600">縮圖連結</span>
-                          <input
-                            value={appearance.thumbUrl}
-                            onChange={(e) =>
-                              handleAppearanceChange(index, "thumbUrl", e.target.value)
-                            }
-                            className={inputClass}
-                            placeholder="https://"
-                          />
-                        </label>
+                        <ThumbLinkField
+                          value={appearance.thumbUrl}
+                          onChange={(value) =>
+                            handleAppearanceChange(index, "thumbUrl", value)
+                          }
+                          onEdit={() => setAppearanceEditorIndex(index)}
+                        />
                         <label className="space-y-1">
                           <span className="text-sm text-gray-600">備註</span>
                           <textarea
@@ -1430,6 +1487,32 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   ) : null}
                 </div>
               )}
+              <ThumbEditorDialog
+                open={
+                  appearanceEditorIndex !== null &&
+                  activeAppearanceImageUrl.length > 0
+                }
+                imageUrl={activeAppearanceImageUrl}
+                value={activeAppearanceTransform}
+                onClose={() => setAppearanceEditorIndex(null)}
+                onApply={(next) => {
+                  const index = appearanceEditorIndex;
+                  if (index === null) {
+                    return;
+                  }
+                  setAppearances((prev) =>
+                    prev.map((item, idx) =>
+                      idx === index
+                        ? {
+                            ...item,
+                            thumbTransform: clampThumbTransform(next),
+                          }
+                        : item
+                    )
+                  );
+                  setAppearanceEditorIndex(null);
+                }}
+              />
             </CollapsibleSection>
 
             <CollapsibleSection
