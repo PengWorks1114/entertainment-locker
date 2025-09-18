@@ -15,7 +15,7 @@ import {
   where,
 } from "firebase/firestore";
 
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
 type Cabinet = { id: string; name: string };
@@ -33,6 +33,12 @@ export default function CabinetsPage() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      return undefined;
+    }
+
     const unAuth = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
@@ -43,6 +49,11 @@ export default function CabinetsPage() {
   useEffect(() => {
     if (!user) {
       setList([]);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
       return;
     }
     const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
@@ -85,6 +96,11 @@ export default function CabinetsPage() {
     }
     setFeedback(null);
     try {
+      const db = getFirebaseDb();
+      if (!db) {
+        setFeedback({ type: "error", message: "Firebase 尚未設定" });
+        return;
+      }
       await addDoc(collection(db, "cabinet"), {
         uid: user.uid,
         name: trimmed,
@@ -102,10 +118,16 @@ export default function CabinetsPage() {
 
   async function clearCache() {
     try {
-      await terminate(db);
+      const db = getFirebaseDb();
+      if (db) {
+        await terminate(db);
+      }
     } catch {}
     try {
-      await clearIndexedDbPersistence(db);
+      const db = getFirebaseDb();
+      if (db) {
+        await clearIndexedDbPersistence(db);
+      }
     } catch {}
     location.reload();
   }
