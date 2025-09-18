@@ -16,7 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { auth, db } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { deleteCabinetWithItems } from "@/lib/firestore-utils";
 
 type CabinetEditPageProps = {
@@ -58,6 +58,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [editingValue, setEditingValue] = useState("");
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      setLoading(false);
+      setError("Firebase 尚未設定");
+      return undefined;
+    }
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
@@ -85,6 +92,14 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setError(null);
     setDeleteError(null);
     setMessage(null);
+    const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      setCanEdit(false);
+      setLoading(false);
+      setTags([]);
+      return;
+    }
     const cabinetRef = doc(db, "cabinet", cabinetId);
     getDoc(cabinetRef)
       .then((snap) => {
@@ -140,6 +155,12 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setSaving(true);
     setError(null);
     try {
+      const db = getFirebaseDb();
+      if (!db) {
+        setError("Firebase 尚未設定");
+        setSaving(false);
+        return;
+      }
       const cabinetRef = doc(db, "cabinet", cabinetId);
       await updateDoc(cabinetRef, {
         name: trimmed,
@@ -185,6 +206,12 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setTagMessage(null);
     try {
       const nextTags = normalizeCabinetTags([...tags, trimmed]);
+      const db = getFirebaseDb();
+      if (!db) {
+        setTagError("Firebase 尚未設定");
+        setTagSaving(false);
+        return;
+      }
       const cabinetRef = doc(db, "cabinet", cabinetId);
       await updateDoc(cabinetRef, {
         tags: nextTags,
@@ -214,6 +241,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     if (trimmed !== target && tags.includes(trimmed)) {
       setTagError("已有相同標籤");
       setTagMessage(null);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setTagError("Firebase 尚未設定");
       return;
     }
     setTagSaving(true);
@@ -273,6 +305,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       return;
     }
     if (!window.confirm(`確認刪除標籤「${target}」？`)) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setTagError("Firebase 尚未設定");
       return;
     }
     setTagSaving(true);

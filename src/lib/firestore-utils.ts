@@ -12,9 +12,13 @@ import {
   type DocumentSnapshot,
 } from "firebase/firestore";
 
-import { db } from "./firebase";
+import { getFirebaseDb } from "./firebase";
 
 export async function deleteItemWithProgress(itemId: string, userId?: string) {
+  const db = getFirebaseDb();
+  if (!db) {
+    throw new Error("Firebase 尚未設定");
+  }
   const itemRef = doc(db, "item", itemId);
   let snap: DocumentSnapshot<DocumentData>;
   try {
@@ -64,6 +68,10 @@ export async function deleteItemWithProgress(itemId: string, userId?: string) {
 }
 
 export async function deleteCabinetWithItems(cabinetId: string, userId: string) {
+  const db = getFirebaseDb();
+  if (!db) {
+    throw new Error("Firebase 尚未設定");
+  }
   const cabinetRef = doc(db, "cabinet", cabinetId);
   const snap = await getDoc(cabinetRef);
   if (!snap.exists()) {

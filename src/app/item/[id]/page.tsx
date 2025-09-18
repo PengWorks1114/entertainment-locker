@@ -14,7 +14,8 @@ import {
   Timestamp,
   where,
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { normalizeAppearanceRecords } from "@/lib/appearances";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
@@ -97,6 +98,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [progressError, setProgressError] = useState<string | null>(null);
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setAuthChecked(true);
+      setItemLoading(false);
+      setProgressLoading(false);
+      setItemError("Firebase 尚未設定");
+      setProgressError("Firebase 尚未設定");
+      return undefined;
+    }
     const unsub = onAuthStateChanged(auth, (current) => {
       setUser(current);
       setAuthChecked(true);
@@ -118,6 +128,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     setItemError(null);
     (async () => {
       try {
+        const db = getFirebaseDb();
+        if (!db) {
+          setItemError("Firebase 尚未設定");
+          setItemLoading(false);
+          return;
+        }
         const itemRef = doc(db, "item", itemId);
         const snap = await getDoc(itemRef);
         if (!active) return;
@@ -182,43 +198,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               return normalized;
             })()
           : [];
-        const appearances = Array.isArray(data.appearances)
-          ? data.appearances
-              .map((entry) => {
-                if (!entry || typeof entry !== "object") {
-                  return null;
-                }
-                const recordEntry = entry as {
-                  name?: unknown;
-                  thumbUrl?: unknown;
-                  note?: unknown;
-                };
-                const name =
-                  typeof recordEntry.name === "string"
-                    ? recordEntry.name.trim()
-                    : "";
-                if (!name) {
-                  return null;
-                }
-                const thumbUrl =
-                  typeof recordEntry.thumbUrl === "string"
-                    ? recordEntry.thumbUrl.trim()
-                    : "";
-                const note =
-                  typeof recordEntry.note === "string"
-                    ? recordEntry.note.trim()
-                    : "";
-                return {
-                  name,
-                  thumbUrl: thumbUrl || null,
-                  note: note || null,
-                };
-              })
-              .filter(
-                (entry): entry is { name: string; thumbUrl?: string | null; note?: string | null } =>
-                  Boolean(entry)
-              )
-          : [];
+        const appearances = normalizeAppearanceRecords(data.appearances);
         const record: ItemRecord = {
           id: snap.id,
           uid: typeof data.uid === "string" ? data.uid : user.uid,
@@ -290,6 +270,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     setProgressLoading(true);
     setProgressError(null);
+    const db = getFirebaseDb();
+    if (!db) {
+      setProgressError("Firebase 尚未設定");
+      setProgressLoading(false);
+      return;
+    }
     const progressQuery = query(
       collection(db, "item", itemId, "progress"),
       where("isPrimary", "==", true),
