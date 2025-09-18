@@ -83,20 +83,17 @@ let cachedApp: Nullable<FirebaseApp> = null;
 let cachedDb: Nullable<Firestore> = null;
 let cachedAuth: Nullable<Auth> = null;
 let cachedStorage: Nullable<FirebaseStorage> = null;
-let initializationAttempted = false;
 
 export function getFirebaseApp(): Nullable<FirebaseApp> {
   if (cachedApp) {
     return cachedApp;
   }
 
-  if (initializationAttempted) {
-    return null;
+  const app = createFirebaseApp();
+  if (app) {
+    cachedApp = app;
   }
-
-  initializationAttempted = true;
-  cachedApp = createFirebaseApp();
-  return cachedApp;
+  return app;
 }
 
 export function getFirebaseDb(): Nullable<Firestore> {
