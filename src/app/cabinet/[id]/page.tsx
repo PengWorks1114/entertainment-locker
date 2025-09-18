@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -145,6 +145,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     tags: parseTagsFromParams(searchParams),
   }));
   const [currentPage, setCurrentPage] = useState(1);
+  const hasInitializedPage = useRef(false);
   const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -509,6 +510,14 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!hasInitializedPage.current) {
+      hasInitializedPage.current = true;
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentPage]);
   const hasActiveFilters =
     filters.search.trim().length > 0 ||
     filters.status !== "all" ||

@@ -1737,13 +1737,14 @@ function CollapsibleSection({
   titleClass,
 }: CollapsibleSectionProps) {
   const contentId = `${sectionKey}-content`;
+  const toggleLabel = isOpen ? "收合" : "展開";
   return (
     <section className={`${baseClass} ${containerClass ?? ""}`.trim()}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={onToggle}
-          className="flex flex-1 items-center justify-between gap-3 text-left"
+          className="flex min-w-0 flex-1 items-center text-left"
           aria-expanded={isOpen}
           aria-controls={contentId}
         >
@@ -1752,29 +1753,36 @@ function CollapsibleSection({
           >
             {title}
           </span>
-          <span
-            aria-hidden
-            className={`flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-transform ${
-              isOpen ? "rotate-180" : ""
-            }`}
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 20 20"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M5 8l5 5 5-5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
         </button>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-controls={contentId}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600"
+        >
+          <span className="sr-only">{toggleLabel}</span>
+          <svg
+            className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden
+          >
+            <path
+              d="M5 8l5 5 5-5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       </div>
       {isOpen ? (
         <div id={contentId} className={`mt-6 ${contentClass ?? "space-y-6"}`}>

@@ -1251,7 +1251,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           </div>
 
           {links.length > 0 && (
-            <div className="space-y-2">
+            <div className="mt-6 space-y-2">
               <div className="text-sm text-gray-500">來源連結</div>
               <ul className="space-y-2 text-sm">
                 {links.map((link) => (
