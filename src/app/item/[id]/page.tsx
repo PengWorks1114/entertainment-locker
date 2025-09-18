@@ -568,8 +568,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     return () => clearTimeout(timer);
   }, [noteEditorOpen]);
 
+  const appearanceEditorIndex = appearanceEditor?.index ?? null;
+
   useEffect(() => {
-    if (!appearanceEditor) return;
+    if (appearanceEditorIndex === null) return;
     const timer = setTimeout(() => {
       const input = appearanceNameZhInputRef.current;
       if (input) {
@@ -579,7 +581,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [appearanceEditor]);
+  }, [appearanceEditorIndex]);
 
   const progressSummary = useMemo(() => {
     if (progressLoading) {
@@ -1511,7 +1513,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           onClick={closeAttributeEditor}
         >
           <div
-            className="w-full max-w-xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-lg max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="attribute-editor-title"
@@ -1651,7 +1653,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           onClick={closeProgressEditor}
         >
           <div
-            className="w-full max-w-xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-lg max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="progress-editor-title"
@@ -1779,7 +1781,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             onClick={closeAppearanceEditor}
           >
             <div
-              className="w-full max-w-2xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+              className="w-full max-w-xl max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
               aria-labelledby="appearance-editor-title"
@@ -1913,7 +1915,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           onClick={closeNoteEditor}
         >
           <div
-            className="w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-xl max-h-[90vh] space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="note-editor-title"

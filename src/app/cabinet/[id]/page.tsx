@@ -149,7 +149,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const filtersContentId = "cabinet-filter-panel";
 
   useEffect(() => {

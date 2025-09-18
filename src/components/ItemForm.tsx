@@ -193,7 +193,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [appearances, setAppearances] = useState<AppearanceState[]>([]);
   const [message, setMessage] = useState("");
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
-  const [, setPendingRedirectId] = useState<string | null>(null);
+  const [pendingRedirectId, setPendingRedirectId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(itemId));
   const [saving, setSaving] = useState(false);
@@ -554,13 +554,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const handleMessageDialogClose = useCallback(() => {
     setMessageDialogOpen(false);
     setMessage("");
-    setPendingRedirectId((prev) => {
-      if (prev) {
-        router.replace(`/item/${prev}/edit`);
-      }
-      return null;
-    });
-  }, [router]);
+  }, []);
+
+  useEffect(() => {
+    if (!messageDialogOpen && pendingRedirectId) {
+      router.replace(`/item/${pendingRedirectId}/edit`);
+      setPendingRedirectId(null);
+    }
+  }, [messageDialogOpen, pendingRedirectId, router]);
 
   useEffect(() => {
     if (!messageDialogOpen) {
@@ -670,7 +671,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     }
 
     const appearancePayload = appearances.map((entry) => ({
-      name: entry.name.trim(),
+      nameZh: entry.nameZh.trim(),
+      nameOriginal: entry.nameOriginal.trim(),
+      labels: entry.labels.trim(),
       thumbUrl: entry.thumbUrl.trim(),
       thumbTransform: entry.thumbTransform,
       note: entry.note.trim(),
