@@ -43,40 +43,46 @@ export default function ItemListRow({ item }: ItemListRowProps) {
             href={detailHref}
             className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-inner"
           >
-          {item.thumbUrl ? (
-            canUseOptimizedThumb ? (
-              <Image
-                src={item.thumbUrl}
-                alt={`${item.titleZh} 縮圖`}
-                fill
-                sizes="48px"
-                className="object-cover"
-              />
+            {item.thumbUrl ? (
+              canUseOptimizedThumb ? (
+                <Image
+                  src={item.thumbUrl}
+                  alt={`${item.titleZh} 縮圖`}
+                  fill
+                  sizes="48px"
+                  className="object-cover"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={item.thumbUrl}
+                  alt={`${item.titleZh} 縮圖`}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              )
             ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={item.thumbUrl}
-                alt={`${item.titleZh} 縮圖`}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-            )
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
-              無封面
-            </div>
-          )}
+              <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+                無封面
+              </div>
+            )}
           </Link>
 
           <div className="min-w-0 flex-1 space-y-1">
             <Link
               href={detailHref}
-              className="block truncate text-base font-semibold text-gray-900 transition hover:text-blue-600"
+              className="block text-base font-semibold text-gray-900 transition hover:text-blue-600 line-clamp-2 break-words"
+              title={item.titleZh}
             >
               {item.titleZh}
             </Link>
             {item.titleAlt && (
-              <div className="truncate text-xs text-gray-500">{item.titleAlt}</div>
+              <div
+                className="line-clamp-2 break-words text-xs text-gray-500"
+                title={item.titleAlt}
+              >
+                {item.titleAlt}
+              </div>
             )}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1 text-xs text-gray-600">
@@ -109,8 +115,11 @@ export default function ItemListRow({ item }: ItemListRowProps) {
           </div>
         </div>
 
-        <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[160px] sm:flex-none sm:items-end">
-          <div className="text-sm font-medium text-gray-700 sm:text-right">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[160px] sm:max-w-[240px] sm:flex-none sm:items-end">
+          <div
+            className="line-clamp-2 break-words text-sm font-medium text-gray-700 sm:text-right"
+            title={listDisplay}
+          >
             {listDisplay}
           </div>
           <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">

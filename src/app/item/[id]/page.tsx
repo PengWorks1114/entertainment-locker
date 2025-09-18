@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -11,7 +11,9 @@ import {
   limit,
   onSnapshot,
   query,
+  serverTimestamp,
   Timestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
@@ -84,6 +86,11 @@ type PrimaryProgressState = {
   updatedAt?: Timestamp | null;
 };
 
+type NoteFeedback = {
+  type: "success" | "error";
+  message: string;
+};
+
 export default function ItemDetailPage({ params }: ItemPageProps) {
   const { id: itemId } = use(params);
   const [user, setUser] = useState<User | null>(null);
@@ -96,6 +103,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [progressError, setProgressError] = useState<string | null>(null);
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
+  const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -318,6 +331,25 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     return () => unsub();
   }, [user, itemId]);
 
+  useEffect(() => {
+    if (!noteFeedback) return;
+    const timer = setTimeout(() => setNoteFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [noteFeedback]);
+
+  useEffect(() => {
+    if (!noteEditorOpen) return;
+    const timer = setTimeout(() => {
+      noteTextareaRef.current?.focus();
+      const textarea = noteTextareaRef.current;
+      if (textarea) {
+        const length = textarea.value.length;
+        textarea.setSelectionRange(length, length);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [noteEditorOpen]);
+
   const progressSummary = useMemo(() => {
     if (progressLoading) {
       return "主進度載入中…";
@@ -345,6 +377,68 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const flagged = validLinks.find((link) => link.isPrimary);
     return flagged ?? validLinks[0];
   }, [item]);
+
+  function openNoteEditor() {
+    if (!item) {
+      setNoteFeedback({
+        type: "error",
+        message: "目前無法編輯心得 / 筆記",
+      });
+      return;
+    }
+    setNoteDraft(item.insightNote ?? "");
+    setNoteError(null);
+    setNoteEditorOpen(true);
+  }
+
+  function closeNoteEditor() {
+    if (noteSaving) {
+      return;
+    }
+    setNoteEditorOpen(false);
+    setNoteError(null);
+  }
+
+  async function handleNoteSave() {
+    if (!item) {
+      setNoteError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setNoteError("請先登入");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteError("Firebase 尚未設定");
+      return;
+    }
+    const trimmed = noteDraft.trim();
+    setNoteSaving(true);
+    setNoteError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        insightNote: trimmed.length > 0 ? trimmed : null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              insightNote: trimmed.length > 0 ? trimmed : null,
+            }
+          : prev
+      );
+      setNoteEditorOpen(false);
+      setNoteFeedback({ type: "success", message: "已更新心得 / 筆記" });
+    } catch (err) {
+      console.error("更新心得 / 筆記時發生錯誤", err);
+      setNoteError("更新心得 / 筆記時發生錯誤");
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   if (!authChecked) {
     return (
@@ -683,18 +777,104 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">
             <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
+            <p className="text-xs text-gray-500">雙擊內容可快速編輯。</p>
           </div>
           {hasInsightNote ? (
-            <div className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner">
+            <div
+              className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner transition hover:bg-blue-50 cursor-text"
+              onDoubleClick={openNoteEditor}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  openNoteEditor();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title="雙擊以快速編輯心得 / 筆記"
+            >
               {insightNote}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400">
+            <p
+              className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400 transition hover:bg-blue-50 cursor-pointer"
+              onDoubleClick={openNoteEditor}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  openNoteEditor();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title="雙擊以新增心得 / 筆記"
+            >
               目前尚未填寫心得 / 筆記。
             </p>
           )}
+          {noteFeedback && (
+            <div
+              className={`rounded-xl px-3 py-2 text-sm ${
+                noteFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {noteFeedback.message}
+            </div>
+          )}
         </section>
       </div>
+
+      {noteEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeNoteEditor}
+        >
+          <div
+            className="w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="note-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="note-editor-title" className="text-xl font-semibold text-gray-900">
+                編輯心得 / 筆記
+              </h2>
+              <p className="text-sm text-gray-500">
+                編輯後會立即儲存至雲端，並同步更新最後編輯時間。
+              </p>
+            </div>
+            <textarea
+              ref={noteTextareaRef}
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              className="h-48 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              placeholder="輸入你的心得或筆記…"
+            />
+            {noteError && (
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeNoteEditor}
+                disabled={noteSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleNoteSave}
+                disabled={noteSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {noteSaving ? "儲存中…" : "儲存內容"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
