@@ -90,13 +90,21 @@ export default function QuickAddItemPage() {
             const createdAt = data?.createdAt;
             const createdMs =
               createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+            const orderValue =
+              typeof data?.order === "number" ? data.order : createdMs;
             return {
               id: docSnap.id,
               name: (data?.name as string) ?? "",
               createdMs,
+              order: orderValue,
             };
           })
-          .sort((a, b) => b.createdMs - a.createdMs)
+          .sort((a, b) => {
+            if (a.order === b.order) {
+              return b.createdMs - a.createdMs;
+            }
+            return b.order - a.order;
+          })
           .map((item) => ({ id: item.id, name: item.name }));
         setCabinets(rows);
         setLoadingCabinets(false);

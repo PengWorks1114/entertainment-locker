@@ -45,6 +45,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setLoading(false);
       setCanEdit(false);
       setName("");
+      setNote("");
       setMessage(null);
       setDeleteError(null);
       setTags([]);
@@ -108,6 +110,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setError("找不到櫃子");
           setCanEdit(false);
           setLoading(false);
+          setNote("");
           setTags([]);
           return;
         }
@@ -116,6 +119,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setError("您沒有存取此櫃子的權限");
           setCanEdit(false);
           setLoading(false);
+          setNote("");
           setTags([]);
           return;
         }
@@ -124,6 +128,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             ? data.name
             : "";
         setName(nameValue);
+        const noteValue =
+          typeof data?.note === "string" && data.note.trim().length > 0
+            ? data.note.trim()
+            : "";
+        setNote(noteValue);
         setCanEdit(true);
         setTags(normalizeCabinetTags(data?.tags));
         setLoading(false);
@@ -133,6 +142,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setError("載入櫃子資料時發生錯誤");
         setCanEdit(false);
         setLoading(false);
+        setNote("");
         setTags([]);
       });
     return () => {
@@ -152,6 +162,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setMessage("名稱不可為空");
       return;
     }
+    const trimmedNote = note.trim();
     setSaving(true);
     setError(null);
     try {
@@ -164,10 +175,12 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       const cabinetRef = doc(db, "cabinet", cabinetId);
       await updateDoc(cabinetRef, {
         name: trimmed,
+        note: trimmedNote ? trimmedNote : null,
         updatedAt: serverTimestamp(),
       });
       setName(trimmed);
-      setMessage("已更新櫃子名稱");
+      setNote(trimmedNote);
+      setMessage("已更新櫃子資料");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
       setMessage("儲存櫃子資料時發生錯誤");
@@ -470,6 +483,15 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 onChange={(event) => setName(event.target.value)}
                 placeholder="例如：漫畫、小說、遊戲"
                 className={inputClass}
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-gray-600">櫃子備註</span>
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="補充說明、整理方式或其他提醒"
+                className="min-h-[100px] w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none"
               />
             </label>
             <p className="text-xs text-gray-500">

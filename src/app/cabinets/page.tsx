@@ -7,18 +7,26 @@ import {
   addDoc,
   clearIndexedDbPersistence,
   collection,
+  doc,
   onSnapshot,
   query,
   serverTimestamp,
   terminate,
   Timestamp,
   where,
+  writeBatch,
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
-type Cabinet = { id: string; name: string };
+type Cabinet = {
+  id: string;
+  name: string;
+  order: number;
+  createdMs: number;
+  note: string | null;
+};
 
 type Feedback = {
   type: "error" | "success";
@@ -31,6 +39,11 @@ export default function CabinetsPage() {
   const [name, setName] = useState("");
   const [list, setList] = useState<Cabinet[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [showReorder, setShowReorder] = useState(false);
+  const [reorderList, setReorderList] = useState<Cabinet[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reorderSaving, setReorderSaving] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -66,14 +79,26 @@ export default function CabinetsPage() {
             const createdAt = data?.createdAt;
             const createdMs =
               createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+            const orderValue =
+              typeof data?.order === "number" ? data.order : createdMs;
+            const noteValue =
+              typeof data?.note === "string" && data.note.trim().length > 0
+                ? data.note.trim()
+                : null;
             return {
               id: docSnap.id,
               name: (data?.name as string) || "",
               createdMs,
-            };
+              order: orderValue,
+              note: noteValue,
+            } satisfies Cabinet;
           })
-          .sort((a, b) => b.createdMs - a.createdMs)
-          .map((item) => ({ id: item.id, name: item.name }));
+          .sort((a, b) => {
+            if (a.order === b.order) {
+              return b.createdMs - a.createdMs;
+            }
+            return b.order - a.order;
+          });
         setList(rows);
         setFeedback((prev) => (prev?.type === "error" ? null : prev));
       },
@@ -101,12 +126,18 @@ export default function CabinetsPage() {
         setFeedback({ type: "error", message: "Firebase 尚未設定" });
         return;
       }
+      const highestOrder = list.reduce(
+        (max, item) => (item.order > max ? item.order : max),
+        0
+      );
       await addDoc(collection(db, "cabinet"), {
         uid: user.uid,
         name: trimmed,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         tags: [],
+        order: highestOrder + 1,
+        note: null,
       });
       setName("");
       setFeedback({ type: "success", message: "已新增櫃子" });
@@ -143,6 +174,82 @@ export default function CabinetsPage() {
         : "rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700";
     return <div className={baseClass}>{feedback.message}</div>;
   }, [feedback]);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedId) return -1;
+    return reorderList.findIndex((item) => item.id === selectedId);
+  }, [reorderList, selectedId]);
+
+  function openReorderDialog() {
+    setReorderList(list.map((item) => ({ ...item })));
+    setSelectedId(list[0]?.id ?? null);
+    setReorderError(null);
+    setShowReorder(true);
+  }
+
+  function closeReorderDialog() {
+    if (reorderSaving) return;
+    setShowReorder(false);
+    setReorderList([]);
+    setSelectedId(null);
+    setReorderError(null);
+  }
+
+  function moveSelected(offset: -1 | 1) {
+    if (selectedIndex < 0) {
+      return;
+    }
+    const targetIndex = selectedIndex + offset;
+    if (targetIndex < 0 || targetIndex >= reorderList.length) {
+      return;
+    }
+    setReorderList((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(selectedIndex, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  }
+
+  async function saveReorder() {
+    if (!user) {
+      setReorderError("請先登入");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setReorderError("Firebase 尚未設定");
+      return;
+    }
+    if (reorderList.length === 0) {
+      setShowReorder(false);
+      return;
+    }
+    setReorderSaving(true);
+    setReorderError(null);
+    try {
+      const batch = writeBatch(db);
+      const total = reorderList.length;
+      reorderList.forEach((item, index) => {
+        const cabinetRef = doc(db, "cabinet", item.id);
+        const orderValue = total - index;
+        batch.update(cabinetRef, {
+          order: orderValue,
+          updatedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      setFeedback({ type: "success", message: "已更新櫃子順序" });
+      setShowReorder(false);
+      setReorderList([]);
+      setSelectedId(null);
+    } catch (err) {
+      console.error("更新櫃子順序失敗", err);
+      setReorderError("更新櫃子順序時發生錯誤");
+    } finally {
+      setReorderSaving(false);
+    }
+  }
 
   if (!authChecked) {
     return (
@@ -193,6 +300,13 @@ export default function CabinetsPage() {
             >
               清除快取
             </button>
+            <button
+              onClick={openReorderDialog}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+              disabled={!hasCabinet}
+            >
+              編輯順序
+            </button>
           </div>
         </header>
 
@@ -230,12 +344,17 @@ export default function CabinetsPage() {
                     className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-                      <Link
-                        href={`/cabinet/${encodedId}`}
-                        className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
-                      >
-                        {displayName}
-                      </Link>
+                      <div className="space-y-1">
+                        <Link
+                          href={`/cabinet/${encodedId}`}
+                          className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                        >
+                          {displayName}
+                        </Link>
+                        {row.note && (
+                          <p className="text-sm text-gray-600">{row.note}</p>
+                        )}
+                      </div>
                       <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
                         <Link
                           href={`/cabinet/${encodedId}`}
@@ -262,6 +381,97 @@ export default function CabinetsPage() {
           )}
         </section>
       </div>
+
+      {showReorder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
+          <div className="w-full max-w-xl space-y-6 rounded-2xl bg-white p-6 shadow-xl">
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold text-gray-900">調整櫃子順序</h2>
+              <p className="text-sm text-gray-500">
+                點選要調整的櫃子，再使用下方的上下按鈕調整顯示順序。
+              </p>
+            </div>
+            {reorderError && (
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {reorderError}
+              </div>
+            )}
+            <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-2xl border bg-gray-50 p-3">
+              {reorderList.length === 0 ? (
+                <p className="text-sm text-gray-500">目前沒有櫃子可調整。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {reorderList.map((cabinet) => {
+                    const isSelected = cabinet.id === selectedId;
+                    return (
+                      <li key={cabinet.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(cabinet.id)}
+                          className={`w-full rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
+                            isSelected
+                              ? "border-blue-400 bg-white"
+                              : "border-gray-200 bg-white/80 hover:border-blue-200"
+                          }`}
+                        >
+                          <span className="font-medium text-gray-900">
+                            {cabinet.name || "未命名櫃子"}
+                          </span>
+                          {cabinet.note && (
+                            <span className="mt-1 block text-xs text-gray-500">
+                              {cabinet.note}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveSelected(-1)}
+                  disabled={selectedIndex <= 0}
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSelected(1)}
+                  disabled={
+                    selectedIndex === -1 || selectedIndex === reorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  下移
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <button
+                  type="button"
+                  onClick={closeReorderDialog}
+                  disabled={reorderSaving}
+                  className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={saveReorder}
+                  disabled={reorderSaving || reorderList.length === 0}
+                  className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+                >
+                  {reorderSaving ? "儲存中…" : "儲存順序"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

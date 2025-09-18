@@ -133,6 +133,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [cabinetLoading, setCabinetLoading] = useState(true);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [canView, setCanView] = useState(false);
+  const [cabinetNote, setCabinetNote] = useState<string | null>(null);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -167,6 +168,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       setCabinetName("");
       setCabinetError(null);
       setCanView(false);
+      setCabinetNote(null);
       setCabinetLoading(false);
       setCabinetTags([]);
       return;
@@ -175,10 +177,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setCabinetLoading(true);
     setCabinetError(null);
     setCanView(false);
+    setCabinetNote(null);
     const db = getFirebaseDb();
     if (!db) {
       setCabinetError("Firebase 尚未設定");
       setCabinetLoading(false);
+      setCabinetNote(null);
       setCabinetTags([]);
       return;
     }
@@ -188,6 +192,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         if (!active) return;
         if (!snap.exists()) {
           setCabinetError("找不到櫃子");
+          setCabinetNote(null);
           setCabinetLoading(false);
           setCabinetTags([]);
           return;
@@ -195,19 +200,26 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         const data = snap.data();
         if (data?.uid !== user.uid) {
           setCabinetError("您沒有存取此櫃子的權限");
+          setCabinetNote(null);
           setCabinetLoading(false);
           setCabinetTags([]);
           return;
         }
         const name = typeof data?.name === "string" && data.name ? data.name : "未命名櫃子";
+        const note =
+          typeof data?.note === "string" && data.note.trim().length > 0
+            ? data.note.trim()
+            : null;
         setCabinetName(name);
         setCanView(true);
+        setCabinetNote(note);
         setCabinetTags(normalizeCabinetTags(data?.tags));
         setCabinetLoading(false);
       })
       .catch(() => {
         if (!active) return;
         setCabinetError("載入櫃子資訊時發生錯誤");
+        setCabinetNote(null);
         setCabinetLoading(false);
         setCabinetTags([]);
       });
@@ -593,7 +605,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
+            {cabinetNote && (
+              <p className="text-sm text-gray-600">{cabinetNote}</p>
+            )}
+          </div>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
             <Link href="/cabinets" className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}>
               返回櫃子列表
