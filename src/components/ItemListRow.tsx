@@ -83,14 +83,14 @@ export default function ItemListRow({ item }: ItemListRowProps) {
           <div className="min-w-0 flex-1 space-y-1">
             <Link
               href={detailHref}
-              className="block text-base font-semibold text-gray-900 transition hover:text-blue-600 line-clamp-2 break-words"
+              className="block text-base font-semibold text-gray-900 transition hover:text-blue-600 line-clamp-2 break-anywhere"
               title={item.titleZh}
             >
               {item.titleZh}
             </Link>
             {item.titleAlt && (
               <div
-                className="line-clamp-2 break-words text-xs text-gray-500"
+                className="line-clamp-2 break-anywhere text-xs text-gray-500"
                 title={item.titleAlt}
               >
                 {item.titleAlt}
@@ -103,7 +103,7 @@ export default function ItemListRow({ item }: ItemListRowProps) {
                     return (
                       <span
                         key={tag}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1"
+                        className="break-anywhere rounded-full border border-gray-200 bg-white px-3 py-1"
                       >
                         #{tag}
                       </span>
@@ -116,7 +116,7 @@ export default function ItemListRow({ item }: ItemListRowProps) {
                     <Link
                       key={tag}
                       href={tagHref}
-                      className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                      className="break-anywhere rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
                     >
                       #{tag}
                     </Link>
@@ -129,7 +129,7 @@ export default function ItemListRow({ item }: ItemListRowProps) {
 
         <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[160px] sm:max-w-[240px] sm:flex-none sm:items-end">
           <div
-            className="line-clamp-2 break-words text-sm font-medium text-gray-700 sm:text-right"
+            className="line-clamp-2 break-anywhere text-sm font-medium text-gray-700 sm:text-right"
             title={listDisplay}
           >
             {listDisplay}
@@ -167,7 +167,7 @@ export default function ItemListRow({ item }: ItemListRowProps) {
 
       {(error || success) && (
         <div
-          className={`mt-3 rounded-xl px-3 py-2 text-xs ${
+          className={`mt-3 break-anywhere rounded-xl px-3 py-2 text-xs ${
             error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
           }`}
         >

@@ -170,8 +170,8 @@ export default function CabinetsPage() {
     if (!feedback) return null;
     const baseClass =
       feedback.type === "error"
-        ? "rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
-        : "rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700";
+        ? "break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
+        : "break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700";
     return <div className={baseClass}>{feedback.message}</div>;
   }, [feedback]);
 
@@ -347,12 +347,12 @@ export default function CabinetsPage() {
                       <div className="space-y-1">
                         <Link
                           href={`/cabinet/${encodedId}`}
-                          className="text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                          className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
                         >
                           {displayName}
                         </Link>
                         {row.note && (
-                          <p className="text-sm text-gray-600">{row.note}</p>
+                          <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
                         )}
                       </div>
                       <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
@@ -392,7 +392,7 @@ export default function CabinetsPage() {
               </p>
             </div>
             {reorderError && (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
                 {reorderError}
               </div>
             )}
@@ -408,17 +408,17 @@ export default function CabinetsPage() {
                         <button
                           type="button"
                           onClick={() => setSelectedId(cabinet.id)}
-                          className={`w-full rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
+                          className={`w-full overflow-hidden rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
                             isSelected
                               ? "border-blue-400 bg-white"
                               : "border-gray-200 bg-white/80 hover:border-blue-200"
                           }`}
                         >
-                          <span className="font-medium text-gray-900">
+                          <span className="break-anywhere font-medium text-gray-900">
                             {cabinet.name || "未命名櫃子"}
                           </span>
                           {cabinet.note && (
-                            <span className="mt-1 block text-xs text-gray-500">
+                            <span className="break-anywhere mt-1 block text-xs text-gray-500">
                               {cabinet.note}
                             </span>
                           )}

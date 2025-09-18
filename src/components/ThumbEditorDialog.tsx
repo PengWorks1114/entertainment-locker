@@ -15,6 +15,7 @@ type ThumbEditorDialogProps = {
   value: ThumbTransform;
   onApply: (value: ThumbTransform) => void;
   onClose: () => void;
+  shape?: "square" | "portrait";
 };
 
 type DragState = {
@@ -31,6 +32,7 @@ export default function ThumbEditorDialog({
   value,
   onApply,
   onClose,
+  shape = "square",
 }: ThumbEditorDialogProps) {
   const [local, setLocal] = useState<ThumbTransform>(() =>
     clampThumbTransform(value)
@@ -141,6 +143,11 @@ export default function ThumbEditorDialog({
     return null;
   }
 
+  const previewClassName =
+    shape === "portrait"
+      ? "relative mx-auto mt-6 aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 sm:max-w-md"
+      : "relative mx-auto mt-6 aspect-square w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
@@ -171,7 +178,7 @@ export default function ThumbEditorDialog({
 
         <div
           ref={containerRef}
-          className="relative mx-auto mt-6 aspect-square w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-gray-100"
+          className={previewClassName}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

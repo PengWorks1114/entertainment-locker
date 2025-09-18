@@ -202,16 +202,16 @@ export default function LoginPage() {
           </form>
 
           {error && (
-            <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="mt-4 break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
           )}
           {message && (
-            <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
+            <div className="mt-4 break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
           )}
 
           {user && (
             <div className="mt-6 space-y-3 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
               <p>
-                已以 <span className="font-medium text-gray-900">{user.email ?? "已登入"}</span> 登入。
+                已以 <span className="break-anywhere font-medium text-gray-900">{user.email ?? "已登入"}</span> 登入。
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button

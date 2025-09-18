@@ -385,10 +385,10 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
               </div>
 
               {tagError && (
-                <div className="rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700">{tagError}</div>
+                <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700">{tagError}</div>
               )}
               {tagMessage && (
-                <div className="rounded-xl bg-emerald-50 px-4 py-3 text-xs text-emerald-700">{tagMessage}</div>
+                <div className="break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-xs text-emerald-700">{tagMessage}</div>
               )}
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -419,16 +419,16 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
                     return (
                       <li
                         key={tag}
-                        className="rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm"
+                        className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm"
                       >
                         {isEditing ? (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                             <input
                               value={editingValue}
                               onChange={(event) => setEditingValue(event.target.value)}
-                              className={inputClass}
+                              className={`${inputClass} sm:min-w-0 sm:flex-1`}
                             />
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                               <button
                                 type="button"
                                 onClick={() => handleRenameTag(tag)}
@@ -451,9 +451,9 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <span className="text-sm font-medium text-gray-900">#{tag}</span>
-                            <div className="flex gap-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:min-w-0">
+                            <span className="break-anywhere text-sm font-medium text-gray-900 sm:min-w-0 sm:flex-1">#{tag}</span>
+                            <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => {

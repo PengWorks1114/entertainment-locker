@@ -95,13 +95,13 @@ export default function ItemCard({ item }: ItemCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h3
-            className="line-clamp-2 break-words text-2xl font-semibold leading-tight text-gray-900"
+            className="line-clamp-2 break-anywhere text-2xl font-semibold leading-tight text-gray-900"
             title={item.titleZh}
           >
             {item.titleZh}
           </h3>
           {item.titleAlt && (
-            <p className="line-clamp-2 break-words text-sm text-gray-500" title={item.titleAlt}>
+            <p className="line-clamp-2 break-anywhere text-sm text-gray-500" title={item.titleAlt}>
               {item.titleAlt}
             </p>
           )}
@@ -185,10 +185,10 @@ export default function ItemCard({ item }: ItemCardProps) {
             <span>更新頻率</span>
           </div>
           <div className="grid grid-cols-2 gap-x-6 font-medium text-gray-900">
-            <span className="line-clamp-2 break-words" title={statusLabel}>
+            <span className="line-clamp-2 break-anywhere" title={statusLabel}>
               {statusLabel}
             </span>
-            <span className="line-clamp-2 break-words" title={updateFrequencyLabel}>
+            <span className="line-clamp-2 break-anywhere" title={updateFrequencyLabel}>
               {updateFrequencyLabel}
             </span>
           </div>
@@ -197,16 +197,16 @@ export default function ItemCard({ item }: ItemCardProps) {
             <span>評分</span>
           </div>
           <div className="grid grid-cols-2 gap-x-6 font-medium text-gray-900">
-            <span className="line-clamp-2 break-words" title={nextUpdateText}>
+            <span className="line-clamp-2 break-anywhere" title={nextUpdateText}>
               {nextUpdateText}
             </span>
-            <span className="line-clamp-2 break-words" title={ratingDisplay}>
+            <span className="line-clamp-2 break-anywhere" title={ratingDisplay}>
               {ratingDisplay}
             </span>
           </div>
           <div className="space-y-1">
             <div className="text-xs text-gray-500">作者 / 製作</div>
-            <div className="line-clamp-2 break-words font-medium text-gray-900" title={authorDisplay}>
+            <div className="line-clamp-2 break-anywhere font-medium text-gray-900" title={authorDisplay}>
               {authorDisplay}
             </div>
           </div>
@@ -223,7 +223,7 @@ export default function ItemCard({ item }: ItemCardProps) {
                   return (
                     <span
                       key={tag}
-                      className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
+                      className="break-anywhere rounded-full border border-gray-200 bg-gray-100 px-3 py-1"
                     >
                       #{tag}
                     </span>
@@ -236,7 +236,7 @@ export default function ItemCard({ item }: ItemCardProps) {
                   <Link
                     key={tag}
                     href={tagHref}
-                    className="rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+                    className="break-anywhere rounded-full border border-gray-200 bg-white px-3 py-1 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
                   >
                     #{tag}
                   </Link>
@@ -249,7 +249,7 @@ export default function ItemCard({ item }: ItemCardProps) {
 
       <div className="space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
         <div className="text-sm font-medium text-gray-900">主進度</div>
-        <div className="line-clamp-2 break-words text-sm text-gray-700" title={summary}>
+        <div className="line-clamp-2 break-anywhere text-sm text-gray-700" title={summary}>
           {summary}
         </div>
         {primary?.updatedAt && (
@@ -261,7 +261,7 @@ export default function ItemCard({ item }: ItemCardProps) {
 
       {item.progressNote && (
         <div
-          className="line-clamp-2 break-words rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800"
+          className="line-clamp-2 break-anywhere rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800"
           title={item.progressNote}
         >
           進度備註：{item.progressNote}
@@ -269,7 +269,7 @@ export default function ItemCard({ item }: ItemCardProps) {
       )}
       {item.note && (
         <div
-          className="line-clamp-2 break-words rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700"
+          className="line-clamp-2 break-anywhere rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700"
           title={item.note}
         >
           備註：{item.note}
@@ -278,7 +278,7 @@ export default function ItemCard({ item }: ItemCardProps) {
 
       {(error || success) && (
         <div
-          className={`rounded-2xl px-4 py-3 text-sm ${
+          className={`break-anywhere rounded-2xl px-4 py-3 text-sm ${
             error
               ? "bg-red-50 text-red-700"
               : "bg-emerald-50 text-emerald-700"

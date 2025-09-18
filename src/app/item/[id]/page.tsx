@@ -20,6 +20,7 @@ import ThumbEditorDialog from "@/components/ThumbEditorDialog";
 import ThumbLinkField from "@/components/ThumbLinkField";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { calculateNextUpdateDate } from "@/lib/item-utils";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_STATUS_OPTIONS,
@@ -99,6 +100,16 @@ type NoteFeedback = {
   message: string;
 };
 
+type ProgressDraftState = {
+  platform: string;
+  type: ProgressType;
+  value: string;
+  unit: string;
+};
+
+const defaultProgressType =
+  (PROGRESS_TYPE_OPTIONS[0]?.value as ProgressType | undefined) ?? "chapter";
+
 export default function ItemDetailPage({ params }: ItemPageProps) {
   const { id: itemId } = use(params);
   const [user, setUser] = useState<User | null>(null);
@@ -111,6 +122,19 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [progressError, setProgressError] = useState<string | null>(null);
+  const [progressFeedback, setProgressFeedback] =
+    useState<NoteFeedback | null>(null);
+  const [progressEditorOpen, setProgressEditorOpen] = useState(false);
+  const [progressDraft, setProgressDraft] = useState<ProgressDraftState>({
+    platform: "",
+    type: defaultProgressType,
+    value: "",
+    unit: "",
+  });
+  const [progressEditorSaving, setProgressEditorSaving] = useState(false);
+  const [progressEditorError, setProgressEditorError] = useState<string | null>(
+    null
+  );
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
@@ -381,6 +405,96 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const timer = setTimeout(() => setAppearanceFeedback(null), 3000);
     return () => clearTimeout(timer);
   }, [appearanceFeedback]);
+
+  useEffect(() => {
+    if (!progressFeedback) return;
+    const timer = setTimeout(() => setProgressFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [progressFeedback]);
+
+  const openProgressEditor = () => {
+    if (!primary) {
+      setProgressFeedback({
+        type: "error",
+        message: "尚未設定主進度，請先於進度管理中新增。",
+      });
+      return;
+    }
+    setProgressDraft({
+      platform: primary.platform,
+      type: primary.type,
+      value: Number.isFinite(primary.value) ? String(primary.value) : "",
+      unit: primary.unit ?? "",
+    });
+    setProgressEditorError(null);
+    setProgressEditorOpen(true);
+  };
+
+  const closeProgressEditor = () => {
+    if (progressEditorSaving) {
+      return;
+    }
+    setProgressEditorOpen(false);
+    setProgressEditorError(null);
+  };
+
+  const handleProgressEditorSubmit = async () => {
+    if (!primary) {
+      setProgressEditorError("尚未設定主進度");
+      return;
+    }
+    const trimmedPlatform = progressDraft.platform.trim();
+    if (!trimmedPlatform) {
+      setProgressEditorError("請輸入平台 / 來源");
+      return;
+    }
+    const selectedType = progressTypeLabelMap.has(progressDraft.type)
+      ? progressDraft.type
+      : defaultProgressType;
+    const valueInput = progressDraft.value.trim();
+    if (!valueInput) {
+      setProgressEditorError("請輸入進度數值");
+      return;
+    }
+    const parsedValue = Number(valueInput);
+    if (!Number.isFinite(parsedValue)) {
+      setProgressEditorError("請輸入有效的進度數值");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setProgressEditorError("Firebase 尚未設定");
+      return;
+    }
+    setProgressEditorSaving(true);
+    setProgressEditorError(null);
+    try {
+      const progressRef = doc(db, "item", itemId, "progress", primary.id);
+      const trimmedUnit = progressDraft.unit.trim();
+      await updateDoc(progressRef, {
+        platform: trimmedPlatform,
+        type: selectedType,
+        value: parsedValue,
+        unit: trimmedUnit ? trimmedUnit : null,
+        updatedAt: serverTimestamp(),
+      });
+      const nextDate = calculateNextUpdateDate(item?.updateFrequency ?? null);
+      await updateDoc(doc(db, "item", itemId), {
+        updatedAt: serverTimestamp(),
+        nextUpdateAt: nextDate ? Timestamp.fromDate(nextDate) : null,
+      });
+      setProgressEditorOpen(false);
+      setProgressFeedback({
+        type: "success",
+        message: "已更新主進度",
+      });
+    } catch (err) {
+      console.error("更新主進度時發生錯誤", err);
+      setProgressEditorError("更新主進度時發生錯誤");
+    } finally {
+      setProgressEditorSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!noteEditorOpen) return;
@@ -675,8 +789,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-gray-900">物件內容</h1>
-          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <h1 className="break-anywhere text-2xl font-semibold text-gray-900">物件內容</h1>
+          <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {itemError ?? "找不到物件資料"}
           </div>
           {item?.cabinetId && (
@@ -802,33 +916,33 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">狀態</div>
-                  <div className="text-base text-gray-900">{statusLabel}</div>
+                  <div className="break-anywhere text-base text-gray-900">{statusLabel}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">評分</div>
-                  <div className="text-base text-gray-900">{ratingText}</div>
+                  <div className="break-anywhere text-base text-gray-900">{ratingText}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">作者 / 製作</div>
-                  <div className="text-base text-gray-900">
+                  <div className="break-anywhere text-base text-gray-900">
                     {item.author && item.author.trim().length > 0 ? item.author : "未設定"}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">更新頻率</div>
-                  <div className="text-base text-gray-900">{updateFrequencyLabel}</div>
+                  <div className="break-anywhere text-base text-gray-900">{updateFrequencyLabel}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">下次更新</div>
-                  <div className="text-base text-gray-900">{nextUpdateText}</div>
+                  <div className="break-anywhere text-base text-gray-900">{nextUpdateText}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">最後更新時間</div>
-                  <div className="text-base text-gray-900">{updatedAtText}</div>
+                  <div className="break-anywhere text-base text-gray-900">{updatedAtText}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm text-gray-500">建立時間</div>
-                  <div className="text-base text-gray-900">{createdAtText}</div>
+                  <div className="break-anywhere text-base text-gray-900">{createdAtText}</div>
                 </div>
               </div>
 
@@ -841,7 +955,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         return (
                           <span
                             key={tag}
-                            className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700"
+                            className="break-anywhere rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700"
                           >
                             #{tag}
                           </span>
@@ -852,7 +966,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         <Link
                           key={tag}
                           href={href}
-                          className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
+                          className="break-anywhere rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
                         >
                           #{tag}
                         </Link>
@@ -861,6 +975,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
 
           {links.length > 0 && (
             <div className="space-y-2">
@@ -875,7 +991,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                           href={link.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 underline-offset-4 hover:underline"
+                          className="break-anywhere text-blue-600 underline-offset-4 hover:underline"
                         >
                           {link.label}
                         </a>
@@ -891,7 +1007,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           {item.progressNote && (
             <div className="space-y-1">
               <div className="text-sm text-gray-500">進度備註</div>
-              <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
                 {item.progressNote}
               </div>
             </div>
@@ -900,31 +1016,55 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           {item.note && (
             <div className="space-y-1">
               <div className="text-sm text-gray-500">一般備註</div>
-              <div className="rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
+              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
                 {item.note}
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <section className="space-y-6 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">
             <h2 className="text-xl font-semibold text-gray-900">進度概覽</h2>
+            <p className="text-xs text-gray-500">雙擊主進度可快速編輯。</p>
           </div>
 
-          <div className="rounded-xl bg-gray-50 px-4 py-3">
+          <div
+            className="cursor-text rounded-xl bg-gray-50 px-4 py-3 transition hover:bg-blue-50"
+            onDoubleClick={openProgressEditor}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                openProgressEditor();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            title="雙擊以快速編輯主進度"
+          >
             <div className="text-sm font-medium text-gray-900">主進度</div>
-            <div className="text-sm text-gray-700">{progressSummary}</div>
+            <div className="break-anywhere text-sm text-gray-700">
+              {progressSummary}
+            </div>
           </div>
           {primary?.updatedAt && (
             <div className="text-xs text-gray-500">
               主進度更新於：{formatDateTime(primary.updatedAt)}
             </div>
           )}
+          {progressFeedback && (
+            <div
+              className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                progressFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {progressFeedback.message}
+            </div>
+          )}
           {progressError && (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {progressError}
             </div>
           )}
@@ -939,7 +1079,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
             {appearanceFeedback && (
               <div
-                className={`rounded-xl px-3 py-2 text-sm ${
+                className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
                   appearanceFeedback.type === "success"
                     ? "bg-emerald-50 text-emerald-700"
                     : "bg-red-50 text-red-700"
@@ -985,9 +1125,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       </div>
                     ) : null}
                     <div className="flex-1 space-y-2">
-                      <div className="text-base font-medium text-gray-900">{entry.name}</div>
+                      <div className="break-anywhere text-base font-medium text-gray-900">
+                        {entry.name}
+                      </div>
                       {entry.note && (
-                        <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                        <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
                           {entry.note}
                         </div>
                       )}
@@ -1048,6 +1190,133 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
       </div>
+
+      {progressEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeProgressEditor}
+        >
+          <div
+            className="w-full max-w-xl space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="progress-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2
+                id="progress-editor-title"
+                className="text-xl font-semibold text-gray-900"
+              >
+                編輯主進度
+              </h2>
+              <p className="text-sm text-gray-500">
+                更新後會立即儲存至雲端，並同步更新最後編輯時間。
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">平台 / 來源 *</span>
+                <input
+                  value={progressDraft.platform}
+                  onChange={(event) =>
+                    setProgressDraft((prev) => ({
+                      ...prev,
+                      platform: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="例如：漫畫瘋"
+                  disabled={progressEditorSaving}
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-base">類型 *</span>
+                <select
+                  value={progressDraft.type}
+                  onChange={(event) =>
+                    setProgressDraft((prev) => ({
+                      ...prev,
+                      type: event.target.value as ProgressType,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={progressEditorSaving}
+                >
+                  {PROGRESS_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="text-base">數值 *</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={progressDraft.value}
+                    onChange={(event) =>
+                      setProgressDraft((prev) => ({
+                        ...prev,
+                        value: event.target.value,
+                      }))
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="例如：12"
+                    disabled={progressEditorSaving}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-base">單位</span>
+                  <input
+                    value={progressDraft.unit}
+                    onChange={(event) =>
+                      setProgressDraft((prev) => ({
+                        ...prev,
+                        unit: event.target.value,
+                      }))
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="話 / 集 / % / 頁"
+                    disabled={progressEditorSaving}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {progressEditorError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {progressEditorError}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeProgressEditor}
+                disabled={progressEditorSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleProgressEditorSubmit}
+                disabled={progressEditorSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {progressEditorSaving ? "儲存中…" : "儲存變更"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {appearanceEditor && (
         <>
@@ -1110,7 +1379,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 </label>
               </div>
               {appearanceError && (
-                <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
                   {appearanceError}
                 </div>
               )}
@@ -1180,7 +1449,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               placeholder="輸入你的心得或筆記…"
             />
             {noteError && (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>
             )}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button

@@ -1023,12 +1023,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           </div>
 
           {error && (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
           {message && (
-            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className="break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {message}
             </div>
           )}
@@ -1162,12 +1162,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 </div>
 
                 {tagStatus.error ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                  <div className="break-anywhere rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
                     {tagStatus.error}
                   </div>
                 ) : null}
                 {tagStatus.message ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                  <div className="break-anywhere rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
                     {tagStatus.message}
                   </div>
                 ) : null}
@@ -1343,6 +1343,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 imageUrl={form.thumbUrl.trim()}
                 value={form.thumbTransform}
                 onClose={() => setThumbEditorOpen(false)}
+                shape="portrait"
                 onApply={(next) => {
                   setForm((prev) => ({
                     ...prev,

@@ -267,7 +267,7 @@ export default function QuickAddItemPage() {
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           {error && (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}

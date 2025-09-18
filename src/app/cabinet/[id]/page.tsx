@@ -574,7 +574,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-gray-900">櫃子內容</h1>
+          <h1 className="break-anywhere text-2xl font-semibold text-gray-900">櫃子內容</h1>
           <p className="text-base text-gray-600">
             未登入。請先前往
             <Link href="/login" className="ml-1 underline">
@@ -605,8 +605,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-gray-900">櫃子內容</h1>
-          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <h1 className="break-anywhere text-2xl font-semibold text-gray-900">櫃子內容</h1>
+          <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {cabinetError}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -624,9 +624,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-gray-900">{cabinetName}</h1>
+            <h1 className="break-anywhere text-2xl font-semibold text-gray-900">{cabinetName}</h1>
             {cabinetNote && (
-              <p className="text-sm text-gray-600">{cabinetNote}</p>
+              <p className="break-anywhere text-sm text-gray-600">{cabinetNote}</p>
             )}
           </div>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
@@ -884,7 +884,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         </section>
 
         {listError && (
-          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {listError}
           </div>
         )}

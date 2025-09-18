@@ -34,4 +34,9 @@ body {
     text-overflow: ellipsis;
     word-break: break-word;
   }
+
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
