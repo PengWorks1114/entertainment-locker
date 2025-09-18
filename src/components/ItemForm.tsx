@@ -692,6 +692,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         updatedAt: serverTimestamp(),
       };
 
+      if (mode === "create") {
+        docData.isFavorite = false;
+      }
+
       const db = getFirebaseDb();
       if (!db) {
         throw new Error("Firebase 尚未設定");

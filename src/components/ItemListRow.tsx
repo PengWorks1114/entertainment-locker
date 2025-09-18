@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo } from "react";
 
+import FavoriteToggleButton from "@/components/FavoriteToggleButton";
+import { useFavoriteToggle } from "@/hooks/useFavoriteToggle";
 import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
 import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import type { ItemRecord } from "@/lib/types";
@@ -16,6 +18,11 @@ type ItemListRowProps = {
 export default function ItemListRow({ item }: ItemListRowProps) {
   const { listDisplay, increment, updating, loading, error, success } =
     usePrimaryProgress(item);
+  const {
+    toggleFavorite,
+    pending: favoritePending,
+    error: favoriteError,
+  } = useFavoriteToggle(item);
 
   const primaryLink = useMemo(() => {
     if (!item.links || item.links.length === 0) {
@@ -128,11 +135,24 @@ export default function ItemListRow({ item }: ItemListRowProps) {
         </div>
 
         <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[160px] sm:max-w-[240px] sm:flex-none sm:items-end">
-          <div
-            className="line-clamp-2 break-anywhere text-sm font-medium text-gray-700 sm:text-right"
-            title={listDisplay}
-          >
-            {listDisplay}
+          <div className="flex items-start justify-between gap-3 sm:items-center">
+            <div
+              className="flex-1 break-anywhere text-sm font-medium text-gray-700 sm:text-right"
+              title={listDisplay}
+            >
+              {listDisplay}
+            </div>
+            <FavoriteToggleButton
+              isFavorite={item.isFavorite}
+              onToggle={toggleFavorite}
+              disabled={favoritePending}
+              size="sm"
+              ariaLabel={
+                item.isFavorite
+                  ? `取消 ${item.titleZh} 最愛`
+                  : `將 ${item.titleZh} 設為最愛`
+              }
+            />
           </div>
           <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
             {primaryLink ? (
@@ -165,13 +185,15 @@ export default function ItemListRow({ item }: ItemListRowProps) {
         </div>
       </div>
 
-      {(error || success) && (
+      {(favoriteError || error || success) && (
         <div
           className={`mt-3 break-anywhere rounded-xl px-3 py-2 text-xs ${
-            error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+            favoriteError || error
+              ? "bg-red-50 text-red-700"
+              : "bg-emerald-50 text-emerald-700"
           }`}
         >
-          {error ?? success}
+          {favoriteError ?? error ?? success}
         </div>
       )}
     </article>

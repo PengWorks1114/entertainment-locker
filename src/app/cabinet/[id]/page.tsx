@@ -44,6 +44,7 @@ type FilterState = {
   ratingMin: string;
   ratingMax: string;
   hasNextUpdate: HasNextUpdateFilter;
+  favoritesOnly: boolean;
   sort: SortOption;
   sortDirection: SortDirection;
   tags: string[];
@@ -87,6 +88,7 @@ const defaultFilters: FilterState = {
   ratingMin: "",
   ratingMax: "",
   hasNextUpdate: "all",
+  favoritesOnly: false,
   sort: "updated",
   sortDirection: "desc",
   tags: [],
@@ -146,6 +148,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const filtersContentId = "cabinet-filter-panel";
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -297,6 +301,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             thumbTransform: data.thumbTransform
               ? normalizeThumbTransform(data.thumbTransform)
               : null,
+            isFavorite: Boolean(data.isFavorite),
             progressNote:
               typeof data.progressNote === "string" ? data.progressNote : null,
             insightNote:
@@ -337,6 +342,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.ratingMin,
     filters.ratingMax,
     filters.hasNextUpdate,
+    filters.favoritesOnly,
     filters.sort,
     filters.tags,
   ]);
@@ -437,6 +443,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       if (filters.hasNextUpdate === "no" && item.nextUpdateAt) {
         return false;
       }
+      if (filters.favoritesOnly && !item.isFavorite) {
+        return false;
+      }
       if (
         filters.tags.length > 0 &&
         !filters.tags.every((tag) => item.tags.includes(tag))
@@ -506,6 +515,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.ratingMin.trim().length > 0 ||
     filters.ratingMax.trim().length > 0 ||
     filters.hasNextUpdate !== "all" ||
+    filters.favoritesOnly ||
     filters.sort !== defaultFilters.sort ||
     filters.sortDirection !== defaultFilters.sortDirection ||
     filters.tags.length > 0;
@@ -554,6 +564,10 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   function resetFilters() {
     setFilters({ ...defaultFilters });
     setTagQuery("");
+  }
+
+  function toggleFiltersCollapsed() {
+    setFiltersCollapsed((prev) => !prev);
   }
 
   const inputClass = "h-12 rounded-xl border px-4 text-base";
@@ -654,200 +668,237 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           </div>
         </header>
 
-        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <div className="grid gap-4 lg:grid-cols-4">
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">搜尋作品</span>
-              <input
-                value={filters.search}
-                onChange={(event) => updateFilter("search", event.target.value)}
-                placeholder="中文 / 原文 / 作者"
-                className={`${inputClass} w-full`}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">狀態</span>
-              <select
-                value={filters.status}
-                onChange={(event) =>
-                  updateFilter("status", event.target.value as ItemStatus | "all")
-                }
-                className={`${selectClass} w-full`}
-              >
-                <option value="all">全部狀態</option>
-                {ITEM_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">評分下限</span>
-              <input
-                value={filters.ratingMin}
-                onChange={(event) => updateFilter("ratingMin", event.target.value)}
-                placeholder="例如：7"
-                className={smallInputClass}
-                inputMode="decimal"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">評分上限</span>
-              <input
-                value={filters.ratingMax}
-                onChange={(event) => updateFilter("ratingMax", event.target.value)}
-                placeholder="例如：9.5"
-                className={smallInputClass}
-                inputMode="decimal"
-              />
-            </label>
+        <section className="rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
+              <p className="text-xs text-gray-500">調整條件以快速找到作品。</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleFiltersCollapsed}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition hover:bg-gray-100"
+              aria-expanded={!filtersCollapsed}
+              aria-controls={filtersContentId}
+            >
+              {filtersCollapsed ? "展開" : "收合"}
+            </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">下次更新</span>
-              <select
-                value={filters.hasNextUpdate}
-                onChange={(event) =>
-                  updateFilter("hasNextUpdate", event.target.value as HasNextUpdateFilter)
-                }
-                className={`${selectClass} w-full`}
-              >
-                <option value="all">全部</option>
-                <option value="yes">僅顯示有下一次提醒</option>
-                <option value="no">僅顯示未設定提醒</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-gray-600">排序方式</span>
-              <div className="flex flex-wrap items-center gap-3">
+          <div
+            id={filtersContentId}
+            className="mt-4 space-y-4"
+            hidden={filtersCollapsed}
+            aria-hidden={filtersCollapsed}
+          >
+            <div className="grid gap-4 lg:grid-cols-4">
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">搜尋作品</span>
+                <input
+                  value={filters.search}
+                  onChange={(event) => updateFilter("search", event.target.value)}
+                  placeholder="中文 / 原文 / 作者"
+                  className={`${inputClass} w-full`}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">狀態</span>
                 <select
-                  value={filters.sort}
+                  value={filters.status}
                   onChange={(event) =>
-                    updateFilter("sort", event.target.value as SortOption)
+                    updateFilter("status", event.target.value as ItemStatus | "all")
                   }
-                  className={`${selectClass} flex-1 min-w-[10rem]`}
+                  className={`${selectClass} w-full`}
                 >
-                  <option value="updated">最近更新</option>
-                  <option value="created">建立時間</option>
-                  <option value="rating">評分最高</option>
-                  <option value="title">名稱 A → Z</option>
-                  <option value="nextUpdate">下次更新時間</option>
+                  <option value="all">全部狀態</option>
+                  {ITEM_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <label className="inline-flex items-center gap-1">
-                    <input
-                      type="radio"
-                      name="sortDirection"
-                      value="asc"
-                      checked={filters.sortDirection === "asc"}
-                      onChange={(event) =>
-                        event.target.checked && updateFilter("sortDirection", "asc")
-                      }
-                      className="h-4 w-4"
-                    />
-                    正序
-                  </label>
-                  <label className="inline-flex items-center gap-1">
-                    <input
-                      type="radio"
-                      name="sortDirection"
-                      value="desc"
-                      checked={filters.sortDirection === "desc"}
-                      onChange={(event) =>
-                        event.target.checked && updateFilter("sortDirection", "desc")
-                      }
-                      className="h-4 w-4"
-                    />
-                    反序
-                  </label>
-                </div>
-              </div>
-            </label>
-          </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">評分下限</span>
+                <input
+                  value={filters.ratingMin}
+                  onChange={(event) => updateFilter("ratingMin", event.target.value)}
+                  placeholder="例如：7"
+                  className={smallInputClass}
+                  inputMode="decimal"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">評分上限</span>
+                <input
+                  value={filters.ratingMax}
+                  onChange={(event) => updateFilter("ratingMax", event.target.value)}
+                  placeholder="例如：9.5"
+                  className={smallInputClass}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
 
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <span className="text-sm text-gray-600">標籤篩選</span>
-              <p className="text-xs text-gray-500">
-                可加入多個標籤，僅顯示同時符合所有標籤的作品。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {filters.tags.length === 0 ? (
-                <span className="text-xs text-gray-400">目前未選擇標籤</span>
-              ) : (
-                filters.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700"
-                  >
-                    #{tag}
-                    <button
-                      type="button"
-                      onClick={() => removeTagFilter(tag)}
-                      className="rounded-full bg-blue-100 px-1 text-[10px] text-blue-600 transition hover:bg-blue-200"
-                      aria-label={`移除標籤 ${tag}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))
-              )}
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:flex-nowrap">
-              <input
-                value={tagQuery}
-                onChange={(event) => setTagQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleTagSubmit();
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">下次更新</span>
+                <select
+                  value={filters.hasNextUpdate}
+                  onChange={(event) =>
+                    updateFilter("hasNextUpdate", event.target.value as HasNextUpdateFilter)
                   }
-                }}
-                placeholder="輸入或搜尋標籤"
-                className={`${inputClass} flex-1 min-w-[8rem]`}
-              />
-              <button
-                type="button"
-                onClick={handleTagSubmit}
-                className={`${buttonClass({ variant: "secondary" })} h-auto min-h-[2.5rem] flex-none whitespace-pre-line px-4 text-center leading-tight`}
-              >
-                {"加入\n標籤"}
-              </button>
-            </div>
-            {availableTags.length > 0 && (
-              filteredAvailableTags.length > 0 ? (
-                <div className="space-y-1">
-                  <span className="text-xs text-gray-500">快速加入：</span>
-                  <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
-                    {filteredAvailableTags.map((tag) => {
-                      const isSelected = filters.tags.includes(tag);
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => toggleTagFilter(tag)}
-                          className={`rounded-full border px-3 py-1 text-xs transition ${
-                            isSelected
-                              ? "border-blue-500 bg-blue-50 text-blue-700"
-                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                          }`}
-                        >
-                          #{tag}
-                        </button>
-                      );
-                    })}
+                  className={`${selectClass} w-full`}
+                >
+                  <option value="all">全部</option>
+                  <option value="yes">僅顯示有下一次提醒</option>
+                  <option value="no">僅顯示未設定提醒</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">排序方式</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={filters.sort}
+                    onChange={(event) =>
+                      updateFilter("sort", event.target.value as SortOption)
+                    }
+                    className={`${selectClass} flex-1 min-w-[10rem]`}
+                  >
+                    <option value="updated">最近更新</option>
+                    <option value="created">建立時間</option>
+                    <option value="rating">評分最高</option>
+                    <option value="title">名稱 A → Z</option>
+                    <option value="nextUpdate">下次更新時間</option>
+                  </select>
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <label className="inline-flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="sortDirection"
+                        value="asc"
+                        checked={filters.sortDirection === "asc"}
+                        onChange={(event) =>
+                          event.target.checked && updateFilter("sortDirection", "asc")
+                        }
+                        className="h-4 w-4"
+                      />
+                      正序
+                    </label>
+                    <label className="inline-flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="sortDirection"
+                        value="desc"
+                        checked={filters.sortDirection === "desc"}
+                        onChange={(event) =>
+                          event.target.checked && updateFilter("sortDirection", "desc")
+                        }
+                        className="h-4 w-4"
+                      />
+                      反序
+                    </label>
                   </div>
                 </div>
-              ) : (
-                <p className="text-xs text-gray-400">找不到符合的標籤，可直接輸入新增。</p>
-              )
-            )}
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={filters.favoritesOnly}
+                  onChange={(event) =>
+                    updateFilter("favoritesOnly", event.target.checked)
+                  }
+                  className="h-4 w-4 accent-red-500"
+                />
+                只顯示最愛
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <span className="text-sm text-gray-600">標籤篩選</span>
+                <p className="text-xs text-gray-500">
+                  可加入多個標籤，僅顯示同時符合所有標籤的作品。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {filters.tags.length === 0 ? (
+                  <span className="text-xs text-gray-400">目前未選擇標籤</span>
+                ) : (
+                  filters.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700"
+                    >
+                      #{tag}
+                      <button
+                        type="button"
+                        onClick={() => removeTagFilter(tag)}
+                        className="rounded-full bg-blue-100 px-1 text-[10px] text-blue-600 transition hover:bg-blue-200"
+                        aria-label={`移除標籤 ${tag}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:flex-nowrap">
+                <input
+                  value={tagQuery}
+                  onChange={(event) => setTagQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleTagSubmit();
+                    }
+                  }}
+                  placeholder="輸入或搜尋標籤"
+                  className={`${inputClass} flex-1 min-w-[8rem]`}
+                />
+                <button
+                  type="button"
+                  onClick={handleTagSubmit}
+                  className={`${buttonClass({ variant: "secondary" })} h-auto min-h-[2.5rem] flex-none whitespace-pre-line px-4 text-center leading-tight`}
+                >
+                  {"加入\n標籤"}
+                </button>
+              </div>
+              {availableTags.length > 0 && (
+                filteredAvailableTags.length > 0 ? (
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-500">快速加入：</span>
+                    <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
+                      {filteredAvailableTags.map((tag) => {
+                        const isSelected = filters.tags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTagFilter(tag)}
+                            className={`rounded-full border px-3 py-1 text-xs transition ${
+                              isSelected
+                                ? "border-blue-500 bg-blue-50 text-blue-700"
+                                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                            }`}
+                          >
+                            #{tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">找不到符合的標籤，可直接輸入新增。</p>
+                )
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
             <span>共 {filteredItems.length} 件物件</span>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex overflow-hidden rounded-full border border-gray-200 bg-white">

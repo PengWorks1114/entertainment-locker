@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -16,6 +16,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import FavoriteToggleButton from "@/components/FavoriteToggleButton";
 import ThumbEditorDialog from "@/components/ThumbEditorDialog";
 import ThumbLinkField from "@/components/ThumbLinkField";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
@@ -192,6 +193,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   });
   const [attributeFeedback, setAttributeFeedback] =
     useState<NoteFeedback | null>(null);
+  const [favoritePending, setFavoritePending] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
   const thumbStyle = useMemo(
@@ -206,6 +209,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     ]
   );
   const canUseOptimizedThumb = isOptimizedImageUrl(item?.thumbUrl);
+
+  useEffect(() => {
+    if (!favoriteError) return;
+    const timer = setTimeout(() => setFavoriteError(null), 3000);
+    return () => clearTimeout(timer);
+  }, [favoriteError]);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -323,6 +332,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           thumbTransform: data.thumbTransform
             ? normalizeThumbTransform(data.thumbTransform)
             : null,
+          isFavorite: Boolean(data.isFavorite),
           progressNote: typeof data.progressNote === "string" ? data.progressNote : null,
           insightNote: typeof data.insightNote === "string" ? data.insightNote : null,
           note: typeof data.note === "string" ? data.note : null,
@@ -750,6 +760,41 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     setNoteError(null);
   }
 
+  const handleFavoriteToggle = useCallback(async () => {
+    if (!item) {
+      setFavoriteError("目前無法更新最愛狀態");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFavoriteError("Firebase 尚未設定");
+      return;
+    }
+    const nextValue = !item.isFavorite;
+    setFavoritePending(true);
+    setFavoriteError(null);
+    try {
+      await updateDoc(doc(db, "item", item.id), {
+        isFavorite: nextValue,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              isFavorite: nextValue,
+              updatedAt: Timestamp.now(),
+            }
+          : prev
+      );
+    } catch (err) {
+      console.error("更新最愛狀態時發生錯誤", err);
+      setFavoriteError("更新最愛狀態時發生錯誤");
+    } finally {
+      setFavoritePending(false);
+    }
+  }, [item]);
+
   function openAppearanceEditor(index: number) {
     if (!user) {
       setAppearanceFeedback({
@@ -1007,6 +1052,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const tagLinkBase = item.cabinetId
     ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
     : null;
+  const favoriteLabel = item.isFavorite
+    ? `取消 ${item.titleZh} 最愛`
+    : `將 ${item.titleZh} 設為最愛`;
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -1036,33 +1084,49 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
-            {primaryLink && (
-              <a
-                href={primaryLink.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-              >
-                點我觀看
-              </a>
-            )}
-            {item.cabinetId && !cabinetMissing && (
+          <div className="flex w-full flex-col gap-3 text-sm sm:w-auto sm:min-w-[16rem] sm:flex-none sm:items-end">
+            <div className="flex justify-end">
+              <FavoriteToggleButton
+                isFavorite={item.isFavorite}
+                onToggle={handleFavoriteToggle}
+                disabled={favoritePending}
+                ariaLabel={favoriteLabel}
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              {primaryLink && (
+                <a
+                  href={primaryLink.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                >
+                  點我觀看
+                </a>
+              )}
+              {item.cabinetId && !cabinetMissing && (
+                <Link
+                  href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
+                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                >
+                  檢視櫃子
+                </Link>
+              )}
               <Link
-                href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
+                href={`/item/${encodeURIComponent(item.id)}/edit`}
                 className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
               >
-                檢視櫃子
+                編輯物件
               </Link>
-            )}
-            <Link
-              href={`/item/${encodeURIComponent(item.id)}/edit`}
-              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-            >
-              編輯物件
-            </Link>
+            </div>
           </div>
         </header>
+
+        {favoriteError && (
+          <div className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {favoriteError}
+          </div>
+        )}
 
         <section className="rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
           <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">

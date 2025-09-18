@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useMemo } from "react";
 import type { Timestamp } from "firebase/firestore";
 
+import FavoriteToggleButton from "@/components/FavoriteToggleButton";
+import { useFavoriteToggle } from "@/hooks/useFavoriteToggle";
 import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
 import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import {
@@ -49,6 +51,11 @@ function formatDateOnly(timestamp?: Timestamp | null): string {
 export default function ItemCard({ item }: ItemCardProps) {
   const { primary, summary, updating, loading, error, success, increment } =
     usePrimaryProgress(item);
+  const {
+    toggleFavorite,
+    pending: favoritePending,
+    error: favoriteError,
+  } = useFavoriteToggle(item);
   const statusLabel = statusLabelMap.get(item.status) ?? item.status;
   const thumbTransform = item.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
   const thumbStyle = useMemo(
@@ -106,14 +113,26 @@ export default function ItemCard({ item }: ItemCardProps) {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={increment}
-          disabled={updating || loading}
-          className={buttonClass({ variant: "primary" })}
-        >
-          {updating ? "+1…" : "+1"}
-        </button>
+        <div className="flex items-center gap-2">
+          <FavoriteToggleButton
+            isFavorite={item.isFavorite}
+            onToggle={toggleFavorite}
+            disabled={favoritePending}
+            ariaLabel={
+              item.isFavorite
+                ? `取消 ${item.titleZh} 最愛`
+                : `將 ${item.titleZh} 設為最愛`
+            }
+          />
+          <button
+            type="button"
+            onClick={increment}
+            disabled={updating || loading}
+            className={buttonClass({ variant: "primary" })}
+          >
+            {updating ? "+1…" : "+1"}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -276,15 +295,15 @@ export default function ItemCard({ item }: ItemCardProps) {
         </div>
       )}
 
-      {(error || success) && (
+      {(favoriteError || error || success) && (
         <div
           className={`break-anywhere rounded-2xl px-4 py-3 text-sm ${
-            error
+            favoriteError || error
               ? "bg-red-50 text-red-700"
               : "bg-emerald-50 text-emerald-700"
           }`}
         >
-          {error ?? success}
+          {favoriteError ?? error ?? success}
         </div>
       )}
     </article>

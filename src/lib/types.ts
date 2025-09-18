@@ -82,6 +82,7 @@ export type ItemRecord = {
   links: ItemLink[];
   thumbUrl?: string | null;
   thumbTransform?: ThumbTransform | null;
+  isFavorite: boolean;
   progressNote?: string | null;
   insightNote?: string | null;
   note?: string | null;
