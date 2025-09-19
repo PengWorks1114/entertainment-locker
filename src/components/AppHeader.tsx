@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 
 import { getFirebaseAuth } from "@/lib/firebase";
 
 const baseLinkClass =
-  "rounded-full px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
-const inactiveLinkClass = `${baseLinkClass} text-gray-600 hover:text-gray-900`;
+  "block rounded-xl px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
+const inactiveLinkClass = `${baseLinkClass} text-gray-700 hover:bg-gray-100`;
 const activeLinkClass = `${baseLinkClass} bg-gray-900 text-white shadow-sm`;
 const actionButtonClass =
   "rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 transition hover:border-gray-400 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70";
@@ -20,6 +20,8 @@ export default function AppHeader() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -45,6 +47,33 @@ export default function AppHeader() {
     []
   );
 
+  useEffect(() => {
+    if (!navOpen) {
+      return;
+    }
+    function handleClickOutside(event: MouseEvent) {
+      if (!menuRef.current || menuRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setNavOpen(false);
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setNavOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [navOpen]);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+
   async function handleSignOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -69,21 +98,54 @@ export default function AppHeader() {
         <Link href="/" className="text-lg font-semibold text-gray-900">
           Entertainment Locker
         </Link>
-        <nav className="flex items-center gap-2">
-          {navLinks.map((link) => {
-            const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`);
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={isActive ? activeLinkClass : inactiveLinkClass}
+        <div className="flex items-center gap-4">
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              aria-expanded={navOpen}
+              aria-controls="primary-navigation"
+              onClick={() => setNavOpen((prev) => !prev)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:border-gray-400 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+            >
+              <span className="sr-only">主選單</span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="h-5 w-5"
+                aria-hidden
               >
-                {link.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="flex items-center gap-3 text-sm text-gray-600">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+            {navOpen ? (
+              <nav
+                id="primary-navigation"
+                aria-label="主選單"
+                className="absolute right-0 top-full mt-2 w-48 rounded-2xl border border-gray-200 bg-white p-2 shadow-lg"
+              >
+                <ul className="space-y-1">
+                  {navLinks.map((link) => {
+                    const isActive =
+                      pathname === link.href || pathname?.startsWith(`${link.href}/`);
+                    return (
+                      <li key={link.href}>
+                        <Link
+                          href={link.href}
+                          className={isActive ? activeLinkClass : inactiveLinkClass}
+                        >
+                          {link.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-600">
           {user ? (
             <>
               {user.email && (
@@ -107,6 +169,7 @@ export default function AppHeader() {
           ) : (
             <span>…</span>
           )}
+          </div>
         </div>
       </div>
     </header>

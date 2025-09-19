@@ -91,6 +91,19 @@ type SectionKey =
   | "progressManager"
   | "dangerZone";
 
+function createSectionState(allOpen: boolean): Record<SectionKey, boolean> {
+  return {
+    basic: allOpen,
+    links: allOpen,
+    mediaNotes: allOpen,
+    appearances: allOpen,
+    insight: allOpen,
+    status: allOpen,
+    progressManager: allOpen,
+    dangerZone: allOpen,
+  };
+}
+
 function generateLocalId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -220,19 +233,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   );
   const tagsCacheRef = useRef<Record<string, string[]>>({});
   const draggingAppearanceIndexRef = useRef<number | null>(null);
-  const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
-    basic: true,
-    links: true,
-    mediaNotes: true,
-    appearances: true,
-    insight: true,
-    status: true,
-    progressManager: true,
-    dangerZone: true,
-  });
-  const previousCabinetIdRef = useRef<string | null>(null);
-
   const mode = itemId ? "edit" : "create";
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>(() =>
+    createSectionState(mode === "create")
+  );
+  const previousCabinetIdRef = useRef<string | null>(null);
 
   const fetchCabinetTags = useCallback(
     async (cabinetId: string, force = false): Promise<string[]> => {
@@ -809,6 +814,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     } catch (err) {
       if (err instanceof ValidationError) {
         setError(err.message);
+        setSectionOpen(createSectionState(true));
       } else if (err instanceof Error && err.message) {
         setError(err.message);
       } else {

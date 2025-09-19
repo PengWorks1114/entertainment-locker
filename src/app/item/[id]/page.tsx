@@ -57,6 +57,9 @@ const progressTypeLabelMap = new Map(
   PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
 );
 
+const backButtonClass =
+  "inline-flex items-center justify-center rounded-xl border border-black bg-white px-4 py-2 text-sm font-medium text-black shadow-sm transition hover:bg-black hover:text-white";
+
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
   try {
@@ -1047,9 +1050,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div className="flex flex-wrap gap-2 text-sm">
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                className={buttonClass({ variant: "secondary" })}
+                className={backButtonClass}
               >
-                檢視櫃子
+                上一頁
               </Link>
             </div>
           )}
@@ -1133,9 +1136,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               {item.cabinetId && !cabinetMissing && (
                 <Link
                   href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                  className={`${backButtonClass} w-full sm:w-auto`}
                 >
-                  檢視櫃子
+                  上一頁
                 </Link>
               )}
               <Link
