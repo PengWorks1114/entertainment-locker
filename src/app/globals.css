@@ -51,6 +51,10 @@ body {
   background-color: rgba(30, 41, 59, 0.8) !important;
 }
 
+:root[data-theme="dark"] .bg-white\/85 {
+  background-color: rgba(30, 41, 59, 0.85) !important;
+}
+
 :root[data-theme="dark"] .bg-white\/90 {
   background-color: rgba(30, 41, 59, 0.9) !important;
 }

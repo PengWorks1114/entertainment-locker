@@ -9,6 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   fetchSignInMethodsForEmail,
+  sendPasswordResetEmail,
   type User,
 } from "firebase/auth";
 
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -57,7 +59,7 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (loading) return;
+    if (loading || resetting) return;
     setError(null);
     setMessage(null);
 
@@ -109,6 +111,44 @@ export default function LoginPage() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (mode !== "login" || resetting) {
+      return;
+    }
+    const trimmedEmail = email.trim();
+    setError(null);
+    setMessage(null);
+    if (!trimmedEmail) {
+      setError("請先輸入 Email 後再重設密碼");
+      return;
+    }
+    if (!trimmedEmail.includes("@") || !trimmedEmail.includes(".")) {
+      setError("請輸入有效的 Email 後再重設密碼");
+      return;
+    }
+    setResetting(true);
+    try {
+      const auth = getFirebaseAuth();
+      if (!auth) {
+        setError("Firebase 尚未設定");
+        setResetting(false);
+        return;
+      }
+      await sendPasswordResetEmail(auth, trimmedEmail);
+      setMessage("已寄出重設密碼信件，請至信箱查收。");
+    } catch (err) {
+      const errorObj = err as { code?: string; message?: string };
+      const code = errorObj.code ?? "";
+      if (code === "auth/user-not-found") {
+        setError("查無此帳號，請確認 Email 或改用註冊");
+      } else {
+        setError(errorObj.message ?? "重設密碼時發生錯誤，請稍後再試");
+      }
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -193,12 +233,24 @@ export default function LoginPage() {
             <div className="pt-3">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || resetting}
                 className="h-12 w-full rounded-xl bg-gray-900 text-base font-medium text-white shadow transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {loading ? `${modeLabel}中…` : `${modeLabel}並前往我的櫃子`}
               </button>
             </div>
+            {mode === "login" && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetting || loading}
+                  className="text-sm font-medium text-blue-600 transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {resetting ? "寄送重設密碼信件中…" : "忘記密碼？"}
+                </button>
+              </div>
+            )}
           </form>
 
           {error && (

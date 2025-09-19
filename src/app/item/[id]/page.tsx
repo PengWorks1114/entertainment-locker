@@ -223,6 +223,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const titleZhInputRef = useRef<HTMLInputElement | null>(null);
   const [noteAddPending, setNoteAddPending] = useState(false);
   const [noteReorderOpen, setNoteReorderOpen] = useState(false);
   const [noteReorderList, setNoteReorderList] = useState<InsightEntry[]>([]);
@@ -267,6 +270,27 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     nextUpdateAt: "",
   });
   const [attributeFeedback, setAttributeFeedback] =
+    useState<NoteFeedback | null>(null);
+  const [titleEditorOpen, setTitleEditorOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState({ titleZh: "", titleAlt: "" });
+  const [titleSaving, setTitleSaving] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [titleFeedback, setTitleFeedback] = useState<NoteFeedback | null>(null);
+  const [progressNoteEditorOpen, setProgressNoteEditorOpen] = useState(false);
+  const [progressNoteDraft, setProgressNoteDraft] = useState("");
+  const [progressNoteSaving, setProgressNoteSaving] = useState(false);
+  const [progressNoteError, setProgressNoteError] = useState<string | null>(
+    null
+  );
+  const [progressNoteFeedback, setProgressNoteFeedback] =
+    useState<NoteFeedback | null>(null);
+  const [generalNoteEditorOpen, setGeneralNoteEditorOpen] = useState(false);
+  const [generalNoteDraft, setGeneralNoteDraft] = useState("");
+  const [generalNoteSaving, setGeneralNoteSaving] = useState(false);
+  const [generalNoteError, setGeneralNoteError] = useState<string | null>(
+    null
+  );
+  const [generalNoteFeedback, setGeneralNoteFeedback] =
     useState<NoteFeedback | null>(null);
   const [favoritePending, setFavoritePending] = useState(false);
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
@@ -562,6 +586,24 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     return () => clearTimeout(timer);
   }, [progressFeedback]);
 
+  useEffect(() => {
+    if (!titleFeedback) return;
+    const timer = setTimeout(() => setTitleFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [titleFeedback]);
+
+  useEffect(() => {
+    if (!progressNoteFeedback) return;
+    const timer = setTimeout(() => setProgressNoteFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [progressNoteFeedback]);
+
+  useEffect(() => {
+    if (!generalNoteFeedback) return;
+    const timer = setTimeout(() => setGeneralNoteFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [generalNoteFeedback]);
+
   const openProgressEditor = () => {
     if (!primary) {
       setProgressFeedback({
@@ -658,6 +700,45 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }, 0);
     return () => clearTimeout(timer);
   }, [noteEditor]);
+
+  useEffect(() => {
+    if (!titleEditorOpen) return;
+    const timer = setTimeout(() => {
+      const input = titleZhInputRef.current;
+      if (input) {
+        input.focus();
+        const length = input.value.length;
+        input.setSelectionRange(length, length);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [titleEditorOpen]);
+
+  useEffect(() => {
+    if (!progressNoteEditorOpen) return;
+    const timer = setTimeout(() => {
+      const textarea = progressNoteTextareaRef.current;
+      if (textarea) {
+        textarea.focus();
+        const length = textarea.value.length;
+        textarea.setSelectionRange(length, length);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [progressNoteEditorOpen]);
+
+  useEffect(() => {
+    if (!generalNoteEditorOpen) return;
+    const timer = setTimeout(() => {
+      const textarea = generalNoteTextareaRef.current;
+      if (textarea) {
+        textarea.focus();
+        const length = textarea.value.length;
+        textarea.setSelectionRange(length, length);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [generalNoteEditorOpen]);
 
   const appearanceEditorIndex = appearanceEditor?.index ?? null;
 
@@ -868,6 +949,211 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     setNoteEditor(null);
     setNoteError(null);
+  }
+
+  function openTitleEditor() {
+    if (!item) {
+      setTitleFeedback({
+        type: "error",
+        message: "目前無法編輯標題",
+      });
+      return;
+    }
+    setTitleDraft({
+      titleZh: item.titleZh,
+      titleAlt: item.titleAlt ?? "",
+    });
+    setTitleError(null);
+    setTitleFeedback(null);
+    setTitleEditorOpen(true);
+  }
+
+  function closeTitleEditor() {
+    if (titleSaving) {
+      return;
+    }
+    setTitleEditorOpen(false);
+    setTitleError(null);
+  }
+
+  async function handleTitleSave() {
+    if (!item) {
+      setTitleError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setTitleError("請先登入");
+      return;
+    }
+    const trimmedTitle = titleDraft.titleZh.trim();
+    if (!trimmedTitle) {
+      setTitleError("中文標題為必填欄位");
+      return;
+    }
+    const trimmedAlt = titleDraft.titleAlt.trim();
+    const db = getFirebaseDb();
+    if (!db) {
+      setTitleError("Firebase 尚未設定");
+      return;
+    }
+    setTitleSaving(true);
+    setTitleError(null);
+    try {
+      await updateDoc(doc(db, "item", item.id), {
+        titleZh: trimmedTitle,
+        titleAlt: trimmedAlt ? trimmedAlt : null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              titleZh: trimmedTitle,
+              titleAlt: trimmedAlt ? trimmedAlt : null,
+              updatedAt: Timestamp.now(),
+            }
+          : prev
+      );
+      setTitleEditorOpen(false);
+      setTitleFeedback({ type: "success", message: "已更新標題" });
+    } catch (err) {
+      console.error("更新標題時發生錯誤", err);
+      setTitleError("更新標題時發生錯誤");
+    } finally {
+      setTitleSaving(false);
+    }
+  }
+
+  function openProgressNoteEditor() {
+    if (!item) {
+      setProgressNoteFeedback({
+        type: "error",
+        message: "目前無法編輯進度備註",
+      });
+      return;
+    }
+    setProgressNoteDraft(item.progressNote ?? "");
+    setProgressNoteError(null);
+    setProgressNoteFeedback(null);
+    setProgressNoteEditorOpen(true);
+  }
+
+  function closeProgressNoteEditor() {
+    if (progressNoteSaving) {
+      return;
+    }
+    setProgressNoteEditorOpen(false);
+    setProgressNoteError(null);
+  }
+
+  async function handleProgressNoteSave() {
+    if (!item) {
+      setProgressNoteError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setProgressNoteError("請先登入");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setProgressNoteError("Firebase 尚未設定");
+      return;
+    }
+    const trimmed = progressNoteDraft.trim();
+    setProgressNoteSaving(true);
+    setProgressNoteError(null);
+    try {
+      await updateDoc(doc(db, "item", item.id), {
+        progressNote: trimmed ? trimmed : null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              progressNote: trimmed ? trimmed : null,
+              updatedAt: Timestamp.now(),
+            }
+          : prev
+      );
+      setProgressNoteEditorOpen(false);
+      setProgressNoteFeedback({
+        type: "success",
+        message: trimmed ? "已更新進度備註" : "已清除進度備註",
+      });
+    } catch (err) {
+      console.error("更新進度備註時發生錯誤", err);
+      setProgressNoteError("更新進度備註時發生錯誤");
+    } finally {
+      setProgressNoteSaving(false);
+    }
+  }
+
+  function openGeneralNoteEditor() {
+    if (!item) {
+      setGeneralNoteFeedback({
+        type: "error",
+        message: "目前無法編輯一般備註",
+      });
+      return;
+    }
+    setGeneralNoteDraft(item.note ?? "");
+    setGeneralNoteError(null);
+    setGeneralNoteFeedback(null);
+    setGeneralNoteEditorOpen(true);
+  }
+
+  function closeGeneralNoteEditor() {
+    if (generalNoteSaving) {
+      return;
+    }
+    setGeneralNoteEditorOpen(false);
+    setGeneralNoteError(null);
+  }
+
+  async function handleGeneralNoteSave() {
+    if (!item) {
+      setGeneralNoteError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setGeneralNoteError("請先登入");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setGeneralNoteError("Firebase 尚未設定");
+      return;
+    }
+    const trimmed = generalNoteDraft.trim();
+    setGeneralNoteSaving(true);
+    setGeneralNoteError(null);
+    try {
+      await updateDoc(doc(db, "item", item.id), {
+        note: trimmed ? trimmed : null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              note: trimmed ? trimmed : null,
+              updatedAt: Timestamp.now(),
+            }
+          : prev
+      );
+      setGeneralNoteEditorOpen(false);
+      setGeneralNoteFeedback({
+        type: "success",
+        message: trimmed ? "已更新一般備註" : "已清除一般備註",
+      });
+    } catch (err) {
+      console.error("更新一般備註時發生錯誤", err);
+      setGeneralNoteError("更新一般備註時發生錯誤");
+    } finally {
+      setGeneralNoteSaving(false);
+    }
   }
 
   const handleFavoriteToggle = useCallback(async () => {
@@ -1630,6 +1916,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const updatedAtText = formatDateTime(item.updatedAt);
   const tags = item.tags ?? [];
   const links = item.links ?? [];
+  const titleAltContent = item.titleAlt?.trim() ?? "";
+  const progressNoteContent = item.progressNote?.trim() ?? "";
+  const generalNoteContent = item.note?.trim() ?? "";
   const appearances = item.appearances ?? [];
   const insightEntries = normalizeInsightEntries(
     item.insightNotes ?? item.insightNote
@@ -1665,8 +1954,49 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             className="absolute right-6 top-6"
           />
           <div className="space-y-3 pr-2 sm:pr-10">
-            <h1 className="text-3xl font-semibold text-gray-900">{item.titleZh}</h1>
-            {item.titleAlt && <p className="text-base text-gray-500">{item.titleAlt}</p>}
+            <div
+              className="cursor-text space-y-3 rounded-xl px-3 py-3 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              onDoubleClick={openTitleEditor}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openTitleEditor();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title="雙擊以快速編輯標題"
+            >
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-500">中文標題 *</div>
+                  <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
+                    {item.titleZh}
+                  </h1>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-500">原文/其他標題</div>
+                  {titleAltContent ? (
+                    <p className="break-anywhere text-base text-gray-600">
+                      {titleAltContent}
+                    </p>
+                  ) : (
+                    <p className="text-base text-gray-400">未設定</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            {titleFeedback && (
+              <div
+                className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                  titleFeedback.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {titleFeedback.message}
+              </div>
+            )}
             <div className="flex flex-wrap gap-3 text-sm text-gray-600">
               <span>物件 ID：{item.id}</span>
               {item.cabinetId ? (
@@ -1864,23 +2194,77 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
           )}
 
-          {item.progressNote && (
-            <div className="space-y-1">
-              <div className="text-sm text-gray-500">進度備註</div>
-              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                {item.progressNote}
+          <div className="mt-6 space-y-2">
+            <div className="text-sm text-gray-500">進度備註</div>
+            <div
+              className="cursor-text rounded-xl bg-blue-50 px-4 py-3 transition hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              onDoubleClick={openProgressNoteEditor}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openProgressNoteEditor();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title="雙擊以快速編輯進度備註"
+            >
+              <div className="break-anywhere whitespace-pre-wrap text-sm text-blue-800">
+                {progressNoteContent ? (
+                  progressNoteContent
+                ) : (
+                  <span className="text-blue-300">目前尚未填寫進度備註。</span>
+                )}
               </div>
             </div>
-          )}
+            {progressNoteFeedback && (
+              <div
+                className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                  progressNoteFeedback.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {progressNoteFeedback.message}
+              </div>
+            )}
+          </div>
 
-          {item.note && (
-            <div className="space-y-1">
-              <div className="text-sm text-gray-500">一般備註</div>
-              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
-                {item.note}
+          <div className="mt-6 space-y-2">
+            <div className="text-sm text-gray-500">一般備註</div>
+            <div
+              className="cursor-text rounded-xl bg-gray-100 px-4 py-3 transition hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              onDoubleClick={openGeneralNoteEditor}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openGeneralNoteEditor();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title="雙擊以快速編輯一般備註"
+            >
+              <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
+                {generalNoteContent ? (
+                  generalNoteContent
+                ) : (
+                  <span className="text-gray-400">目前尚未填寫一般備註。</span>
+                )}
               </div>
             </div>
-          )}
+            {generalNoteFeedback && (
+              <div
+                className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                  generalNoteFeedback.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {generalNoteFeedback.message}
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
@@ -2161,6 +2545,199 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           ) : null}
         </section>
       </div>
+
+      {titleEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeTitleEditor}
+        >
+          <div
+            className="w-full max-w-lg max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="title-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="title-editor-title" className="text-xl font-semibold text-gray-900">
+                快速編輯標題
+              </h2>
+              <p className="text-sm text-gray-500">更新後會立即儲存至雲端。</p>
+            </div>
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">中文標題 *</span>
+                <input
+                  ref={titleZhInputRef}
+                  value={titleDraft.titleZh}
+                  onChange={(event) =>
+                    setTitleDraft((prev) => ({
+                      ...prev,
+                      titleZh: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={titleSaving}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">原文/其他標題</span>
+                <input
+                  value={titleDraft.titleAlt}
+                  onChange={(event) =>
+                    setTitleDraft((prev) => ({
+                      ...prev,
+                      titleAlt: event.target.value,
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="選填，可輸入原文或其他名稱"
+                  disabled={titleSaving}
+                />
+              </label>
+            </div>
+            {titleError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {titleError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeTitleEditor}
+                disabled={titleSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleTitleSave}
+                disabled={titleSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {titleSaving ? "儲存中…" : "儲存標題"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {progressNoteEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeProgressNoteEditor}
+        >
+          <div
+            className="w-full max-w-lg max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="progress-note-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="progress-note-editor-title" className="text-xl font-semibold text-gray-900">
+                快速編輯進度備註
+              </h2>
+              <p className="text-sm text-gray-500">更新後會立即儲存至雲端。</p>
+            </div>
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">進度備註內容</span>
+                <textarea
+                  ref={progressNoteTextareaRef}
+                  value={progressNoteDraft}
+                  onChange={(event) => setProgressNoteDraft(event.target.value)}
+                  className="h-48 w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="記錄與進度相關的補充資訊…"
+                  disabled={progressNoteSaving}
+                />
+              </label>
+            </div>
+            {progressNoteError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {progressNoteError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeProgressNoteEditor}
+                disabled={progressNoteSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleProgressNoteSave}
+                disabled={progressNoteSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {progressNoteSaving ? "儲存中…" : "儲存備註"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {generalNoteEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeGeneralNoteEditor}
+        >
+          <div
+            className="w-full max-w-lg max-h-[90vh] space-y-5 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="general-note-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="general-note-editor-title" className="text-xl font-semibold text-gray-900">
+                快速編輯一般備註
+              </h2>
+              <p className="text-sm text-gray-500">更新後會立即儲存至雲端。</p>
+            </div>
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">一般備註內容</span>
+                <textarea
+                  ref={generalNoteTextareaRef}
+                  value={generalNoteDraft}
+                  onChange={(event) => setGeneralNoteDraft(event.target.value)}
+                  className="h-48 w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="補充其他想記錄的資訊…"
+                  disabled={generalNoteSaving}
+                />
+              </label>
+            </div>
+            {generalNoteError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {generalNoteError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeGeneralNoteEditor}
+                disabled={generalNoteSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleGeneralNoteSave}
+                disabled={generalNoteSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {generalNoteSaving ? "儲存中…" : "儲存備註"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {attributeEditorOpen && (
         <div
