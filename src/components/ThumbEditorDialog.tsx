@@ -156,7 +156,7 @@ export default function ThumbEditorDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl"
+        className="w-full max-w-xl max-h-[90vh] space-y-5 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

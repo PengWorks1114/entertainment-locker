@@ -24,6 +24,11 @@ import {
   splitAppearanceLabels,
   formatAppearanceLabels,
 } from "@/lib/appearances";
+import {
+  buildInsightStorageList,
+  normalizeInsightEntries,
+  type InsightEntry,
+} from "@/lib/insights";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
 import { buttonClass } from "@/lib/ui";
@@ -60,7 +65,7 @@ const progressTypeLabelMap = new Map(
 );
 
 const backButtonClass =
-  "inline-flex items-center justify-center rounded-xl border border-black bg-white px-4 py-2 text-sm font-medium text-black shadow-sm transition hover:bg-black hover:text-white";
+  "detail-back-button inline-flex items-center justify-center rounded-xl border border-black bg-white px-4 py-2 text-sm font-medium text-black shadow-sm transition hover:bg-black hover:text-white";
 
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
@@ -208,12 +213,21 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [progressEditorError, setProgressEditorError] = useState<string | null>(
     null
   );
-  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
-  const [noteDraft, setNoteDraft] = useState("");
+  const [noteEditor, setNoteEditor] = useState<{
+    index: number;
+    title: string;
+    content: string;
+  } | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [noteAddPending, setNoteAddPending] = useState(false);
+  const [noteReorderOpen, setNoteReorderOpen] = useState(false);
+  const [noteReorderList, setNoteReorderList] = useState<InsightEntry[]>([]);
+  const [noteReorderSelectedIndex, setNoteReorderSelectedIndex] = useState(-1);
+  const [noteReorderSaving, setNoteReorderSaving] = useState(false);
+  const [noteReorderError, setNoteReorderError] = useState<string | null>(null);
   const [appearanceEditor, setAppearanceEditor] = useState<{
     index: number;
     nameZh: string;
@@ -389,6 +403,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             })()
           : [];
         const appearances = normalizeAppearanceRecords(data.appearances);
+        const rawInsightNotes =
+          Array.isArray(data.insightNotes) && data.insightNotes.length > 0
+            ? data.insightNotes
+            : typeof data.insightNote === "string"
+              ? data.insightNote
+              : [];
+        const insightNotes = buildInsightStorageList(
+          normalizeInsightEntries(rawInsightNotes)
+        );
         const record: ItemRecord = {
           id: snap.id,
           uid: typeof data.uid === "string" ? data.uid : user.uid,
@@ -406,6 +429,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           isFavorite: Boolean(data.isFavorite),
           progressNote: typeof data.progressNote === "string" ? data.progressNote : null,
           insightNote: typeof data.insightNote === "string" ? data.insightNote : null,
+          insightNotes,
           note: typeof data.note === "string" ? data.note : null,
           appearances,
           rating: ratingValue,
@@ -621,17 +645,17 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   };
 
   useEffect(() => {
-    if (!noteEditorOpen) return;
+    if (!noteEditor) return;
     const timer = setTimeout(() => {
-      noteTextareaRef.current?.focus();
       const textarea = noteTextareaRef.current;
       if (textarea) {
+        textarea.focus();
         const length = textarea.value.length;
         textarea.setSelectionRange(length, length);
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [noteEditorOpen]);
+  }, [noteEditor]);
 
   const appearanceEditorIndex = appearanceEditor?.index ?? null;
 
@@ -812,7 +836,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
   };
 
-  function openNoteEditor() {
+  function openNoteEditor(index: number) {
     if (!item) {
       setNoteFeedback({
         type: "error",
@@ -820,16 +844,27 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       });
       return;
     }
-    setNoteDraft(item.insightNote ?? "");
+    setSectionOpen((prev) => ({ ...prev, notes: true }));
+    const entries = normalizeInsightEntries(
+      item.insightNotes ?? item.insightNote
+    );
+    const target = entries[index];
+    if (!target) {
+      setNoteFeedback({
+        type: "error",
+        message: "找不到要編輯的心得 / 筆記",
+      });
+      return;
+    }
+    setNoteEditor({ index, title: target.title, content: target.content });
     setNoteError(null);
-    setNoteEditorOpen(true);
   }
 
   function closeNoteEditor() {
     if (noteSaving) {
       return;
     }
-    setNoteEditorOpen(false);
+    setNoteEditor(null);
     setNoteError(null);
   }
 
@@ -935,6 +970,163 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       });
     } finally {
       setAppearanceAddPending(false);
+    }
+  }
+
+  async function handleNoteAdd() {
+    if (!item) {
+      setNoteFeedback({ type: "error", message: "找不到物件資料" });
+      return;
+    }
+    if (!user) {
+      setNoteFeedback({
+        type: "error",
+        message: "請先登入後再新增心得 / 筆記",
+      });
+      return;
+    }
+    if (noteAddPending) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    const currentEntries = normalizeInsightEntries(
+      item.insightNotes ?? item.insightNote
+    );
+    const updatedEntries = [
+      ...currentEntries,
+      { title: "", content: "未填寫" },
+    ];
+    const storageList = buildInsightStorageList(updatedEntries);
+    setNoteAddPending(true);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        insightNotes: storageList,
+        insightNote: null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              insightNotes: storageList,
+              insightNote: null,
+            }
+          : prev
+      );
+      setSectionOpen((prev) => ({ ...prev, notes: true }));
+      setNoteFeedback({ type: "success", message: "已新增心得 / 筆記" });
+    } catch (err) {
+      console.error("新增心得 / 筆記時發生錯誤", err);
+      setNoteFeedback({
+        type: "error",
+        message: "新增心得 / 筆記時發生錯誤",
+      });
+    } finally {
+      setNoteAddPending(false);
+    }
+  }
+
+  function openNoteReorder() {
+    if (!item) {
+      setNoteFeedback({ type: "error", message: "找不到物件資料" });
+      return;
+    }
+    if (!user) {
+      setNoteFeedback({
+        type: "error",
+        message: "請先登入後再調整心得 / 筆記順序",
+      });
+      return;
+    }
+    const records = normalizeInsightEntries(
+      item.insightNotes ?? item.insightNote
+    );
+    setNoteReorderList(records);
+    setNoteReorderSelectedIndex(-1);
+    setNoteReorderError(null);
+    setNoteReorderOpen(true);
+  }
+
+  function closeNoteReorder() {
+    if (noteReorderSaving) {
+      return;
+    }
+    setNoteReorderOpen(false);
+    setNoteReorderError(null);
+    setNoteReorderSelectedIndex(-1);
+    setNoteReorderList([]);
+  }
+
+  const moveNoteReorderSelection = useCallback(
+    (offset: number) => {
+      if (noteReorderSaving || noteReorderSelectedIndex === -1) {
+        return;
+      }
+      setNoteReorderList((prev) => {
+        const newIndex = noteReorderSelectedIndex + offset;
+        if (newIndex < 0 || newIndex >= prev.length) {
+          return prev;
+        }
+        const next = [...prev];
+        const [moved] = next.splice(noteReorderSelectedIndex, 1);
+        next.splice(newIndex, 0, moved);
+        setNoteReorderSelectedIndex(newIndex);
+        return next;
+      });
+    },
+    [noteReorderSaving, noteReorderSelectedIndex]
+  );
+
+  async function handleNoteReorderSave() {
+    if (!item) {
+      setNoteReorderError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setNoteReorderError("請先登入");
+      return;
+    }
+    if (noteReorderSaving) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteReorderError("Firebase 尚未設定");
+      return;
+    }
+    const storageList = buildInsightStorageList(noteReorderList);
+    setNoteReorderSaving(true);
+    setNoteReorderError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        insightNotes: storageList,
+        insightNote: null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              insightNotes: storageList,
+              insightNote: null,
+            }
+          : prev
+      );
+      setNoteReorderOpen(false);
+      setNoteReorderSelectedIndex(-1);
+      setNoteReorderList([]);
+      setNoteFeedback({ type: "success", message: "已更新心得 / 筆記順序" });
+    } catch (err) {
+      console.error("更新心得 / 筆記順序時發生錯誤", err);
+      setNoteReorderError("更新心得 / 筆記順序時發生錯誤");
+    } finally {
+      setNoteReorderSaving(false);
     }
   }
 
@@ -1088,6 +1280,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }
 
   async function handleNoteSave() {
+    if (!noteEditor) {
+      setNoteError("找不到要編輯的心得 / 筆記");
+      return;
+    }
     if (!item) {
       setNoteError("找不到物件資料");
       return;
@@ -1101,24 +1297,42 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setNoteError("Firebase 尚未設定");
       return;
     }
-    const trimmed = noteDraft.trim();
+    const currentEntries = normalizeInsightEntries(
+      item.insightNotes ?? item.insightNote
+    );
+    if (!currentEntries[noteEditor.index]) {
+      setNoteError("找不到要編輯的心得 / 筆記");
+      return;
+    }
+    const title = noteEditor.title.trim();
+    const content = noteEditor.content.trim();
+    if (!title && !content) {
+      setNoteError("請至少輸入標題或內容");
+      return;
+    }
+    const updatedEntries = currentEntries.map((entry, idx) =>
+      idx === noteEditor.index ? { title, content } : entry
+    );
+    const storageList = buildInsightStorageList(updatedEntries);
     setNoteSaving(true);
     setNoteError(null);
     try {
       const itemRef = doc(db, "item", item.id);
       await updateDoc(itemRef, {
-        insightNote: trimmed.length > 0 ? trimmed : null,
+        insightNotes: storageList,
+        insightNote: null,
         updatedAt: serverTimestamp(),
       });
       setItem((prev) =>
         prev
           ? {
               ...prev,
-              insightNote: trimmed.length > 0 ? trimmed : null,
+              insightNotes: storageList,
+              insightNote: null,
             }
           : prev
       );
-      setNoteEditorOpen(false);
+      setNoteEditor(null);
       setNoteFeedback({ type: "success", message: "已更新心得 / 筆記" });
     } catch (err) {
       console.error("更新心得 / 筆記時發生錯誤", err);
@@ -1283,8 +1497,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const tags = item.tags ?? [];
   const links = item.links ?? [];
   const appearances = item.appearances ?? [];
-  const insightNote = item.insightNote ?? "";
-  const hasInsightNote = insightNote.trim().length > 0;
+  const insightEntries = normalizeInsightEntries(
+    item.insightNotes ?? item.insightNote
+  );
+  const hasInsightEntries = insightEntries.length > 0;
   const hasAppearances = appearances.length > 0;
   const tagLinkBase = item.cabinetId
     ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
@@ -1345,14 +1561,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   href={primaryLink.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                  className={`${buttonClass({ variant: "secondary" })} detail-action-button w-full sm:w-auto`}
                 >
                   點我觀看
                 </a>
               )}
               <Link
                 href={`/item/${encodeURIComponent(item.id)}/edit`}
-                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                className={`${buttonClass({ variant: "secondary" })} detail-action-button w-full sm:w-auto`}
               >
                 編輯物件
               </Link>
@@ -1724,7 +1940,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
-              <p className="text-xs text-gray-500">雙擊內容可快速編輯。</p>
+              <p className="text-sm text-gray-500">整理觀後感或紀錄重點，僅於詳細頁面顯示。</p>
+              <p className="text-xs text-gray-500">雙擊項目可快速編輯內容。</p>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
@@ -1735,41 +1952,25 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               >
                 {sectionOpen.notes ? "收合" : "展開"}
               </button>
+              <button
+                type="button"
+                onClick={openNoteReorder}
+                className={`${buttonClass({ variant: "secondary", size: "sm" })} whitespace-nowrap`}
+                disabled={noteReorderSaving}
+              >
+                編輯順序
+              </button>
+              <button
+                type="button"
+                onClick={handleNoteAdd}
+                disabled={noteAddPending}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 text-xl font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="新增心得 / 筆記"
+              >
+                <span aria-hidden="true">＋</span>
+              </button>
             </div>
           </div>
-          {sectionOpen.notes ? (
-            hasInsightNote ? (
-              <div
-                className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner transition hover:bg-blue-50 cursor-text"
-                onDoubleClick={openNoteEditor}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    openNoteEditor();
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                title="雙擊以快速編輯心得 / 筆記"
-              >
-                {insightNote}
-              </div>
-            ) : (
-              <p
-                className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400 transition hover:bg-blue-50 cursor-pointer"
-                onDoubleClick={openNoteEditor}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    openNoteEditor();
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                title="雙擊以新增心得 / 筆記"
-              >
-                目前尚未填寫心得 / 筆記。
-              </p>
-            )
-          ) : null}
           {noteFeedback && (
             <div
               className={`rounded-xl px-3 py-2 text-sm ${
@@ -1781,6 +1982,49 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               {noteFeedback.message}
             </div>
           )}
+          {sectionOpen.notes ? (
+            hasInsightEntries ? (
+              <div className="space-y-3">
+                {insightEntries.map((entry, index) => {
+                  const title = entry.title.trim();
+                  const content = entry.content.trim();
+                  const heading = title || `心得 / 筆記 ${index + 1}`;
+                  return (
+                    <div
+                      key={`${heading}-${index}`}
+                      className="rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                      onDoubleClick={() => openNoteEditor(index)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openNoteEditor(index);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="雙擊以編輯此心得 / 筆記"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-gray-500">項目 {index + 1}</div>
+                        <div className="break-anywhere text-base font-medium text-gray-900">{heading}</div>
+                        {content ? (
+                          <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                            {content}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-400">目前尚未填寫內容。</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+                尚未新增心得 / 筆記，按右上角加號建立第一筆內容。
+              </div>
+            )
+          ) : null}
         </section>
       </div>
 
@@ -2160,6 +2404,105 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
+      {noteReorderOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeNoteReorder}
+        >
+          <div
+            className="w-full max-w-xl space-y-6 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="note-reorder-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h2 id="note-reorder-title" className="text-xl font-semibold text-gray-900">
+                調整心得 / 筆記順序
+              </h2>
+              <p className="text-sm text-gray-500">點選要調整的項目，再使用下方按鈕調整顯示順序。</p>
+            </div>
+            {noteReorderError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {noteReorderError}
+              </div>
+            )}
+            <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-2xl border bg-gray-50 p-3">
+              {noteReorderList.length === 0 ? (
+                <p className="text-sm text-gray-500">目前沒有心得 / 筆記可調整。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {noteReorderList.map((entry, index) => {
+                    const isSelected = index === noteReorderSelectedIndex;
+                    const title = entry.title.trim();
+                    const content = entry.content.trim();
+                    const heading = title || content || `心得 / 筆記 ${index + 1}`;
+                    return (
+                      <li key={`${heading}-${index}`}>
+                        <button
+                          type="button"
+                          onClick={() => setNoteReorderSelectedIndex(index)}
+                          disabled={noteReorderSaving}
+                          className={`w-full overflow-hidden rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
+                            isSelected
+                              ? "border-blue-400 bg-white"
+                              : "border-gray-200 bg-white/80 hover:border-blue-200"
+                          }`}
+                        >
+                          <span className="break-anywhere font-medium text-gray-900">{heading}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveNoteReorderSelection(-1)}
+                  disabled={noteReorderSaving || noteReorderSelectedIndex <= 0}
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveNoteReorderSelection(1)}
+                  disabled={
+                    noteReorderSaving ||
+                    noteReorderSelectedIndex === -1 ||
+                    noteReorderSelectedIndex === noteReorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  下移
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <button
+                  type="button"
+                  onClick={closeNoteReorder}
+                  disabled={noteReorderSaving}
+                  className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNoteReorderSave}
+                  disabled={noteReorderSaving || noteReorderList.length === 0}
+                  className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+                >
+                  {noteReorderSaving ? "儲存中…" : "儲存順序"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {appearanceEditor && (
         <>
           <div
@@ -2295,7 +2638,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         </>
       )}
 
-      {noteEditorOpen && (
+      {noteEditor && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
           onClick={closeNoteEditor}
@@ -2311,17 +2654,39 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <h2 id="note-editor-title" className="text-xl font-semibold text-gray-900">
                 編輯心得 / 筆記
               </h2>
-              <p className="text-sm text-gray-500">
-                編輯後會立即儲存至雲端，並同步更新最後編輯時間。
-              </p>
+              <p className="text-sm text-gray-500">更新後會立即儲存至雲端。</p>
             </div>
-            <textarea
-              ref={noteTextareaRef}
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              className="h-48 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              placeholder="輸入你的心得或筆記…"
-            />
+            <div className="space-y-4">
+              <label className="block space-y-1">
+                <span className="text-base">標題</span>
+                <input
+                  value={noteEditor.title}
+                  onChange={(event) =>
+                    setNoteEditor((prev) =>
+                      prev ? { ...prev, title: event.target.value } : prev
+                    )
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="為此心得取一個標題（選填）"
+                  disabled={noteSaving}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">內容 *</span>
+                <textarea
+                  ref={noteTextareaRef}
+                  value={noteEditor.content}
+                  onChange={(event) =>
+                    setNoteEditor((prev) =>
+                      prev ? { ...prev, content: event.target.value } : prev
+                    )
+                  }
+                  className="h-48 w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="輸入你的心得或筆記…"
+                  disabled={noteSaving}
+                />
+              </label>
+            </div>
             {noteError && (
               <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>
             )}

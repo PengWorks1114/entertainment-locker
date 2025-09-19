@@ -28,6 +28,10 @@ import {
   type UpdateFrequency,
 } from "@/lib/types";
 import { normalizeThumbTransform } from "@/lib/image-utils";
+import {
+  buildInsightStorageList,
+  normalizeInsightEntries,
+} from "@/lib/insights";
 
 type CabinetPageProps = {
   params: Promise<{ id: string }>;
@@ -48,9 +52,10 @@ type FilterState = {
   sort: SortOption;
   sortDirection: SortDirection;
   tags: string[];
+  pageSize: number;
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 15, 20, 30] as const;
 const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: "grid", label: "圖表" },
@@ -92,6 +97,7 @@ const defaultFilters: FilterState = {
   sort: "updated",
   sortDirection: "desc",
   tags: [],
+  pageSize: PAGE_SIZE_OPTIONS[0],
 };
 
 function parseTagsFromParams(params: ReturnType<typeof useSearchParams>): string[] {
@@ -288,6 +294,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 .filter((link) => link.label && link.url)
             : [];
           const appearances = normalizeAppearanceRecords(data.appearances);
+          const rawInsightNotes =
+            Array.isArray(data.insightNotes) && data.insightNotes.length > 0
+              ? data.insightNotes
+              : typeof data.insightNote === "string"
+                ? data.insightNote
+                : [];
+          const insightNotes = buildInsightStorageList(
+            normalizeInsightEntries(rawInsightNotes)
+          );
           return {
             id: docSnap.id,
             uid: typeof data.uid === "string" ? data.uid : user.uid,
@@ -307,6 +322,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               typeof data.progressNote === "string" ? data.progressNote : null,
             insightNote:
               typeof data.insightNote === "string" ? data.insightNote : null,
+            insightNotes,
             note: typeof data.note === "string" ? data.note : null,
             appearances,
             rating: ratingValue,
@@ -346,6 +362,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.favoritesOnly,
     filters.sort,
     filters.tags,
+    filters.pageSize,
   ]);
 
   useEffect(() => {
@@ -498,9 +515,10 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return sorted;
   }, [items, filters]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleItems = filteredItems.slice(startIndex, startIndex + PAGE_SIZE);
+  const pageSize = filters.pageSize || PAGE_SIZE_OPTIONS[0];
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const visibleItems = filteredItems.slice(startIndex, startIndex + pageSize);
   const pageRange = getPaginationRange(totalPages, currentPage);
   const rangeStart = filteredItems.length === 0 ? 0 : startIndex + 1;
   const rangeEnd = Math.min(filteredItems.length, startIndex + visibleItems.length);
@@ -527,7 +545,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     filters.favoritesOnly ||
     filters.sort !== defaultFilters.sort ||
     filters.sortDirection !== defaultFilters.sortDirection ||
-    filters.tags.length > 0;
+    filters.tags.length > 0 ||
+    filters.pageSize !== defaultFilters.pageSize;
 
   function updateFilter<K extends keyof FilterState>(key: K, value: FilterState[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -801,6 +820,22 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                     </label>
                   </div>
                 </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">每頁顯示數量</span>
+                <select
+                  value={filters.pageSize}
+                  onChange={(event) =>
+                    updateFilter("pageSize", Number(event.target.value))
+                  }
+                  className={`${selectClass} w-full`}
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      每頁 {size} 筆
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 

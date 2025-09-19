@@ -34,6 +34,16 @@ export type AppearanceFormData = {
   note?: string;
 };
 
+export type InsightNoteFormInput = {
+  title?: string | undefined;
+  content?: string | undefined;
+};
+
+export type InsightNoteFormData = {
+  title: string;
+  content: string;
+};
+
 export type ItemFormInput = {
   cabinetId: string;
   titleZh: string;
@@ -45,6 +55,7 @@ export type ItemFormInput = {
   thumbTransform?: ThumbTransform | undefined;
   progressNote?: string | undefined;
   insightNote?: string | undefined;
+  insightNotes?: InsightNoteFormInput[] | undefined;
   note?: string | undefined;
   appearances?: AppearanceFormInput[] | undefined;
   rating?: number | null | undefined;
@@ -63,7 +74,7 @@ export type ItemFormData = {
   thumbUrl?: string;
   thumbTransform: ThumbTransform;
   progressNote?: string;
-  insightNote?: string;
+  insightNotes: InsightNoteFormData[];
   note?: string;
   appearances: AppearanceFormData[];
   rating?: number;
@@ -157,6 +168,7 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     updateFrequency,
     tags: [],
     links: [],
+    insightNotes: [],
     appearances: [],
     thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
   };
@@ -246,10 +258,30 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     }
   }
 
-  if (input.insightNote) {
+  if (input.insightNotes) {
+    if (!Array.isArray(input.insightNotes)) {
+      throw new ValidationError("心得/筆記格式錯誤");
+    }
+    const notes: InsightNoteFormData[] = [];
+    input.insightNotes.forEach((entry) => {
+      if (!entry) {
+        return;
+      }
+      const record = entry as InsightNoteFormInput;
+      const title =
+        typeof record.title === "string" ? record.title.trim() : "";
+      const content =
+        typeof record.content === "string" ? record.content.trim() : "";
+      if (!title && !content) {
+        return;
+      }
+      notes.push({ title, content });
+    });
+    data.insightNotes = notes;
+  } else if (input.insightNote) {
     const insightNote = assertString(input.insightNote, "心得/筆記格式錯誤").trim();
     if (insightNote) {
-      data.insightNote = insightNote;
+      data.insightNotes = [{ title: "", content: insightNote }];
     }
   }
 

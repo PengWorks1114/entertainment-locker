@@ -54,6 +54,11 @@ import {
   type ItemFormData,
 } from "@/lib/validators";
 import { deleteItemWithProgress } from "@/lib/firestore-utils";
+import {
+  buildInsightStorageList,
+  normalizeInsightEntries,
+  type InsightEntry,
+} from "@/lib/insights";
 
 type CabinetOption = { id: string; name: string };
 type LinkState = { label: string; url: string; isPrimary: boolean };
@@ -66,6 +71,12 @@ type AppearanceState = {
   thumbUrl: string;
   thumbTransform: ThumbTransform;
   note: string;
+};
+
+type InsightState = {
+  id: string;
+  title: string;
+  content: string;
 };
 
 function normalizeCabinetTags(input: unknown): string[] {
@@ -123,6 +134,14 @@ function mapFirestoreAppearances(value: unknown): AppearanceState[] {
   }));
 }
 
+function mapFirestoreInsights(value: unknown): InsightState[] {
+  return normalizeInsightEntries(value).map((entry) => ({
+    id: generateLocalId(),
+    title: entry.title,
+    content: entry.content,
+  }));
+}
+
 function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {
   return list.map((entry) => ({
     id: generateLocalId(),
@@ -132,6 +151,14 @@ function mapFormAppearances(list: AppearanceFormData[]): AppearanceState[] {
     thumbUrl: entry.thumbUrl ?? "",
     thumbTransform: entry.thumbTransform,
     note: entry.note ?? "",
+  }));
+}
+
+function mapFormInsights(list: InsightEntry[]): InsightState[] {
+  return list.map((entry) => ({
+    id: generateLocalId(),
+    title: entry.title,
+    content: entry.content,
   }));
 }
 
@@ -160,7 +187,6 @@ type ItemFormState = {
   author: string;
   selectedTags: string[];
   progressNote: string;
-  insightNote: string;
   note: string;
   rating: string;
   status: ItemStatus;
@@ -183,7 +209,6 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     author: "",
     selectedTags: [],
     progressNote: "",
-    insightNote: "",
     note: "",
     rating: "",
     status: "in-progress",
@@ -204,7 +229,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   );
   const [links, setLinks] = useState<LinkState[]>([]);
   const [appearances, setAppearances] = useState<AppearanceState[]>([]);
+  const [insightNotes, setInsightNotes] = useState<InsightState[]>([]);
   const [collapsedAppearances, setCollapsedAppearances] = useState<Record<string, boolean>>({});
+  const [collapsedInsights, setCollapsedInsights] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
@@ -228,12 +255,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [draggingAppearanceId, setDraggingAppearanceId] = useState<string | null>(
     null
   );
+  const [draggingInsightId, setDraggingInsightId] = useState<string | null>(null);
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
   const [appearanceEditorIndex, setAppearanceEditorIndex] = useState<number | null>(
     null
   );
   const tagsCacheRef = useRef<Record<string, string[]>>({});
   const draggingAppearanceIndexRef = useRef<number | null>(null);
+  const draggingInsightIndexRef = useRef<number | null>(null);
   const mode = itemId ? "edit" : "create";
   const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>(() =>
     createSectionState(mode === "create")
@@ -396,6 +425,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             )
           : [];
         const loadedAppearances = mapFirestoreAppearances(data.appearances);
+        const loadedInsights = mapFirestoreInsights(
+          Array.isArray(data.insightNotes) && data.insightNotes.length > 0
+            ? data.insightNotes
+            : data.insightNote ?? []
+        );
 
         const cabinetIdValue =
           typeof data.cabinetId === "string" ? data.cabinetId : "";
@@ -406,7 +440,6 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           author: (data.author as string) ?? "",
           selectedTags: loadedTags,
           progressNote: (data.progressNote as string) ?? "",
-          insightNote: (data.insightNote as string) ?? "",
           note: (data.note as string) ?? "",
           rating: ratingValue,
           status,
@@ -439,6 +472,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             : []
         );
         setAppearances(loadedAppearances);
+        setInsightNotes(loadedInsights);
         if (cabinetIdValue) {
           fetchCabinetTags(cabinetIdValue)
             .then((tags) => {
@@ -719,6 +753,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       thumbTransform: entry.thumbTransform,
       note: entry.note.trim(),
     }));
+    const insightPayload = insightNotes.map((entry) => ({
+      title: entry.title.trim(),
+      content: entry.content.trim(),
+    }));
 
     try {
       const parsedData: ItemFormData = parseItemForm({
@@ -731,7 +769,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         thumbUrl: form.thumbUrl,
         thumbTransform: form.thumbTransform,
         progressNote: form.progressNote,
-        insightNote: form.insightNote,
+        insightNotes: insightPayload,
         note: form.note,
         appearances: appearancePayload,
         rating: form.rating ? Number(form.rating) : undefined,
@@ -768,7 +806,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           ? prepareThumbTransform(resolvedThumbTransform)
           : null,
         progressNote: parsedData.progressNote ?? null,
-        insightNote: parsedData.insightNote ?? null,
+        insightNotes: buildInsightStorageList(parsedData.insightNotes),
+        insightNote: null,
         note: parsedData.note ?? null,
         appearances: parsedData.appearances.map((entry) => ({
           name: entry.nameZh,
@@ -822,7 +861,6 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         author: parsedData.author ?? "",
         selectedTags: parsedData.tags,
         progressNote: parsedData.progressNote ?? "",
-        insightNote: parsedData.insightNote ?? "",
         note: parsedData.note ?? "",
         rating:
           parsedData.rating !== undefined
@@ -848,6 +886,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         )
       );
       setAppearances(mapFormAppearances(parsedData.appearances));
+      setInsightNotes(mapFormInsights(parsedData.insightNotes));
     } catch (err) {
       if (err instanceof ValidationError) {
         setError(err.message);
@@ -1036,6 +1075,103 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   function handleAppearanceDragEnd() {
     draggingAppearanceIndexRef.current = null;
     setDraggingAppearanceId(null);
+  }
+
+  function handleAddInsight() {
+    setInsightNotes((prev) => [
+      ...prev,
+      { id: generateLocalId(), title: "", content: "" },
+    ]);
+  }
+
+  function handleInsightChange(
+    index: number,
+    field: "title" | "content",
+    value: string
+  ) {
+    setInsightNotes((prev) =>
+      prev.map((entry, idx) =>
+        idx === index ? { ...entry, [field]: value } : entry
+      )
+    );
+  }
+
+  function handleRemoveInsight(index: number) {
+    setInsightNotes((prev) => {
+      const target = prev[index];
+      if (!target) {
+        return prev;
+      }
+      setCollapsedInsights((collapsed) => {
+        if (!collapsed[target.id]) {
+          return collapsed;
+        }
+        const next = { ...collapsed };
+        delete next[target.id];
+        return next;
+      });
+      return prev.filter((_, idx) => idx !== index);
+    });
+  }
+
+  function toggleInsightCollapsed(id: string) {
+    setCollapsedInsights((prev) => ({
+      ...prev,
+      [id]: !(prev[id] ?? false),
+    }));
+  }
+
+  function handleInsightDragStart(index: number) {
+    draggingInsightIndexRef.current = index;
+    setDraggingInsightId(insightNotes[index]?.id ?? null);
+  }
+
+  function handleInsightDragEnter(index: number) {
+    const sourceIndex = draggingInsightIndexRef.current;
+    if (sourceIndex === null || sourceIndex === index) {
+      return;
+    }
+    setInsightNotes((prev) => {
+      if (sourceIndex === null) {
+        return prev;
+      }
+      if (
+        sourceIndex < 0 ||
+        sourceIndex >= prev.length ||
+        index < 0 ||
+        index >= prev.length
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(index, 0, moved);
+      const newIndex = sourceIndex < index ? index - 1 : index;
+      draggingInsightIndexRef.current = newIndex;
+      return next;
+    });
+  }
+
+  function handleInsightDragEnterEnd() {
+    const sourceIndex = draggingInsightIndexRef.current;
+    if (sourceIndex === null) {
+      return;
+    }
+    setInsightNotes((prev) => {
+      if (sourceIndex < 0 || sourceIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.push(moved);
+      draggingInsightIndexRef.current = next.length - 1;
+      return next;
+    });
+  }
+
+  function handleInsightDragEnd() {
+    draggingInsightIndexRef.current = null;
+    setDraggingInsightId(null);
   }
 
   function handleAppearanceChange(
@@ -1681,20 +1817,122 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               baseClass={baseSectionClass}
               containerClass="border-2 border-amber-200 bg-amber-50/60"
               titleClass="text-amber-800"
-              contentClass="space-y-3"
+              actions={
+                <button
+                  type="button"
+                  onClick={handleAddInsight}
+                  className="h-10 rounded-lg border px-3 text-sm text-gray-700 transition hover:border-gray-300"
+                >
+                  新增心得 / 筆記
+                </button>
+              }
+              contentClass="space-y-4"
             >
               <p className="text-sm text-amber-700">
                 以更自由的篇幅整理觀後感、推薦理由或紀錄重點，僅於詳細頁面顯示。
               </p>
-              <textarea
-                value={form.insightNote}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, insightNote: e.target.value }))
-                }
-                className="min-h-[220px] w-full rounded-2xl border border-amber-200 bg-white/90 px-4 py-4 text-base leading-relaxed text-gray-900 shadow-inner focus:border-amber-300 focus:outline-none"
-                placeholder="分享一些觀後感、推薦理由等"
-                aria-label="心得 / 筆記"
-              />
+              {insightNotes.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-amber-200 bg-white/70 px-4 py-4 text-center text-sm text-amber-700">
+                  目前尚未新增心得或筆記。
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {insightNotes.map((note, index) => {
+                    const isCollapsed = collapsedInsights[note.id] ?? false;
+                    const isDragging = draggingInsightId === note.id;
+                    const displayTitle = note.title.trim() || "未填寫";
+                    return (
+                      <div
+                        key={note.id}
+                        draggable
+                        onDragStart={() => handleInsightDragStart(index)}
+                        onDragEnter={() => handleInsightDragEnter(index)}
+                        onDragOver={(event) => {
+                          if (draggingInsightId) {
+                            event.preventDefault();
+                          }
+                        }}
+                        onDragEnd={handleInsightDragEnd}
+                        className={`rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
+                          isDragging
+                            ? "border-blue-300 bg-blue-50/60"
+                            : "border-amber-200 hover:border-blue-200"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+                            <div
+                              className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm"
+                              aria-hidden
+                            >
+                              <span className="text-base leading-none">≡</span>
+                            </div>
+                            <span>項目 {index + 1}</span>
+                            <span className="text-sm text-gray-700">
+                              標題：{displayTitle}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleInsightCollapsed(note.id)}
+                              className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                            >
+                              {isCollapsed ? "展開" : "收合"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveInsight(index)}
+                              className="h-9 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
+                            >
+                              移除
+                            </button>
+                          </div>
+                        </div>
+                        {!isCollapsed ? (
+                          <div className="mt-3 space-y-3">
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">標題</span>
+                              <input
+                                value={note.title}
+                                onChange={(event) =>
+                                  handleInsightChange(index, "title", event.target.value)
+                                }
+                                className={inputClass}
+                                placeholder="例如：重點整理"
+                              />
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">內容 *</span>
+                              <textarea
+                                value={note.content}
+                                onChange={(event) =>
+                                  handleInsightChange(index, "content", event.target.value)
+                                }
+                                className="min-h-[160px] w-full rounded-xl border px-4 py-3 text-base"
+                                placeholder="輸入心得或筆記"
+                              />
+                            </label>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {draggingInsightId ? (
+                    <div
+                      onDragEnter={handleInsightDragEnterEnd}
+                      onDragOver={(event) => {
+                        if (draggingInsightId) {
+                          event.preventDefault();
+                        }
+                      }}
+                      className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/40 px-4 py-3 text-center text-xs text-blue-600"
+                    >
+                      拖曳到此可放到列表最後
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </CollapsibleSection>
 
             <CollapsibleSection

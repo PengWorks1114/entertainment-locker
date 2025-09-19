@@ -224,6 +224,7 @@ export default function QuickAddItemPage() {
         thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
         progressNote: null,
+        insightNotes: [],
         insightNote: null,
         note: null,
         appearances: [],

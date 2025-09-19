@@ -79,6 +79,11 @@ export type AppearanceRecord = {
   note?: string | null;
 };
 
+export type InsightRecord = {
+  title?: string | null;
+  content?: string | null;
+};
+
 export type ItemRecord = {
   id: string;
   uid: string;
@@ -93,6 +98,7 @@ export type ItemRecord = {
   isFavorite: boolean;
   progressNote?: string | null;
   insightNote?: string | null;
+  insightNotes?: InsightRecord[];
   note?: string | null;
   appearances: AppearanceRecord[];
   rating?: number | null;
