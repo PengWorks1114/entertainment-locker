@@ -220,6 +220,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   } | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [noteAddPending, setNoteAddPending] = useState(false);
@@ -239,6 +240,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   } | null>(null);
   const [appearanceError, setAppearanceError] = useState<string | null>(null);
   const [appearanceSaving, setAppearanceSaving] = useState(false);
+  const [appearanceDeleting, setAppearanceDeleting] = useState(false);
   const [appearanceThumbEditorOpen, setAppearanceThumbEditorOpen] =
     useState(false);
   const appearanceNameZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -861,7 +863,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }
 
   function closeNoteEditor() {
-    if (noteSaving) {
+    if (noteSaving || noteDeleting) {
       return;
     }
     setNoteEditor(null);
@@ -1271,7 +1273,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }
 
   function closeAppearanceEditor() {
-    if (appearanceSaving) {
+    if (appearanceSaving || appearanceDeleting) {
       return;
     }
     setAppearanceEditor(null);
@@ -1339,6 +1341,71 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setNoteError("更新心得 / 筆記時發生錯誤");
     } finally {
       setNoteSaving(false);
+    }
+  }
+
+  async function handleNoteDelete(index?: number) {
+    if (noteDeleting) {
+      return;
+    }
+    if (!noteEditor) {
+      setNoteError("找不到心得 / 筆記資料");
+      return;
+    }
+    const targetIndex = typeof index === "number" ? index : noteEditor.index;
+    if (!item) {
+      setNoteError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setNoteError("請先登入");
+      return;
+    }
+    if (!window.confirm("確認移除此心得 / 筆記？")) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteError("Firebase 尚未設定");
+      return;
+    }
+    const currentEntries = normalizeInsightEntries(
+      item.insightNotes ?? item.insightNote
+    );
+    if (!currentEntries[targetIndex]) {
+      setNoteError("找不到心得 / 筆記資料");
+      return;
+    }
+    const updatedEntries = currentEntries.filter((_, idx) => idx !== targetIndex);
+    const storageList = buildInsightStorageList(updatedEntries);
+    setNoteDeleting(true);
+    setNoteError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        insightNotes: storageList,
+        insightNote: null,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              insightNotes: storageList,
+              insightNote: null,
+            }
+          : prev
+      );
+      setNoteEditor(null);
+      setNoteFeedback({
+        type: "success",
+        message: "已移除心得 / 筆記",
+      });
+    } catch (err) {
+      console.error("移除心得 / 筆記時發生錯誤", err);
+      setNoteError("移除心得 / 筆記時發生錯誤");
+    } finally {
+      setNoteDeleting(false);
     }
   }
 
@@ -1416,6 +1483,73 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setAppearanceError("更新登場物件時發生錯誤");
     } finally {
       setAppearanceSaving(false);
+    }
+  }
+
+  async function handleAppearanceDelete(index?: number) {
+    if (appearanceDeleting) {
+      return;
+    }
+    if (!appearanceEditor) {
+      setAppearanceError("找不到登場資料");
+      return;
+    }
+    const targetIndex =
+      typeof index === "number" ? index : appearanceEditor.index;
+    if (targetIndex < 0) {
+      setAppearanceError("找不到登場資料");
+      return;
+    }
+    if (!item) {
+      setAppearanceError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setAppearanceError("請先登入");
+      return;
+    }
+    if (!window.confirm("確認移除此登場項目？")) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setAppearanceError("Firebase 尚未設定");
+      return;
+    }
+    const currentRecords = normalizeAppearanceRecords(item.appearances);
+    if (!currentRecords[targetIndex]) {
+      setAppearanceError("找不到登場資料");
+      return;
+    }
+    const updatedRecords = currentRecords.filter((_, idx) => idx !== targetIndex);
+    const updatedList = buildAppearanceStorageList(updatedRecords);
+    setAppearanceDeleting(true);
+    setAppearanceError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        appearances: updatedList,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              appearances: updatedList,
+            }
+          : prev
+      );
+      setAppearanceEditor(null);
+      setAppearanceThumbEditorOpen(false);
+      setAppearanceFeedback({
+        type: "success",
+        message: "已移除登場項目",
+      });
+    } catch (err) {
+      console.error("移除登場項目時發生錯誤", err);
+      setAppearanceError("移除登場項目時發生錯誤");
+    } finally {
+      setAppearanceDeleting(false);
     }
   }
 
@@ -2535,7 +2669,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     }
                     className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     placeholder="輸入中文名稱"
-                    disabled={appearanceSaving}
+                    disabled={appearanceSaving || appearanceDeleting}
                   />
                 </label>
                 <label className="block space-y-1">
@@ -2551,7 +2685,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     }
                     className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     placeholder="輸入原文名稱"
-                    disabled={appearanceSaving}
+                    disabled={appearanceSaving || appearanceDeleting}
                   />
                 </label>
                 <label className="block space-y-1">
@@ -2567,7 +2701,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     }
                     className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     placeholder="例如：夥伴, 導師"
-                    disabled={appearanceSaving}
+                    disabled={appearanceSaving || appearanceDeleting}
                   />
                 </label>
                 <ThumbLinkField
@@ -2577,7 +2711,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       prev ? { ...prev, thumbUrl: value } : prev
                     )
                   }
-                  disabled={appearanceSaving}
+                  disabled={appearanceSaving || appearanceDeleting}
                   onEdit={() => setAppearanceThumbEditorOpen(true)}
                 />
                 <label className="block space-y-1">
@@ -2591,7 +2725,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     }
                     className="h-36 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     placeholder="補充說明或紀錄"
-                    disabled={appearanceSaving}
+                    disabled={appearanceSaving || appearanceDeleting}
                   />
                 </label>
               </div>
@@ -2603,8 +2737,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
+                  onClick={() => handleAppearanceDelete(appearanceEditor.index)}
+                  disabled={appearanceSaving || appearanceDeleting}
+                  className={`${buttonClass({ variant: "outlineDanger" })} w-full sm:w-auto`}
+                >
+                  {appearanceDeleting ? "移除中…" : "移除"}
+                </button>
+                <button
+                  type="button"
                   onClick={closeAppearanceEditor}
-                  disabled={appearanceSaving}
+                  disabled={appearanceSaving || appearanceDeleting}
                   className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
                 >
                   取消
@@ -2612,7 +2754,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 <button
                   type="button"
                   onClick={handleAppearanceSave}
-                  disabled={appearanceSaving}
+                  disabled={appearanceSaving || appearanceDeleting}
                   className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
                 >
                   {appearanceSaving ? "儲存中…" : "儲存變更"}
@@ -2668,7 +2810,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   }
                   className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   placeholder="為此心得取一個標題（選填）"
-                  disabled={noteSaving}
+                  disabled={noteSaving || noteDeleting}
                 />
               </label>
               <label className="block space-y-1">
@@ -2683,7 +2825,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   }
                   className="h-48 w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   placeholder="輸入你的心得或筆記…"
-                  disabled={noteSaving}
+                  disabled={noteSaving || noteDeleting}
                 />
               </label>
             </div>
@@ -2693,8 +2835,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
+                onClick={() => handleNoteDelete(noteEditor.index)}
+                disabled={noteSaving || noteDeleting}
+                className={`${buttonClass({ variant: "outlineDanger" })} w-full sm:w-auto`}
+              >
+                {noteDeleting ? "移除中…" : "移除"}
+              </button>
+              <button
+                type="button"
                 onClick={closeNoteEditor}
-                disabled={noteSaving}
+                disabled={noteSaving || noteDeleting}
                 className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
               >
                 取消
@@ -2702,7 +2852,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <button
                 type="button"
                 onClick={handleNoteSave}
-                disabled={noteSaving}
+                disabled={noteSaving || noteDeleting}
                 className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
               >
                 {noteSaving ? "儲存中…" : "儲存內容"}

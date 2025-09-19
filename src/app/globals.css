@@ -147,6 +147,10 @@ body {
   color: #fca5a5 !important;
 }
 
+:root[data-theme="dark"] .item-form-title {
+  color: #111827 !important;
+}
+
 :root[data-theme="dark"] .hover\:bg-gray-100:hover {
   background-color: #1f2937 !important;
 }

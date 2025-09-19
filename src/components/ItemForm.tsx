@@ -663,7 +663,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   if (!user) {
     return (
       <main className="min-h-[100dvh] p-6 space-y-4">
-        <h1 className="text-2xl font-semibold">{mode === "edit" ? "編輯物件" : "新增物件"}</h1>
+        <h1 className="item-form-title text-2xl font-semibold text-gray-900">
+          {mode === "edit" ? "編輯物件" : "新增物件"}
+        </h1>
         <p className="text-base">
           未登入。請前往
           <a href="/login" className="ml-1 underline">
@@ -906,7 +908,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       return;
     }
     if (
-      !window.confirm("確認刪除此物件？會一併刪除相關進度資料，且無法復原。")
+      !window.confirm(
+        "確認將此物件移至垃圾桶？相關進度會一併移動，可於垃圾桶還原或永久刪除。"
+      )
     ) {
       return;
     }
@@ -1235,7 +1239,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         <section className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-2">
-              <h1 className="text-2xl font-semibold text-gray-900">
+              <h1 className="item-form-title text-2xl font-semibold text-gray-900">
                 {mode === "edit" ? "編輯物件" : "新增物件"}
               </h1>
               <p className="text-sm text-gray-500">
@@ -2049,7 +2053,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               contentClass="space-y-4"
             >
               <p className="text-sm text-red-600">
-                刪除後將移除此物件及所有進度記錄，操作無法復原。
+                刪除後會將此物件與進度移至櫃子垃圾桶，可在垃圾桶還原或永久刪除。
               </p>
               {deleteError && (
                 <div className="rounded-xl bg-red-100 px-4 py-3 text-sm text-red-700">

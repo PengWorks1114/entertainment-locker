@@ -6,6 +6,8 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
+  setDoc,
   where,
   type QuerySnapshot,
   type DocumentData,
@@ -44,6 +46,27 @@ export async function deleteItemWithProgress(itemId: string, userId?: string) {
   } catch (err) {
     if (err instanceof FirebaseError && err.code === "permission-denied") {
       throw new Error("無法讀取進度資料，請確認帳號權限或稍後再試。");
+    }
+    throw err;
+  }
+  const storedProgress = progressSnap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    data: docSnap.data(),
+  }));
+  const trashRef = doc(db, "cabinetTrash", itemId);
+  try {
+    await setDoc(trashRef, {
+      uid: typeof data?.uid === "string" ? data.uid : userId ?? null,
+      cabinetId:
+        typeof data?.cabinetId === "string" ? data.cabinetId : "",
+      originalItemId: itemId,
+      itemData: data,
+      progress: storedProgress,
+      deletedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    if (err instanceof FirebaseError && err.code === "permission-denied") {
+      throw new Error("移至垃圾桶時遭到拒絕，請稍後再試或確認帳號權限。");
     }
     throw err;
   }

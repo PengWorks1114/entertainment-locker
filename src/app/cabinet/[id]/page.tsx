@@ -680,6 +680,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               標籤管理
             </Link>
             <Link
+              href={`/cabinet/${encodeURIComponent(cabinetId)}/trash`}
+              className={`${buttonClass({ variant: "danger" })} w-full sm:w-auto`}
+            >
+              垃圾桶
+            </Link>
+            <Link
               href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
               className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
             >
