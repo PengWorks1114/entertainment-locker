@@ -102,7 +102,8 @@ export default function QuickAddItemPage() {
 
   useEffect(() => {
     if (!form.cabinetId && cabinets.length > 0) {
-      setForm((prev) => ({ ...prev, cabinetId: cabinets[0].id }));
+      const fallback = cabinets.find((item) => !item.isLocked) ?? cabinets[0];
+      setForm((prev) => ({ ...prev, cabinetId: fallback.id }));
     }
   }, [cabinets, form.cabinetId]);
 
@@ -447,11 +448,17 @@ export default function QuickAddItemPage() {
                 required
               >
                 {hasCabinet ? (
-                  cabinets.map((cabinet) => (
-                    <option key={cabinet.id} value={cabinet.id}>
-                      {cabinet.name || "未命名櫃子"}
-                    </option>
-                  ))
+                  cabinets.map((cabinet) => {
+                    const label = cabinet.name || "未命名櫃子";
+                    const display = cabinet.isLocked
+                      ? `${label}（已鎖定）`
+                      : label;
+                    return (
+                      <option key={cabinet.id} value={cabinet.id}>
+                        {display}
+                      </option>
+                    );
+                  })
                 ) : (
                   <option value="">請先建立櫃子</option>
                 )}

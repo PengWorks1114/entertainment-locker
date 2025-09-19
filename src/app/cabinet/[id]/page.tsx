@@ -145,6 +145,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [canView, setCanView] = useState(false);
   const [cabinetNote, setCabinetNote] = useState<string | null>(null);
+  const [cabinetLocked, setCabinetLocked] = useState(false);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -185,6 +186,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
       setCabinetNote(null);
       setCabinetLoading(false);
       setCabinetTags([]);
+      setCabinetLocked(false);
       return;
     }
     let active = true;
@@ -192,6 +194,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setCabinetError(null);
     setCanView(false);
     setCabinetNote(null);
+    setCabinetLocked(false);
     const db = getFirebaseDb();
     if (!db) {
       setCabinetError("Firebase 尚未設定");
@@ -209,6 +212,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           setCabinetNote(null);
           setCabinetLoading(false);
           setCabinetTags([]);
+          setCabinetLocked(false);
           return;
         }
         const data = snap.data();
@@ -217,6 +221,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           setCabinetNote(null);
           setCabinetLoading(false);
           setCabinetTags([]);
+          setCabinetLocked(false);
+          return;
+        }
+        if (data?.isLocked) {
+          setCabinetError("此櫃子已鎖定，無法瀏覽內容。請於編輯頁面解除鎖定後再試一次。");
+          setCabinetNote(null);
+          setCabinetLoading(false);
+          setCabinetTags([]);
+          setCabinetLocked(true);
           return;
         }
         const name = typeof data?.name === "string" && data.name ? data.name : "未命名櫃子";
@@ -228,6 +241,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         setCanView(true);
         setCabinetNote(note);
         setCabinetTags(normalizeCabinetTags(data?.tags));
+        setCabinetLocked(false);
         setCabinetLoading(false);
       })
       .catch(() => {
@@ -236,6 +250,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         setCabinetNote(null);
         setCabinetLoading(false);
         setCabinetTags([]);
+        setCabinetLocked(false);
       });
     return () => {
       active = false;
@@ -654,6 +669,14 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {cabinetError}
           </div>
+          {cabinetLocked && (
+            <Link
+              href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+            >
+              前往編輯櫃子
+            </Link>
+          )}
         </div>
       </main>
     );
