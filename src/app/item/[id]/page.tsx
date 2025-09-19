@@ -31,6 +31,7 @@ import {
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   PROGRESS_TYPE_OPTIONS,
+  type AppearanceRecord,
   type ItemRecord,
   type ItemStatus,
   type ProgressType,
@@ -43,6 +44,7 @@ import {
   clampThumbTransform,
   DEFAULT_THUMB_TRANSFORM,
   normalizeThumbTransform,
+  prepareThumbTransform,
 } from "@/lib/image-utils";
 
 const statusLabelMap = new Map(
@@ -105,6 +107,42 @@ function formatDateToInput(date: Date): string {
 
 function formatProgressValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+type AppearanceStorageRecord = {
+  name: string;
+  nameZh: string;
+  nameOriginal: string | null;
+  labels: string | null;
+  thumbUrl: string | null;
+  thumbTransform: ThumbTransform | null;
+  note: string | null;
+};
+
+function buildAppearanceStorageList(
+  list: AppearanceRecord[]
+): AppearanceStorageRecord[] {
+  return list.map((entry) => {
+    const nameZh = entry.nameZh.trim();
+    const nameOriginal =
+      typeof entry.nameOriginal === "string" ? entry.nameOriginal.trim() : "";
+    const labels =
+      typeof entry.labels === "string" ? formatAppearanceLabels(entry.labels) : "";
+    const thumbUrl =
+      typeof entry.thumbUrl === "string" ? entry.thumbUrl.trim() : "";
+    const note = typeof entry.note === "string" ? entry.note.trim() : "";
+    const preparedTransform = prepareThumbTransform(entry.thumbTransform);
+
+    return {
+      name: nameZh,
+      nameZh,
+      nameOriginal: nameOriginal || null,
+      labels: labels || null,
+      thumbUrl: thumbUrl || null,
+      thumbTransform: preparedTransform,
+      note: note ? note : null,
+    };
+  });
 }
 
 type ItemPageProps = {
@@ -190,6 +228,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const appearanceNameZhInputRef = useRef<HTMLInputElement | null>(null);
   const [appearanceFeedback, setAppearanceFeedback] =
     useState<NoteFeedback | null>(null);
+  const [appearanceAddPending, setAppearanceAddPending] = useState(false);
+  const [appearanceReorderOpen, setAppearanceReorderOpen] = useState(false);
+  const [appearanceReorderList, setAppearanceReorderList] = useState<
+    AppearanceRecord[]
+  >([]);
+  const [appearanceReorderSelectedIndex, setAppearanceReorderSelectedIndex] =
+    useState(-1);
+  const [appearanceReorderSaving, setAppearanceReorderSaving] = useState(false);
+  const [appearanceReorderError, setAppearanceReorderError] =
+    useState<string | null>(null);
   const [attributeEditorOpen, setAttributeEditorOpen] = useState(false);
   const [attributeSaving, setAttributeSaving] = useState(false);
   const [attributeError, setAttributeError] = useState<string | null>(null);
@@ -806,6 +854,176 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
   }, [item]);
 
+  async function handleAppearanceAdd() {
+    if (!item) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "找不到物件資料",
+      });
+      return;
+    }
+    if (!user) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "請先登入後再新增登場物件",
+      });
+      return;
+    }
+    if (appearanceAddPending) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "Firebase 尚未設定",
+      });
+      return;
+    }
+    const currentRecords = normalizeAppearanceRecords(item.appearances);
+    const updatedRecords = [
+      ...currentRecords,
+      {
+        nameZh: "未填寫",
+        nameOriginal: null,
+        labels: null,
+        thumbUrl: null,
+        thumbTransform: null,
+        note: null,
+      } satisfies AppearanceRecord,
+    ];
+    const storageList = buildAppearanceStorageList(updatedRecords);
+    setAppearanceAddPending(true);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        appearances: storageList,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              appearances: storageList,
+            }
+          : prev
+      );
+      setAppearanceFeedback({
+        type: "success",
+        message: "已新增登場項目",
+      });
+    } catch (err) {
+      console.error("新增登場項目時發生錯誤", err);
+      setAppearanceFeedback({
+        type: "error",
+        message: "新增登場項目時發生錯誤",
+      });
+    } finally {
+      setAppearanceAddPending(false);
+    }
+  }
+
+  function openAppearanceReorder() {
+    if (!item) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "找不到物件資料",
+      });
+      return;
+    }
+    if (!user) {
+      setAppearanceFeedback({
+        type: "error",
+        message: "請先登入後再調整登場順序",
+      });
+      return;
+    }
+    const records = normalizeAppearanceRecords(item.appearances);
+    setAppearanceReorderList(records);
+    setAppearanceReorderSelectedIndex(-1);
+    setAppearanceReorderError(null);
+    setAppearanceReorderOpen(true);
+  }
+
+  function closeAppearanceReorder() {
+    if (appearanceReorderSaving) {
+      return;
+    }
+    setAppearanceReorderOpen(false);
+    setAppearanceReorderError(null);
+    setAppearanceReorderSelectedIndex(-1);
+    setAppearanceReorderList([]);
+  }
+
+  const moveAppearanceReorderSelection = useCallback(
+    (offset: number) => {
+      if (appearanceReorderSaving || appearanceReorderSelectedIndex === -1) {
+        return;
+      }
+      setAppearanceReorderList((prev) => {
+        const newIndex = appearanceReorderSelectedIndex + offset;
+        if (newIndex < 0 || newIndex >= prev.length) {
+          return prev;
+        }
+        const next = [...prev];
+        const [moved] = next.splice(appearanceReorderSelectedIndex, 1);
+        next.splice(newIndex, 0, moved);
+        setAppearanceReorderSelectedIndex(newIndex);
+        return next;
+      });
+    },
+    [appearanceReorderSaving, appearanceReorderSelectedIndex]
+  );
+
+  async function handleAppearanceReorderSave() {
+    if (!item) {
+      setAppearanceReorderError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setAppearanceReorderError("請先登入");
+      return;
+    }
+    if (appearanceReorderSaving) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setAppearanceReorderError("Firebase 尚未設定");
+      return;
+    }
+    const storageList = buildAppearanceStorageList(appearanceReorderList);
+    setAppearanceReorderSaving(true);
+    setAppearanceReorderError(null);
+    try {
+      const itemRef = doc(db, "item", item.id);
+      await updateDoc(itemRef, {
+        appearances: storageList,
+        updatedAt: serverTimestamp(),
+      });
+      setItem((prev) =>
+        prev
+          ? {
+              ...prev,
+              appearances: storageList,
+            }
+          : prev
+      );
+      setAppearanceReorderOpen(false);
+      setAppearanceReorderSelectedIndex(-1);
+      setAppearanceReorderList([]);
+      setAppearanceFeedback({
+        type: "success",
+        message: "已更新登場順序",
+      });
+    } catch (err) {
+      console.error("更新登場順序時發生錯誤", err);
+      setAppearanceReorderError("更新登場順序時發生錯誤");
+    } finally {
+      setAppearanceReorderSaving(false);
+    }
+  }
+
   function openAppearanceEditor(index: number) {
     if (!user) {
       setAppearanceFeedback({
@@ -912,8 +1130,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setAppearanceError("Firebase 尚未設定");
       return;
     }
-    const currentAppearances = item.appearances ?? [];
-    if (!currentAppearances[appearanceEditor.index]) {
+    const currentRecords = normalizeAppearanceRecords(item.appearances);
+    if (!currentRecords[appearanceEditor.index]) {
       setAppearanceError("找不到登場資料");
       return;
     }
@@ -927,46 +1145,20 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const nameOriginal = appearanceEditor.nameOriginal.trim();
     const labels = formatAppearanceLabels(appearanceEditor.labels);
     const nextTransform = clampThumbTransform(appearanceEditor.thumbTransform);
-    const updatedList = currentAppearances.map((entry, idx) => {
+    const updatedRecords = currentRecords.map((entry, idx) => {
       if (idx === appearanceEditor.index) {
         return {
-          name: nameZh,
           nameZh,
           nameOriginal: nameOriginal ? nameOriginal : null,
           labels: labels ? labels : null,
           thumbUrl: thumbUrl || null,
           thumbTransform: nextTransform,
           note: noteText ? noteText : null,
-        };
+        } satisfies AppearanceRecord;
       }
-      const existingThumbUrl =
-        typeof entry.thumbUrl === "string" && entry.thumbUrl.trim().length > 0
-          ? entry.thumbUrl.trim()
-          : null;
-      const existingNote =
-        typeof entry.note === "string" && entry.note.trim().length > 0
-          ? entry.note.trim()
-          : null;
-      const existingNameOriginal =
-        typeof entry.nameOriginal === "string" && entry.nameOriginal.trim().length > 0
-          ? entry.nameOriginal.trim()
-          : null;
-      const existingLabels =
-        typeof entry.labels === "string" && entry.labels.trim().length > 0
-          ? formatAppearanceLabels(entry.labels)
-          : "";
-      return {
-        name: entry.nameZh,
-        nameZh: entry.nameZh,
-        nameOriginal: existingNameOriginal,
-        labels: existingLabels ? existingLabels : null,
-        thumbUrl: existingThumbUrl,
-        thumbTransform: entry.thumbTransform
-          ? clampThumbTransform(entry.thumbTransform)
-          : null,
-        note: existingNote,
-      };
+      return entry;
     });
+    const updatedList = buildAppearanceStorageList(updatedRecords);
     setAppearanceSaving(true);
     setAppearanceError(null);
     try {
@@ -1098,7 +1290,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </Link>
           </div>
         ) : null}
-        <header className="relative flex flex-col gap-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <header className="relative grid gap-6 rounded-3xl border border-gray-100 bg-white/90 px-6 pb-6 pt-16 shadow-sm sm:grid-cols-[minmax(0,1fr)_minmax(16rem,auto)]">
           <FavoriteToggleButton
             isFavorite={item.isFavorite}
             onToggle={handleFavoriteToggle}
@@ -1106,7 +1298,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             ariaLabel={favoriteLabel}
             className="absolute right-6 top-6"
           />
-          <div className="space-y-3 pr-4 sm:pr-16">
+          <div className="space-y-3 pr-2 sm:pr-10">
             <h1 className="text-3xl font-semibold text-gray-900">{item.titleZh}</h1>
             {item.titleAlt && <p className="text-base text-gray-500">{item.titleAlt}</p>}
             <div className="flex flex-wrap gap-3 text-sm text-gray-600">
@@ -1130,7 +1322,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
           </div>
-          <div className="flex w-full flex-col gap-3 pt-12 text-sm sm:w-auto sm:min-w-[16rem] sm:flex-none sm:items-end sm:pt-0">
+          <div className="flex w-full flex-col gap-3 text-sm sm:w-full sm:max-w-xs sm:items-end sm:justify-self-end sm:self-end">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               {primaryLink && (
                 <a
@@ -1372,24 +1564,45 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
 
-        {hasAppearances && (
-          <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900">登場列表</h2>
               <p className="text-sm text-gray-500">依編輯順序列出重要角色、地點或其他物件。</p>
               <p className="text-xs text-gray-500">雙擊項目可快速編輯。</p>
             </div>
-            {appearanceFeedback && (
-              <div
-                className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
-                  appearanceFeedback.type === "success"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-red-50 text-red-700"
-                }`}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={openAppearanceReorder}
+                className={`${buttonClass({ variant: "secondary", size: "sm" })} whitespace-nowrap`}
+                disabled={appearanceReorderSaving}
               >
-                {appearanceFeedback.message}
-              </div>
-            )}
+                編輯順序
+              </button>
+              <button
+                type="button"
+                onClick={handleAppearanceAdd}
+                disabled={appearanceAddPending}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 text-xl font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="新增登場項目"
+              >
+                <span aria-hidden="true">＋</span>
+              </button>
+            </div>
+          </div>
+          {appearanceFeedback && (
+            <div
+              className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
+                appearanceFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {appearanceFeedback.message}
+            </div>
+          )}
+          {hasAppearances ? (
             <div className="space-y-4">
               {appearances.map((entry, index) => {
                 const appearanceTransform =
@@ -1458,8 +1671,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 );
               })}
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+              尚未新增登場項目，按右上角加號建立第一筆資料。
+            </div>
+          )}
+        </section>
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
           <div className="space-y-2">
@@ -1773,6 +1990,115 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               >
                 {progressEditorSaving ? "儲存中…" : "儲存變更"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {appearanceReorderOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeAppearanceReorder}
+        >
+          <div
+            className="w-full max-w-xl space-y-6 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="appearance-reorder-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h2 id="appearance-reorder-title" className="text-xl font-semibold text-gray-900">
+                調整登場順序
+              </h2>
+              <p className="text-sm text-gray-500">
+                點選要調整的項目，再使用下方的上下按鈕調整顯示順序。
+              </p>
+            </div>
+            {appearanceReorderError && (
+              <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {appearanceReorderError}
+              </div>
+            )}
+            <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-2xl border bg-gray-50 p-3">
+              {appearanceReorderList.length === 0 ? (
+                <p className="text-sm text-gray-500">目前沒有登場項目可調整。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {appearanceReorderList.map((entry, index) => {
+                    const isSelected = index === appearanceReorderSelectedIndex;
+                    return (
+                      <li key={`${entry.nameZh}-${index}`}>
+                        <button
+                          type="button"
+                          onClick={() => setAppearanceReorderSelectedIndex(index)}
+                          disabled={appearanceReorderSaving}
+                          className={`w-full overflow-hidden rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
+                            isSelected
+                              ? "border-blue-400 bg-white"
+                              : "border-gray-200 bg-white/80 hover:border-blue-200"
+                          }`}
+                        >
+                          <span className="break-anywhere font-medium text-gray-900">
+                            {entry.nameZh}
+                          </span>
+                          {entry.nameOriginal && (
+                            <span className="break-anywhere mt-1 block text-xs text-gray-500">
+                              {entry.nameOriginal}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveAppearanceReorderSelection(-1)}
+                  disabled={
+                    appearanceReorderSaving || appearanceReorderSelectedIndex <= 0
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveAppearanceReorderSelection(1)}
+                  disabled={
+                    appearanceReorderSaving ||
+                    appearanceReorderSelectedIndex === -1 ||
+                    appearanceReorderSelectedIndex === appearanceReorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  下移
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <button
+                  type="button"
+                  onClick={closeAppearanceReorder}
+                  disabled={appearanceReorderSaving}
+                  className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAppearanceReorderSave}
+                  disabled={
+                    appearanceReorderSaving || appearanceReorderList.length === 0
+                  }
+                  className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+                >
+                  {appearanceReorderSaving ? "儲存中…" : "儲存順序"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
