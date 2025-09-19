@@ -16,6 +16,7 @@ import {
 
 import ItemCard from "@/components/ItemCard";
 import ItemListRow from "@/components/ItemListRow";
+import ItemThumbCard from "@/components/ItemThumbCard";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
@@ -40,7 +41,7 @@ type CabinetPageProps = {
 type SortOption = "updated" | "title" | "rating" | "nextUpdate" | "created";
 type SortDirection = "asc" | "desc";
 type HasNextUpdateFilter = "all" | "yes" | "no";
-type ViewMode = "grid" | "list";
+type ViewMode = "grid" | "thumb" | "list";
 
 type FilterState = {
   search: string;
@@ -59,6 +60,7 @@ const PAGE_SIZE_OPTIONS = [10, 15, 20, 30] as const;
 const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: "grid", label: "圖表" },
+  { value: "thumb", label: "縮圖" },
   { value: "list", label: "列表" },
 ];
 
@@ -388,7 +390,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     }
     const key = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
     const stored = window.localStorage.getItem(key);
-    if (stored === "grid" || stored === "list") {
+    if (stored === "grid" || stored === "list" || stored === "thumb") {
       setViewMode(stored);
     }
   }, [cabinetId]);
@@ -996,6 +998,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visibleItems.map((item) => (
                 <ItemCard key={item.id} item={item} searchTerm={highlightQuery} />
+              ))}
+            </div>
+          ) : viewMode === "thumb" ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visibleItems.map((item) => (
+                <ItemThumbCard key={item.id} item={item} searchTerm={highlightQuery} />
               ))}
             </div>
           ) : (

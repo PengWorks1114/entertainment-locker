@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   addDoc,
@@ -58,6 +58,7 @@ export default function QuickAddItemPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clipboardCheckedRef = useRef(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -136,10 +137,13 @@ export default function QuickAddItemPage() {
   }, [cabinets, form.cabinetId]);
 
   useEffect(() => {
+    clipboardCheckedRef.current = false;
+  }, [pathname]);
+
+  useEffect(() => {
     if (clipboardCheckedRef.current) {
       return;
     }
-    clipboardCheckedRef.current = true;
 
     if (typeof window === "undefined" || typeof navigator === "undefined") {
       return;
@@ -190,12 +194,34 @@ export default function QuickAddItemPage() {
       }
     }
 
-    detectClipboard();
+    function triggerDetection() {
+      if (clipboardCheckedRef.current || canceled) {
+        return;
+      }
+      clipboardCheckedRef.current = true;
+      void detectClipboard();
+    }
+
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      const handleVisibility = () => {
+        if (document.visibilityState === "visible") {
+          document.removeEventListener("visibilitychange", handleVisibility);
+          triggerDetection();
+        }
+      };
+      document.addEventListener("visibilitychange", handleVisibility);
+      return () => {
+        canceled = true;
+        document.removeEventListener("visibilitychange", handleVisibility);
+      };
+    }
+
+    triggerDetection();
 
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [pathname]);
 
   const hasCabinet = cabinets.length > 0;
 
