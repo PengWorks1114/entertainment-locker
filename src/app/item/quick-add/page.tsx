@@ -4,22 +4,16 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import {
-  addDoc,
-  collection,
-  getDocs,
-  query,
-  serverTimestamp,
-  Timestamp,
-  where,
-} from "firebase/firestore";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
-import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { fetchOpenGraphImage } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType } from "@/lib/types";
-
-type CabinetOption = { id: string; name: string };
+import {
+  fetchCabinetOptions,
+  type CabinetOption,
+} from "@/lib/cabinet-options";
 
 type FormState = {
   cabinetId: string;
@@ -83,46 +77,21 @@ export default function QuickAddItemPage() {
       return;
     }
     let active = true;
-    const db = getFirebaseDb();
-    if (!db) {
-      setError("Firebase 尚未設定");
-      setLoadingCabinets(false);
-      setCabinets([]);
-      return;
-    }
     setLoadingCabinets(true);
-    const q = query(collection(db, "cabinet"), where("uid", "==", user.uid));
-    getDocs(q)
-      .then((snap) => {
+    fetchCabinetOptions(user.uid)
+      .then((rows) => {
         if (!active) return;
-        const rows: CabinetOption[] = snap.docs
-          .map((docSnap) => {
-            const data = docSnap.data();
-            const createdAt = data?.createdAt;
-            const createdMs =
-              createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
-            const orderValue =
-              typeof data?.order === "number" ? data.order : createdMs;
-            return {
-              id: docSnap.id,
-              name: (data?.name as string) ?? "",
-              createdMs,
-              order: orderValue,
-            };
-          })
-          .sort((a, b) => {
-            if (a.order === b.order) {
-              return b.createdMs - a.createdMs;
-            }
-            return b.order - a.order;
-          })
-          .map((item) => ({ id: item.id, name: item.name }));
         setCabinets(rows);
         setLoadingCabinets(false);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!active) return;
-        setError("載入櫃子清單時發生錯誤");
+        console.error("載入櫃子清單時發生錯誤", err);
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "載入櫃子清單時發生錯誤";
+        setError(message);
         setCabinets([]);
         setLoadingCabinets(false);
       });

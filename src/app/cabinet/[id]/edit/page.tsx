@@ -17,6 +17,7 @@ import {
   prepareThumbTransform,
 } from "@/lib/image-utils";
 import type { ThumbTransform } from "@/lib/types";
+import { invalidateCabinetOptions } from "@/lib/cabinet-options";
 
 type CabinetEditPageProps = {
   params: Promise<{ id: string }>;
@@ -191,6 +192,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         thumbTransform: trimmedThumbUrl ? preparedThumbTransform : null,
         updatedAt: serverTimestamp(),
       });
+      invalidateCabinetOptions(user.uid);
       setName(trimmed);
       setNote(trimmedNote);
       setThumbUrl(trimmedThumbUrl);
@@ -245,6 +247,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     setDeleteError(null);
     try {
       await deleteCabinetWithItems(cabinetId, user.uid);
+      invalidateCabinetOptions(user.uid);
       router.push("/cabinets");
     } catch (err) {
       console.error("刪除櫃子失敗", err);

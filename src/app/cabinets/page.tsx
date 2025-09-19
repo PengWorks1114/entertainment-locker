@@ -26,6 +26,10 @@ import {
 } from "@/lib/image-utils";
 import type { ThumbTransform } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
+import {
+  invalidateCabinetOptions,
+  primeCabinetOptionsCache,
+} from "@/lib/cabinet-options";
 
 type Cabinet = {
   id: string;
@@ -71,6 +75,7 @@ export default function CabinetsPage() {
   useEffect(() => {
     if (!user) {
       setList([]);
+      invalidateCabinetOptions();
       return;
     }
     const db = getFirebaseDb();
@@ -116,10 +121,15 @@ export default function CabinetsPage() {
             return b.order - a.order;
           });
         setList(rows);
+        primeCabinetOptionsCache(
+          user.uid,
+          rows.map((item) => ({ id: item.id, name: item.name }))
+        );
         setFeedback((prev) => (prev?.type === "error" ? null : prev));
       },
       () => {
         setFeedback({ type: "error", message: "載入櫃子清單時發生錯誤" });
+        invalidateCabinetOptions(user.uid);
       }
     );
     return () => unSub();
@@ -157,6 +167,7 @@ export default function CabinetsPage() {
         thumbUrl: null,
         thumbTransform: null,
       });
+      invalidateCabinetOptions(user.uid);
       setName("");
       setFeedback({ type: "success", message: "已新增櫃子" });
     } catch (err) {
