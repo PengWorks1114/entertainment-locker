@@ -42,6 +42,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -69,6 +70,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setThumbEditorOpen(false);
       setMessage(null);
       setDeleteError(null);
+      setLocked(false);
       return;
     }
     let active = true;
@@ -95,6 +97,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbUrl("");
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
+          setLocked(false);
           return;
         }
         const data = snap.data();
@@ -106,6 +109,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbUrl("");
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
+          setLocked(false);
           return;
         }
         const nameValue =
@@ -129,6 +133,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             : { ...DEFAULT_THUMB_TRANSFORM }
         );
         setThumbEditorOpen(false);
+        setLocked(Boolean(data?.isLocked));
         setCanEdit(true);
         setLoading(false);
       })
@@ -141,6 +146,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setThumbUrl("");
         setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
         setThumbEditorOpen(false);
+        setLocked(false);
       });
     return () => {
       active = false;
@@ -190,6 +196,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         note: trimmedNote ? trimmedNote : null,
         thumbUrl: trimmedThumbUrl || null,
         thumbTransform: trimmedThumbUrl ? preparedThumbTransform : null,
+        isLocked: locked,
         updatedAt: serverTimestamp(),
       });
       invalidateCabinetOptions(user.uid);
@@ -204,6 +211,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           : { ...DEFAULT_THUMB_TRANSFORM }
       );
       setThumbEditorOpen(false);
+      setLocked(locked);
       setMessage("已更新櫃子資料");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
@@ -358,6 +366,23 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 setThumbEditorOpen(false);
               }}
             />
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <label className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-sm font-medium text-gray-900">鎖定此櫃子</span>
+                  <p className="text-xs text-gray-500">
+                    鎖定後將無法瀏覽櫃子內容，僅能於編輯頁面解除鎖定。
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5 rounded border-gray-300 text-black focus:ring-black"
+                  checked={locked}
+                  onChange={(event) => setLocked(event.target.checked)}
+                  disabled={saving}
+                />
+              </label>
+            </div>
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
               <textarea

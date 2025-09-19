@@ -2,7 +2,7 @@ import { collection, getDocs, query, Timestamp, where } from "firebase/firestore
 
 import { getFirebaseDb } from "./firebase";
 
-export type CabinetOption = { id: string; name: string };
+export type CabinetOption = { id: string; name: string; isLocked: boolean };
 
 type CacheEntry = {
   data: CabinetOption[];
@@ -17,7 +17,9 @@ function shouldUseCache(entry: CacheEntry): boolean {
   return Date.now() - entry.fetchedAt < CABINET_CACHE_TTL_MS;
 }
 
-function sortCabinetOptions(rows: Array<{ id: string; name: string; order: number; createdMs: number }>): CabinetOption[] {
+function sortCabinetOptions(
+  rows: Array<{ id: string; name: string; order: number; createdMs: number; isLocked: boolean }>
+): CabinetOption[] {
   return rows
     .sort((a, b) => {
       if (a.order === b.order) {
@@ -25,7 +27,7 @@ function sortCabinetOptions(rows: Array<{ id: string; name: string; order: numbe
       }
       return b.order - a.order;
     })
-    .map((item) => ({ id: item.id, name: item.name }));
+    .map((item) => ({ id: item.id, name: item.name, isLocked: item.isLocked }));
 }
 
 async function loadCabinetOptionsFromFirestore(userId: string): Promise<CabinetOption[]> {
@@ -46,6 +48,7 @@ async function loadCabinetOptionsFromFirestore(userId: string): Promise<CabinetO
       name: (data?.name as string) ?? "",
       createdMs,
       order: orderValue,
+      isLocked: Boolean(data?.isLocked),
     };
   });
   return sortCabinetOptions(rows);

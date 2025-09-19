@@ -94,6 +94,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
   const [cabinetLoading, setCabinetLoading] = useState(true);
   const [cabinetError, setCabinetError] = useState<string | null>(null);
   const [canView, setCanView] = useState(false);
+  const [cabinetLocked, setCabinetLocked] = useState(false);
   const [items, setItems] = useState<TrashListItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -125,6 +126,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
       setCabinetName("未命名櫃子");
       setCabinetError(null);
       setCabinetLoading(false);
+      setCabinetLocked(false);
       return;
     }
     const db = getFirebaseDb();
@@ -136,6 +138,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
     }
     setCabinetLoading(true);
     setCabinetError(null);
+    setCabinetLocked(false);
     let active = true;
     getDoc(doc(db, "cabinet", cabinetId))
       .then((snap) => {
@@ -144,6 +147,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
           setCabinetError("找不到櫃子");
           setCanView(false);
           setCabinetLoading(false);
+          setCabinetLocked(false);
           return;
         }
         const data = snap.data();
@@ -151,6 +155,14 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
           setCabinetError("您沒有存取此櫃子的權限");
           setCanView(false);
           setCabinetLoading(false);
+          setCabinetLocked(false);
+          return;
+        }
+        if (data?.isLocked) {
+          setCabinetError("此櫃子已鎖定，無法瀏覽垃圾桶內容。請於編輯頁面解除鎖定後再試一次。");
+          setCanView(false);
+          setCabinetLoading(false);
+          setCabinetLocked(true);
           return;
         }
         const name =
@@ -160,6 +172,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
         setCabinetName(name);
         setCanView(true);
         setCabinetLoading(false);
+        setCabinetLocked(false);
       })
       .catch((err) => {
         console.error("載入櫃子資訊時發生錯誤", err);
@@ -167,6 +180,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
         setCabinetError("載入櫃子資訊時發生錯誤");
         setCanView(false);
         setCabinetLoading(false);
+        setCabinetLocked(false);
       });
     return () => {
       active = false;
@@ -443,12 +457,21 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
             {cabinetError ?? "您沒有存取此垃圾桶的權限"}
           </div>
           <div>
-            <Link
-              href={`/cabinet/${encodeURIComponent(cabinetId)}`}
-              className={`${buttonClass({ variant: "secondary" })}`}
-            >
-              返回櫃子頁面
-            </Link>
+            {cabinetLocked ? (
+              <Link
+                href={`/cabinet/${encodeURIComponent(cabinetId)}/edit`}
+                className={`${buttonClass({ variant: "secondary" })}`}
+              >
+                前往編輯櫃子
+              </Link>
+            ) : (
+              <Link
+                href={`/cabinet/${encodeURIComponent(cabinetId)}`}
+                className={`${buttonClass({ variant: "secondary" })}`}
+              >
+                返回櫃子頁面
+              </Link>
+            )}
           </div>
         </div>
       </main>

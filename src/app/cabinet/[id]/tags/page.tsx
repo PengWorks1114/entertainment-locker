@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { buttonClass } from "@/lib/ui";
 
 type CabinetTagPageProps = {
   params: Promise<{ id: string }>;
@@ -42,6 +43,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
   const [canEdit, setCanEdit] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [cabinetLocked, setCabinetLocked] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [tagError, setTagError] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
       setEditingTag(null);
       setEditingValue("");
       setError(null);
+      setCabinetLocked(false);
       return;
     }
     let active = true;
@@ -87,6 +90,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
     setError(null);
     setTagError(null);
     setTagMessage(null);
+    setCabinetLocked(false);
     const db = getFirebaseDb();
     if (!db) {
       setError("Firebase 尚未設定");
@@ -105,6 +109,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
           setLoading(false);
           setCabinetName("");
           setTags([]);
+          setCabinetLocked(false);
           return;
         }
         const data = snap.data();
@@ -114,6 +119,16 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
           setLoading(false);
           setCabinetName("");
           setTags([]);
+          setCabinetLocked(false);
+          return;
+        }
+        if (data?.isLocked) {
+          setError("此櫃子已鎖定，無法管理標籤。請於編輯頁面解除鎖定後再試一次。");
+          setCanEdit(false);
+          setLoading(false);
+          setCabinetName("");
+          setTags([]);
+          setCabinetLocked(true);
           return;
         }
         const nameValue =
@@ -124,6 +139,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
         setTags(normalizeCabinetTags(data?.tags));
         setCanEdit(true);
         setLoading(false);
+        setCabinetLocked(false);
       })
       .catch(() => {
         if (!active) return;
@@ -132,6 +148,7 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
         setLoading(false);
         setCabinetName("");
         setTags([]);
+        setCabinetLocked(false);
       });
     return () => {
       active = false;
@@ -491,7 +508,17 @@ export default function CabinetTagManagerPage({ params }: CabinetTagPageProps) {
           {loading ? (
             <p className="text-sm text-gray-500">載入標籤中…</p>
           ) : error ? (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="space-y-3">
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+              {cabinetLocked && (
+                <Link
+                  href={`/cabinet/${encodedId}/edit`}
+                  className={`${buttonClass({ variant: "secondary" })} inline-flex w-full items-center justify-center sm:w-auto`}
+                >
+                  前往編輯櫃子
+                </Link>
+              )}
+            </div>
           ) : !canEdit ? (
             <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               您沒有管理此櫃子標籤的權限。

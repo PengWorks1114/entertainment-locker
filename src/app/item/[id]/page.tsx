@@ -197,6 +197,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [itemError, setItemError] = useState<string | null>(null);
   const [cabinetName, setCabinetName] = useState<string | null>(null);
   const [cabinetMissing, setCabinetMissing] = useState(false);
+  const [cabinetLocked, setCabinetLocked] = useState(false);
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
   const [progressError, setProgressError] = useState<string | null>(null);
@@ -349,6 +350,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setItem(null);
       setCabinetName(null);
       setCabinetMissing(false);
+      setCabinetLocked(false);
       setItemError(null);
       setItemLoading(false);
       return;
@@ -470,17 +472,23 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         } satisfies ItemRecord;
         let resolvedCabinetName: string | null = null;
         let resolvedCabinetMissing = false;
+        let resolvedCabinetLocked = false;
         if (record.cabinetId) {
           try {
             const cabinetSnap = await getDoc(doc(db, "cabinet", record.cabinetId));
             if (!active) return;
             if (cabinetSnap.exists()) {
               const cabinetData = cabinetSnap.data();
-              const name =
-                typeof cabinetData?.name === "string" && cabinetData.name.trim()
-                  ? cabinetData.name
-                  : "未命名櫃子";
-              resolvedCabinetName = name;
+              resolvedCabinetLocked = Boolean(cabinetData?.isLocked);
+              if (resolvedCabinetLocked) {
+                resolvedCabinetMissing = true;
+              } else {
+                const name =
+                  typeof cabinetData?.name === "string" && cabinetData.name.trim()
+                    ? cabinetData.name
+                    : "未命名櫃子";
+                resolvedCabinetName = name;
+              }
             } else {
               resolvedCabinetMissing = true;
             }
@@ -493,12 +501,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         setItem(record);
         setCabinetName(resolvedCabinetName);
         setCabinetMissing(resolvedCabinetMissing);
+        setCabinetLocked(resolvedCabinetLocked);
         setItemLoading(false);
       } catch (err) {
         console.error("載入物件資料時發生錯誤", err);
         if (!active) return;
         setItemError("載入物件資料時發生錯誤");
         setItemLoading(false);
+        setCabinetLocked(false);
       }
     })();
     return () => {
@@ -1888,7 +1898,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {itemError ?? "找不到物件資料"}
           </div>
-          {item?.cabinetId && (
+          {item?.cabinetId && !cabinetMissing && !cabinetLocked && (
             <div className="flex flex-wrap gap-2 text-sm">
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
@@ -1925,7 +1935,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   );
   const hasInsightEntries = insightEntries.length > 0;
   const hasAppearances = appearances.length > 0;
-  const tagLinkBase = item.cabinetId
+  const canVisitCabinet = Boolean(item.cabinetId) && !cabinetMissing && !cabinetLocked;
+  const tagLinkBase = canVisitCabinet
     ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
     : null;
   const favoriteLabel = item.isFavorite
@@ -1935,7 +1946,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 sm:gap-8">
-        {item.cabinetId && !cabinetMissing ? (
+        {canVisitCabinet ? (
           <div className="flex justify-end">
             <Link
               href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
@@ -2001,7 +2012,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <span>物件 ID：{item.id}</span>
               {item.cabinetId ? (
                 cabinetMissing ? (
-                  <span className="text-red-600">所屬櫃子：資料不存在或無法存取</span>
+                  <span className="text-red-600">
+                    所屬櫃子：{cabinetLocked ? "已鎖定" : "資料不存在或無法存取"}
+                  </span>
                 ) : (
                   <span>
                     所屬櫃子：

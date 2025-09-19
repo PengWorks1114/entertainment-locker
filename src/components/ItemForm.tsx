@@ -345,7 +345,8 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
 
   useEffect(() => {
     if (!form.cabinetId && cabinets.length > 0) {
-      setForm((prev) => ({ ...prev, cabinetId: cabinets[0].id }));
+      const fallback = cabinets.find((item) => !item.isLocked) ?? cabinets[0];
+      setForm((prev) => ({ ...prev, cabinetId: fallback.id }));
     }
   }, [cabinets, form.cabinetId]);
 
@@ -895,7 +896,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     const destinationCabinetId = form.cabinetId || initialCabinetId || "";
     try {
       await deleteItemWithProgress(itemId, user.uid);
-      if (destinationCabinetId) {
+      const destinationCabinet = cabinets.find(
+        (entry) => entry.id === destinationCabinetId
+      );
+      const destinationLocked = destinationCabinet?.isLocked ?? false;
+      if (destinationCabinetId && !destinationLocked) {
         router.replace(`/cabinet/${destinationCabinetId}`);
       } else {
         router.replace("/cabinets");
@@ -1270,11 +1275,17 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                   className={inputClass}
                 >
                   <option value="">選擇櫃子</option>
-                  {cabinetOptions.map((cabinet) => (
-                    <option key={cabinet.id} value={cabinet.id}>
-                      {cabinet.name || "未命名"}
-                    </option>
-                  ))}
+                  {cabinetOptions.map((cabinet) => {
+                    const label = cabinet.name || "未命名";
+                    const display = cabinet.isLocked
+                      ? `${label}（已鎖定）`
+                      : label;
+                    return (
+                      <option key={cabinet.id} value={cabinet.id}>
+                        {display}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

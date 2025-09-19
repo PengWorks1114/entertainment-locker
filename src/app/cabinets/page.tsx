@@ -39,6 +39,7 @@ type Cabinet = {
   note: string | null;
   thumbUrl: string | null;
   thumbTransform: ThumbTransform | null;
+  isLocked: boolean;
 };
 
 type Feedback = {
@@ -112,6 +113,7 @@ export default function CabinetsPage() {
               thumbTransform: data?.thumbTransform
                 ? normalizeThumbTransform(data.thumbTransform)
                 : null,
+              isLocked: Boolean(data?.isLocked),
             } satisfies Cabinet;
           })
           .sort((a, b) => {
@@ -123,7 +125,7 @@ export default function CabinetsPage() {
         setList(rows);
         primeCabinetOptionsCache(
           user.uid,
-          rows.map((item) => ({ id: item.id, name: item.name }))
+          rows.map((item) => ({ id: item.id, name: item.name, isLocked: item.isLocked }))
         );
         setFeedback((prev) => (prev?.type === "error" ? null : prev));
       },
@@ -166,6 +168,7 @@ export default function CabinetsPage() {
         note: null,
         thumbUrl: null,
         thumbTransform: null,
+        isLocked: false,
       });
       invalidateCabinetOptions(user.uid);
       setName("");
@@ -374,6 +377,36 @@ export default function CabinetsPage() {
                   transformOrigin: "center",
                 } as const;
                 const canUseOptimizedThumb = isOptimizedImageUrl(row.thumbUrl);
+                const isLocked = row.isLocked;
+                const coverClassName =
+                  "relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner";
+                const coverContent = row.thumbUrl ? (
+                  canUseOptimizedThumb ? (
+                    <Image
+                      src={row.thumbUrl}
+                      alt={`${displayName} 縮圖`}
+                      fill
+                      sizes="80px"
+                      className="object-cover"
+                      style={thumbStyle}
+                      draggable={false}
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={row.thumbUrl}
+                      alt={`${displayName} 縮圖`}
+                      className="h-full w-full select-none object-cover"
+                      style={thumbStyle}
+                      loading="lazy"
+                      draggable={false}
+                    />
+                  )
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+                    無縮圖
+                  </div>
+                );
                 return (
                   <li
                     key={row.id}
@@ -381,57 +414,62 @@ export default function CabinetsPage() {
                   >
                     <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                       <div className="flex gap-4 sm:flex-1">
-                        <Link
-                          href={`/cabinet/${encodedId}`}
-                          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner transition hover:shadow-md"
-                        >
-                          {row.thumbUrl ? (
-                            canUseOptimizedThumb ? (
-                              <Image
-                                src={row.thumbUrl}
-                                alt={`${displayName} 縮圖`}
-                                fill
-                                sizes="80px"
-                                className="object-cover"
-                                style={thumbStyle}
-                                draggable={false}
-                              />
-                            ) : (
-                              /* eslint-disable-next-line @next/next/no-img-element */
-                              <img
-                                src={row.thumbUrl}
-                                alt={`${displayName} 縮圖`}
-                                className="h-full w-full select-none object-cover"
-                                style={thumbStyle}
-                                loading="lazy"
-                                draggable={false}
-                              />
-                            )
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
-                              無縮圖
-                            </div>
-                          )}
-                        </Link>
-                        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                        {isLocked ? (
+                          <div
+                            className={`${coverClassName} cursor-not-allowed`}
+                            aria-disabled="true"
+                          >
+                            {coverContent}
+                          </div>
+                        ) : (
                           <Link
                             href={`/cabinet/${encodedId}`}
-                            className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                            className={`${coverClassName} transition hover:shadow-md`}
                           >
-                            {displayName}
+                            {coverContent}
                           </Link>
+                        )}
+                        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {isLocked ? (
+                              <span className="break-anywhere text-lg font-semibold text-gray-900">
+                                {displayName}
+                              </span>
+                            ) : (
+                              <Link
+                                href={`/cabinet/${encodedId}`}
+                                className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                              >
+                                {displayName}
+                              </Link>
+                            )}
+                            {isLocked && (
+                              <span className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                                已鎖定
+                              </span>
+                            )}
+                          </div>
                           {row.note && (
                             <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
-                        <Link
-                          href={`/cabinet/${encodedId}`}
-                          className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-                        >
-                          查看物件
-                        </Link>
+                        {isLocked ? (
+                          <span
+                            className={`${buttonClass({ variant: "secondary" })} w-full cursor-not-allowed opacity-60 sm:w-auto`}
+                            aria-disabled="true"
+                          >
+                            已鎖定
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/cabinet/${encodedId}`}
+                            className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                          >
+                            查看物件
+                          </Link>
+                        )}
                         <Link
                           href={`/cabinet/${encodedId}/edit`}
                           className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
