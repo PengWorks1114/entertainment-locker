@@ -8,11 +8,11 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
 
 const baseLinkClass =
-  "block rounded-xl px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
-const inactiveLinkClass = `${baseLinkClass} text-gray-700 hover:bg-gray-100`;
-const activeLinkClass = `${baseLinkClass} bg-gray-900 text-white shadow-sm`;
+  "block rounded-lg px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60";
+const inactiveLinkClass = `${baseLinkClass} text-slate-300 hover:bg-slate-800/80 hover:text-white`;
+const activeLinkClass = `${baseLinkClass} bg-indigo-500 text-white shadow`;
 const actionButtonClass =
-  "rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 transition hover:border-gray-400 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70";
+  "rounded-full border border-slate-600 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 transition hover:border-slate-400 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-60";
 
 type ThemeMode = "light" | "dark";
 
@@ -23,7 +23,7 @@ export default function AppHeader() {
   const [authReady, setAuthReady] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>("light");
+  const [theme, setTheme] = useState<ThemeMode>("dark");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -63,21 +63,16 @@ export default function AppHeader() {
         setTheme(stored);
         return;
       }
-      const mediaQuery =
-        typeof window.matchMedia === "function"
-          ? window.matchMedia("(prefers-color-scheme: dark)")
-          : null;
-      const prefersDark = mediaQuery?.matches ?? false;
-      const next = prefersDark ? "dark" : "light";
+      const next: ThemeMode = "dark";
       if (typeof document !== "undefined") {
         document.documentElement.dataset.theme = next;
       }
       setTheme(next);
     } catch {
       if (typeof document !== "undefined") {
-        document.documentElement.dataset.theme = "light";
+        document.documentElement.dataset.theme = "dark";
       }
-      setTheme("light");
+      setTheme("dark");
     }
   }, []);
 
@@ -147,13 +142,13 @@ export default function AppHeader() {
   const nextThemeLabel = theme === "dark" ? "切換為白主題" : "切換為黑主題";
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <header className="sticky top-0 z-40 border-b border-slate-800 bg-black/70 backdrop-blur supports-[backdrop-filter]:bg-black/60">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        <Link href="/" className="text-lg font-semibold text-gray-900">
+        <Link href="/" className="text-lg font-semibold text-slate-100">
           Entertainment Locker
         </Link>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 text-sm text-gray-600">
+          <div className="flex items-center gap-3 text-sm text-slate-300">
             {user ? (
               <>
                 {user.email && (
@@ -184,7 +179,7 @@ export default function AppHeader() {
               aria-expanded={navOpen}
               aria-controls="primary-navigation"
               onClick={() => setNavOpen((prev) => !prev)}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:border-gray-400 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-900 text-slate-200 transition hover:border-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
             >
               <span className="sr-only">主選單</span>
               <svg
@@ -203,7 +198,7 @@ export default function AppHeader() {
               <nav
                 id="primary-navigation"
                 aria-label="主選單"
-                className="absolute right-0 top-full mt-2 w-48 rounded-2xl border border-gray-200 bg-white p-2 shadow-lg"
+                className="absolute right-0 top-full mt-2 w-48 rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-xl"
               >
                 <ul className="space-y-1">
                   {navLinks.map((link) => {

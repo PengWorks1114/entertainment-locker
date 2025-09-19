@@ -26,8 +26,8 @@ body {
 }
 
 :root[data-theme="dark"] {
-  --background: #0b1120;
-  --foreground: #e2e8f0;
+  --background: #05060c;
+  --foreground: #e5e7eb;
 }
 
 :root[data-theme="dark"] body {
@@ -36,59 +36,59 @@ body {
 }
 
 :root[data-theme="dark"] .bg-white {
-  background-color: #1f2937 !important;
+  background-color: #111827 !important;
 }
 
 :root[data-theme="dark"] .bg-white\/60 {
-  background-color: rgba(30, 41, 59, 0.6) !important;
+  background-color: rgba(17, 24, 39, 0.6) !important;
 }
 
 :root[data-theme="dark"] .bg-white\/70 {
-  background-color: rgba(30, 41, 59, 0.7) !important;
+  background-color: rgba(17, 24, 39, 0.7) !important;
 }
 
 :root[data-theme="dark"] .bg-white\/80 {
-  background-color: rgba(30, 41, 59, 0.8) !important;
+  background-color: rgba(17, 24, 39, 0.8) !important;
 }
 
 :root[data-theme="dark"] .bg-white\/90 {
-  background-color: rgba(30, 41, 59, 0.9) !important;
+  background-color: rgba(17, 24, 39, 0.9) !important;
 }
 
 :root[data-theme="dark"] .bg-gray-50 {
-  background-color: #0f172a !important;
+  background-color: #090b12 !important;
 }
 
 :root[data-theme="dark"] .bg-gray-100 {
-  background-color: #1e293b !important;
+  background-color: #111827 !important;
 }
 
 :root[data-theme="dark"] .bg-gray-200 {
-  background-color: #334155 !important;
+  background-color: #1f2937 !important;
 }
 
 :root[data-theme="dark"] .bg-blue-50 {
-  background-color: rgba(59, 130, 246, 0.2) !important;
+  background-color: rgba(99, 102, 241, 0.28) !important;
 }
 
 :root[data-theme="dark"] .bg-blue-50\/40 {
-  background-color: rgba(59, 130, 246, 0.16) !important;
+  background-color: rgba(99, 102, 241, 0.18) !important;
 }
 
 :root[data-theme="dark"] .bg-blue-50\/60 {
-  background-color: rgba(59, 130, 246, 0.24) !important;
+  background-color: rgba(99, 102, 241, 0.24) !important;
 }
 
 :root[data-theme="dark"] .bg-blue-100 {
-  background-color: rgba(59, 130, 246, 0.28) !important;
+  background-color: rgba(79, 70, 229, 0.32) !important;
 }
 
 :root[data-theme="dark"] .bg-emerald-50 {
-  background-color: rgba(16, 185, 129, 0.18) !important;
+  background-color: rgba(16, 185, 129, 0.22) !important;
 }
 
 :root[data-theme="dark"] .bg-red-50 {
-  background-color: rgba(248, 113, 113, 0.2) !important;
+  background-color: rgba(239, 68, 68, 0.25) !important;
 }
 
 :root[data-theme="dark"] .border-gray-100 {

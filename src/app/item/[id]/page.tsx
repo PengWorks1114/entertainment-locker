@@ -2,7 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -65,7 +73,44 @@ const progressTypeLabelMap = new Map(
 );
 
 const backButtonClass =
-  "detail-back-button inline-flex items-center justify-center rounded-xl border border-black bg-white px-4 py-2 text-sm font-medium text-black shadow-sm transition hover:bg-black hover:text-white";
+  "detail-back-button inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-medium text-slate-200 shadow-sm transition hover:border-indigo-400 hover:bg-indigo-500/20 hover:text-white";
+
+type QuickEditField = "titleZh" | "titleAlt" | "progressNote" | "note";
+
+const quickEditConfig: Record<
+  QuickEditField,
+  {
+    label: string;
+    placeholder: string;
+    multiline?: boolean;
+    required?: boolean;
+    successMessage: string;
+  }
+> = {
+  titleZh: {
+    label: "中文標題 *",
+    placeholder: "請輸入中文標題",
+    required: true,
+    successMessage: "已更新中文標題",
+  },
+  titleAlt: {
+    label: "原文 / 其他標題",
+    placeholder: "可補充原文或別名",
+    successMessage: "已更新原文 / 其他標題",
+  },
+  progressNote: {
+    label: "進度備註",
+    placeholder: "記錄追進度的備註內容",
+    multiline: true,
+    successMessage: "已更新進度備註",
+  },
+  note: {
+    label: "一般備註",
+    placeholder: "補充想記錄的其他資訊",
+    multiline: true,
+    successMessage: "已更新一般備註",
+  },
+};
 
 function isOptimizedImageUrl(url?: string | null): boolean {
   if (!url) return false;
@@ -275,6 +320,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     appearances: true,
     notes: true,
   });
+  const [infoFeedback, setInfoFeedback] = useState<NoteFeedback | null>(null);
+  const [quickEditor, setQuickEditor] = useState<{
+    field: QuickEditField;
+    value: string;
+  } | null>(null);
+  const [quickEditorSaving, setQuickEditorSaving] = useState(false);
+  const [quickEditorError, setQuickEditorError] = useState<string | null>(null);
+  const quickEditorInputRef =
+    useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   const toggleSection = useCallback((key: SectionKey) => {
     setSectionOpen((prev) => ({
@@ -282,6 +336,127 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       [key]: !prev[key],
     }));
   }, []);
+
+  function resolveQuickEditorValue(field: QuickEditField, record: ItemRecord): string {
+    switch (field) {
+      case "titleZh":
+        return typeof record.titleZh === "string" ? record.titleZh : "";
+      case "titleAlt":
+        return typeof record.titleAlt === "string" ? record.titleAlt : "";
+      case "progressNote":
+        return typeof record.progressNote === "string" ? record.progressNote : "";
+      case "note":
+        return typeof record.note === "string" ? record.note : "";
+      default:
+        return "";
+    }
+  }
+
+  function openQuickEditor(field: QuickEditField) {
+    if (!item) {
+      setInfoFeedback({ type: "error", message: "目前無法編輯" });
+      return;
+    }
+    if (!user) {
+      setInfoFeedback({ type: "error", message: "請先登入後再編輯" });
+      return;
+    }
+    setQuickEditor({ field, value: resolveQuickEditorValue(field, item) });
+    setQuickEditorError(null);
+  }
+
+  const closeQuickEditor = () => {
+    if (quickEditorSaving) {
+      return;
+    }
+    setQuickEditor(null);
+    setQuickEditorError(null);
+  };
+
+  const handleQuickEditorChange = (value: string) => {
+    setQuickEditor((prev) => (prev ? { ...prev, value } : prev));
+  };
+
+  const handleQuickEditorSave = async () => {
+    if (!quickEditor) {
+      return;
+    }
+    if (!item) {
+      setQuickEditorError("找不到物件資料");
+      return;
+    }
+    if (!user) {
+      setQuickEditorError("請先登入");
+      return;
+    }
+    const config = quickEditConfig[quickEditor.field];
+    const trimmedValue = quickEditor.value.trim();
+    if (config.required && !trimmedValue) {
+      setQuickEditorError(`${config.label}為必填`);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setQuickEditorError("Firebase 尚未設定");
+      return;
+    }
+    const updateData: Record<string, unknown> = { updatedAt: serverTimestamp() };
+    const finalValue = trimmedValue;
+    switch (quickEditor.field) {
+      case "titleZh":
+        updateData.titleZh = finalValue;
+        break;
+      case "titleAlt":
+        updateData.titleAlt = finalValue ? finalValue : null;
+        break;
+      case "progressNote":
+        updateData.progressNote = finalValue ? finalValue : null;
+        break;
+      case "note":
+        updateData.note = finalValue ? finalValue : null;
+        break;
+      default:
+        break;
+    }
+    setQuickEditorSaving(true);
+    setQuickEditorError(null);
+    try {
+      await updateDoc(doc(db, "item", item.id), updateData);
+      setItem((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        let nextRecord: ItemRecord = { ...prev, updatedAt: Timestamp.now() };
+        switch (quickEditor.field) {
+          case "titleZh":
+            nextRecord = { ...nextRecord, titleZh: finalValue };
+            break;
+          case "titleAlt":
+            nextRecord = { ...nextRecord, titleAlt: finalValue ? finalValue : null };
+            break;
+          case "progressNote":
+            nextRecord = {
+              ...nextRecord,
+              progressNote: finalValue ? finalValue : null,
+            };
+            break;
+          case "note":
+            nextRecord = { ...nextRecord, note: finalValue ? finalValue : null };
+            break;
+          default:
+            break;
+        }
+        return nextRecord;
+      });
+      setQuickEditor(null);
+      setInfoFeedback({ type: "success", message: config.successMessage });
+    } catch (err) {
+      console.error("更新快速欄位時發生錯誤", err);
+      setQuickEditorError("更新時發生錯誤，請稍後再試");
+    } finally {
+      setQuickEditorSaving(false);
+    }
+  };
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
   const thumbStyle = useMemo(
@@ -302,6 +477,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const timer = setTimeout(() => setFavoriteError(null), 3000);
     return () => clearTimeout(timer);
   }, [favoriteError]);
+
+  useEffect(() => {
+    if (!infoFeedback) return;
+    const timer = setTimeout(() => setInfoFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [infoFeedback]);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -673,6 +854,25 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }, 0);
     return () => clearTimeout(timer);
   }, [appearanceEditorIndex]);
+
+  useEffect(() => {
+    if (!quickEditor) return;
+    const timer = setTimeout(() => {
+      const input = quickEditorInputRef.current;
+      if (input && typeof input.focus === "function") {
+        input.focus();
+        if ("setSelectionRange" in input) {
+          const length = input.value.length;
+          try {
+            input.setSelectionRange(length, length);
+          } catch {
+            // ignore selection errors
+          }
+        }
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [quickEditor]);
 
   const progressSummary = useMemo(() => {
     if (progressLoading) {
@@ -1555,8 +1755,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
   if (!authChecked) {
     return (
-      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-        <div className="mx-auto w-full max-w-2xl rounded-2xl border bg-white/70 p-6 text-base shadow-sm">
+      <main className="min-h-[100dvh] bg-zinc-950 px-4 py-8">
+        <div className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-base text-slate-200 shadow-2xl shadow-black/40">
           正在確認登入狀態…
         </div>
       </main>
@@ -1565,16 +1765,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
   if (!user) {
     return (
-      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-gray-900">物件內容</h1>
-          <p className="text-base text-gray-600">
+      <main className="min-h-[100dvh] bg-zinc-950 px-4 py-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-slate-200 shadow-2xl shadow-black/40">
+          <h1 className="text-2xl font-semibold text-white">物件內容</h1>
+          <p className="text-base text-slate-400">
             未登入。請先前往
-            <Link href="/login" className="ml-1 underline">
+            <Link href="/login" className="ml-1 text-indigo-300 underline-offset-4 transition hover:text-indigo-200 hover:underline">
               /login
             </Link>
             後再查看物件，或返回
-            <Link href="/" className="ml-1 underline">
+            <Link href="/" className="ml-1 text-indigo-300 underline-offset-4 transition hover:text-indigo-200 hover:underline">
               首頁
             </Link>
             選擇其他功能。
@@ -1586,8 +1786,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
   if (itemLoading) {
     return (
-      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-        <div className="mx-auto w-full max-w-2xl rounded-2xl border bg-white/70 p-6 text-base shadow-sm">
+      <main className="min-h-[100dvh] bg-zinc-950 px-4 py-8">
+        <div className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-base text-slate-200 shadow-2xl shadow-black/40">
           正在載入物件資料…
         </div>
       </main>
@@ -1596,14 +1796,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
   if (itemError || !item) {
     return (
-      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <h1 className="break-anywhere text-2xl font-semibold text-gray-900">物件內容</h1>
-          <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+      <main className="min-h-[100dvh] bg-zinc-950 px-4 py-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-slate-100 shadow-2xl shadow-black/40">
+          <h1 className="break-anywhere text-2xl font-semibold text-white">物件內容</h1>
+          <div className="break-anywhere rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {itemError ?? "找不到物件資料"}
           </div>
           {item?.cabinetId && (
-            <div className="flex flex-wrap gap-2 text-sm">
+            <div className="flex flex-wrap gap-2 text-sm text-slate-300">
               <Link
                 href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
                 className={backButtonClass}
@@ -1634,6 +1834,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const insightEntries = normalizeInsightEntries(
     item.insightNotes ?? item.insightNote
   );
+  const progressNoteText =
+    typeof item.progressNote === "string" ? item.progressNote.trim() : "";
+  const generalNoteText = typeof item.note === "string" ? item.note.trim() : "";
   const hasInsightEntries = insightEntries.length > 0;
   const hasAppearances = appearances.length > 0;
   const tagLinkBase = item.cabinetId
@@ -1644,7 +1847,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     : `將 ${item.titleZh} 設為最愛`;
 
   return (
-    <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+    <main className="min-h-[100dvh] bg-zinc-950 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 sm:gap-8">
         {item.cabinetId && !cabinetMissing ? (
           <div className="flex justify-end">
@@ -1656,7 +1859,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </Link>
           </div>
         ) : null}
-        <header className="relative grid gap-6 rounded-3xl border border-gray-100 bg-white/90 px-6 pb-6 pt-16 shadow-sm sm:grid-cols-[minmax(0,1fr)_minmax(16rem,auto)]">
+        <header className="relative grid gap-6 rounded-3xl border border-slate-800 bg-slate-900/80 px-6 pb-6 pt-16 shadow-2xl shadow-black/40 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,auto)]">
           <FavoriteToggleButton
             isFavorite={item.isFavorite}
             onToggle={handleFavoriteToggle}
@@ -1664,20 +1867,56 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             ariaLabel={favoriteLabel}
             className="absolute right-6 top-6"
           />
-          <div className="space-y-3 pr-2 sm:pr-10">
-            <h1 className="text-3xl font-semibold text-gray-900">{item.titleZh}</h1>
-            {item.titleAlt && <p className="text-base text-gray-500">{item.titleAlt}</p>}
-            <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+          <div className="space-y-4 pr-2 sm:pr-10">
+            <div
+              className="group cursor-text rounded-2xl border border-transparent px-4 py-3 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              onDoubleClick={() => openQuickEditor("titleZh")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openQuickEditor("titleZh");
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="快速編輯中文標題"
+              title="雙擊以快速編輯中文標題"
+            >
+              <div className="text-xs uppercase tracking-wide text-slate-500">中文標題 *</div>
+              <h1 className="break-anywhere text-3xl font-semibold text-white">{item.titleZh}</h1>
+            </div>
+            <div
+              className="group cursor-text rounded-2xl border border-transparent px-4 py-3 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              onDoubleClick={() => openQuickEditor("titleAlt")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openQuickEditor("titleAlt");
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="快速編輯原文或其他標題"
+              title="雙擊以快速編輯原文或其他標題"
+            >
+              <div className="text-xs uppercase tracking-wide text-slate-500">原文 / 其他標題</div>
+              {item.titleAlt ? (
+                <p className="break-anywhere text-base text-slate-300">{item.titleAlt}</p>
+              ) : (
+                <p className="text-sm text-slate-500">尚未設定</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm text-slate-400">
               <span>物件 ID：{item.id}</span>
               {item.cabinetId ? (
                 cabinetMissing ? (
-                  <span className="text-red-600">所屬櫃子：資料不存在或無法存取</span>
+                  <span className="text-rose-300">所屬櫃子：資料不存在或無法存取</span>
                 ) : (
                   <span>
                     所屬櫃子：
                     <Link
                       href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                      className="underline-offset-4 hover:underline"
+                      className="text-indigo-300 underline-offset-4 transition hover:text-indigo-200 hover:underline"
                     >
                       {cabinetName ?? "未命名櫃子"}
                     </Link>
@@ -1688,7 +1927,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
           </div>
-          <div className="flex w-full flex-col gap-3 text-sm sm:w-full sm:max-w-xs sm:items-end sm:justify-self-end sm:self-end">
+          <div className="flex w-full flex-col gap-3 text-sm text-slate-300 sm:w-full sm:max-w-xs sm:items-end sm:justify-self-end sm:self-end">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               {primaryLink && (
                 <a
@@ -1710,16 +1949,28 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           </div>
         </header>
 
+        {infoFeedback && (
+          <div
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              infoFeedback.type === "success"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+            }`}
+          >
+            {infoFeedback.message}
+          </div>
+        )}
+
         {favoriteError && (
-          <div className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-3xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {favoriteError}
           </div>
         )}
 
-        <section className="rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
           <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
             {item.thumbUrl && (
-              <div className="relative mx-auto aspect-[3/4] w-40 shrink-0 overflow-hidden rounded-xl border bg-white/80 sm:w-48 md:mx-0 md:w-56">
+              <div className="relative mx-auto aspect-[3/4] w-40 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 sm:w-48 md:mx-0 md:w-56">
                 {canUseOptimizedThumb ? (
                   <Image
                     src={item.thumbUrl}
@@ -1745,9 +1996,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             )}
             <div className="flex-1 space-y-6">
               <div className="space-y-2">
-                <p className="text-xs text-gray-500">雙擊屬性可快速編輯。</p>
+                <p className="text-xs text-slate-500">雙擊屬性可快速編輯。</p>
                 <div
-                  className="cursor-text rounded-xl bg-gray-50 px-4 py-4 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="cursor-text rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-4 text-slate-200 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                   onDoubleClick={openAttributeEditor}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -1761,34 +2012,34 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 >
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">狀態</div>
-                      <div className="break-anywhere text-base text-gray-900">{statusLabel}</div>
+                      <div className="text-sm text-slate-500">狀態</div>
+                      <div className="break-anywhere text-base text-white">{statusLabel}</div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">評分</div>
-                      <div className="break-anywhere text-base text-gray-900">{ratingText}</div>
+                      <div className="text-sm text-slate-500">評分</div>
+                      <div className="break-anywhere text-base text-white">{ratingText}</div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">作者 / 製作</div>
-                      <div className="break-anywhere text-base text-gray-900">
+                      <div className="text-sm text-slate-500">作者 / 製作</div>
+                      <div className="break-anywhere text-base text-white">
                         {item.author && item.author.trim().length > 0 ? item.author : "未設定"}
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">更新頻率</div>
-                      <div className="break-anywhere text-base text-gray-900">{updateFrequencyLabel}</div>
+                      <div className="text-sm text-slate-500">更新頻率</div>
+                      <div className="break-anywhere text-base text-white">{updateFrequencyLabel}</div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">下次更新</div>
-                      <div className="break-anywhere text-base text-gray-900">{nextUpdateText}</div>
+                      <div className="text-sm text-slate-500">下次更新</div>
+                      <div className="break-anywhere text-base text-white">{nextUpdateText}</div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">最後更新時間</div>
-                      <div className="break-anywhere text-base text-gray-900">{updatedAtText}</div>
+                      <div className="text-sm text-slate-500">最後更新時間</div>
+                      <div className="break-anywhere text-base text-white">{updatedAtText}</div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-gray-500">建立時間</div>
-                      <div className="break-anywhere text-base text-gray-900">{createdAtText}</div>
+                      <div className="text-sm text-slate-500">建立時間</div>
+                      <div className="break-anywhere text-base text-white">{createdAtText}</div>
                     </div>
                   </div>
                 </div>
@@ -1798,8 +2049,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 <div
                   className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
                     attributeFeedback.type === "success"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-red-50 text-red-700"
+                      ? "bg-emerald-500/10 text-emerald-200"
+                      : "bg-rose-500/10 text-rose-200"
                   }`}
                 >
                   {attributeFeedback.message}
@@ -1808,14 +2059,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
               {tags.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-sm text-gray-500">標籤</div>
+                  <div className="text-sm text-slate-500">標籤</div>
                   <div className="flex flex-wrap gap-2">
                     {tags.map((tag) => {
                       if (!tagLinkBase) {
                         return (
                           <span
                             key={tag}
-                            className="break-anywhere rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700"
+                            className="break-anywhere rounded-full bg-slate-800/70 px-3 py-1 text-sm text-slate-200"
                           >
                             #{tag}
                           </span>
@@ -1826,7 +2077,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         <Link
                           key={tag}
                           href={href}
-                          className="break-anywhere rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-blue-50 hover:text-blue-700"
+                          className="break-anywhere rounded-full bg-slate-800/70 px-3 py-1 text-sm text-slate-200 transition hover:bg-indigo-500/20 hover:text-white"
                         >
                           #{tag}
                         </Link>
@@ -1839,61 +2090,91 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           </div>
 
           {links.length > 0 && (
-            <div className="mt-6 space-y-2">
-              <div className="text-sm text-gray-500">來源連結</div>
-              <ul className="space-y-2 text-sm">
+            <div className="mt-8 space-y-2">
+              <div className="text-sm text-slate-500">來源連結</div>
+              <ul className="space-y-2 text-sm text-indigo-300">
                 {links.map((link) => (
-                      <li
-                        key={`${link.label}-${link.url}`}
-                        className="flex flex-wrap items-center gap-2"
-                      >
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="break-anywhere text-blue-600 underline-offset-4 hover:underline"
-                        >
-                          {link.label}
-                        </a>
-                        {link.isPrimary && (
-                          <span className="text-xs text-emerald-600">{`（此為"點我觀看"觸發連結）`}</span>
-                        )}
-                      </li>
-                    ))}
+                  <li
+                    key={`${link.label}-${link.url}`}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-anywhere underline-offset-4 transition hover:text-indigo-200 hover:underline"
+                    >
+                      {link.label}
+                    </a>
+                    {link.isPrimary && (
+                      <span className="text-xs text-emerald-200">{`（此為"點我觀看"觸發連結）`}</span>
+                    )}
+                  </li>
+                ))}
               </ul>
             </div>
           )}
 
-          {item.progressNote && (
-            <div className="space-y-1">
-              <div className="text-sm text-gray-500">進度備註</div>
-              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                {item.progressNote}
-              </div>
+          <div className="mt-8 space-y-2">
+            <div className="text-sm text-slate-500">進度備註</div>
+            <div
+              className="cursor-text rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-200 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              onDoubleClick={() => openQuickEditor("progressNote")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openQuickEditor("progressNote");
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="快速編輯進度備註"
+              title="雙擊以快速編輯進度備註"
+            >
+              {progressNoteText ? (
+                <div className="break-anywhere whitespace-pre-wrap">{progressNoteText}</div>
+              ) : (
+                <span className="text-slate-500">尚未新增進度備註</span>
+              )}
             </div>
-          )}
+          </div>
 
-          {item.note && (
-            <div className="space-y-1">
-              <div className="text-sm text-gray-500">一般備註</div>
-              <div className="break-anywhere whitespace-pre-wrap rounded-xl bg-gray-100 px-4 py-3 text-sm text-gray-700">
-                {item.note}
-              </div>
+          <div className="mt-8 space-y-2">
+            <div className="text-sm text-slate-500">一般備註</div>
+            <div
+              className="cursor-text rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-200 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              onDoubleClick={() => openQuickEditor("note")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openQuickEditor("note");
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="快速編輯一般備註"
+              title="雙擊以快速編輯一般備註"
+            >
+              {generalNoteText ? (
+                <div className="break-anywhere whitespace-pre-wrap">{generalNoteText}</div>
+              ) : (
+                <span className="text-slate-500">尚未新增一般備註</span>
+              )}
             </div>
-          )}
+          </div>
         </section>
 
-        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-gray-900">進度概覽</h2>
-              <p className="text-xs text-gray-500">雙擊主進度可快速編輯。</p>
+              <h2 className="text-xl font-semibold text-white">進度概覽</h2>
+              <p className="text-xs text-slate-500">雙擊主進度可快速編輯。</p>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 type="button"
                 onClick={() => toggleSection("progress")}
-                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                className="h-9 rounded-lg border border-slate-700 px-3 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white"
                 aria-expanded={sectionOpen.progress}
               >
                 {sectionOpen.progress ? "收合" : "展開"}
@@ -1904,7 +2185,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           {sectionOpen.progress ? (
             <>
               <div
-                className="cursor-text rounded-xl bg-gray-50 px-4 py-3 transition hover:bg-blue-50"
+                className="cursor-text rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 transition hover:border-indigo-500/40 hover:bg-indigo-500/10"
                 onDoubleClick={openProgressEditor}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -1916,13 +2197,13 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 tabIndex={0}
                 title="雙擊以快速編輯主進度"
               >
-                <div className="text-sm font-medium text-gray-900">主進度</div>
-                <div className="break-anywhere text-sm text-gray-700">
+                <div className="text-sm font-medium text-white">主進度</div>
+                <div className="break-anywhere text-sm text-slate-200">
                   {progressSummary}
                 </div>
               </div>
               {primary?.updatedAt && (
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-slate-500">
                   主進度更新於：{formatDateTime(primary.updatedAt)}
                 </div>
               )}
@@ -1932,32 +2213,32 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div
               className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
                 progressFeedback.type === "success"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-red-50 text-red-700"
+                  ? "bg-emerald-500/10 text-emerald-200"
+                  : "bg-rose-500/10 text-rose-200"
               }`}
             >
               {progressFeedback.message}
             </div>
           )}
           {progressError && (
-            <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="break-anywhere rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {progressError}
             </div>
           )}
         </section>
 
-        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-gray-900">登場列表</h2>
-              <p className="text-sm text-gray-500">依編輯順序列出重要角色、地點或其他物件。</p>
-              <p className="text-xs text-gray-500">雙擊項目可快速編輯。</p>
+              <h2 className="text-xl font-semibold text-white">登場列表</h2>
+              <p className="text-sm text-slate-500">依編輯順序列出重要角色、地點或其他物件。</p>
+              <p className="text-xs text-slate-500">雙擊項目可快速編輯。</p>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 type="button"
                 onClick={() => toggleSection("appearances")}
-                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                className="h-9 rounded-lg border border-slate-700 px-3 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white"
                 aria-expanded={sectionOpen.appearances}
               >
                 {sectionOpen.appearances ? "收合" : "展開"}
@@ -1974,7 +2255,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 type="button"
                 onClick={handleAppearanceAdd}
                 disabled={appearanceAddPending}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 text-xl font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-slate-700 text-xl font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-indigo-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="新增登場項目"
               >
                 <span aria-hidden="true">＋</span>
@@ -1985,8 +2266,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div
               className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
                 appearanceFeedback.type === "success"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-red-50 text-red-700"
+                  ? "bg-emerald-500/10 text-emerald-200"
+                  : "bg-rose-500/10 text-rose-200"
               }`}
             >
               {appearanceFeedback.message}
@@ -2006,7 +2287,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   return (
                     <div
                       key={`${entry.nameZh}-${index}`}
-                      className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                      className="flex items-start gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 cursor-pointer"
                       onDoubleClick={() => openAppearanceEditor(index)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -2019,7 +2300,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       title="雙擊以編輯此登場物件"
                     >
                       {entry.thumbUrl ? (
-                        <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
+                        <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-950/60">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={entry.thumbUrl}
@@ -2032,11 +2313,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         </div>
                       ) : null}
                       <div className="flex-1 space-y-2">
-                        <div className="break-anywhere text-base font-medium text-gray-900">
+                        <div className="break-anywhere text-base font-medium text-white">
                           {entry.nameZh}
                         </div>
                         {entry.nameOriginal && (
-                          <div className="break-anywhere text-sm text-gray-600">
+                          <div className="break-anywhere text-sm text-slate-400">
                             {entry.nameOriginal}
                           </div>
                         )}
@@ -2045,7 +2326,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                             {labels.map((label, labelIndex) => (
                               <span
                                 key={`${label}-${labelIndex}`}
-                                className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700"
+                                className="inline-flex items-center rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-medium text-indigo-200"
                               >
                                 {label}
                               </span>
@@ -2053,7 +2334,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                           </div>
                         )}
                         {entry.note && (
-                          <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
+                          <div className="break-anywhere whitespace-pre-wrap text-sm text-slate-200">
                             {entry.note}
                           </div>
                         )}
@@ -2063,25 +2344,25 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 })}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 p-6 text-center text-sm text-slate-500">
                 尚未新增登場項目，按右上角加號建立第一筆資料。
               </div>
             )
           ) : null}
         </section>
 
-        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
-              <p className="text-sm text-gray-500">整理觀後感或紀錄重點，僅於詳細頁面顯示。</p>
-              <p className="text-xs text-gray-500">雙擊項目可快速編輯內容。</p>
+              <p className="text-sm text-slate-500">整理觀後感或紀錄重點，僅於詳細頁面顯示。</p>
+              <p className="text-xs text-slate-500">雙擊項目可快速編輯內容。</p>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 type="button"
                 onClick={() => toggleSection("notes")}
-                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                className="h-9 rounded-lg border border-slate-700 px-3 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white"
                 aria-expanded={sectionOpen.notes}
               >
                 {sectionOpen.notes ? "收合" : "展開"}
@@ -2098,7 +2379,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 type="button"
                 onClick={handleNoteAdd}
                 disabled={noteAddPending}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 text-xl font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-slate-700 text-xl font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-indigo-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="新增心得 / 筆記"
               >
                 <span aria-hidden="true">＋</span>
@@ -2109,8 +2390,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             <div
               className={`rounded-xl px-3 py-2 text-sm ${
                 noteFeedback.type === "success"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-red-50 text-red-700"
+                  ? "bg-emerald-500/10 text-emerald-200"
+                  : "bg-rose-500/10 text-rose-200"
               }`}
             >
               {noteFeedback.message}
@@ -2126,7 +2407,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   return (
                     <div
                       key={`${heading}-${index}`}
-                      className="rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                      className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg transition hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 cursor-pointer"
                       onDoubleClick={() => openNoteEditor(index)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -2139,14 +2420,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       title="雙擊以編輯此心得 / 筆記"
                     >
                       <div className="flex flex-col gap-1">
-                        <div className="text-xs text-gray-500">項目 {index + 1}</div>
-                        <div className="break-anywhere text-base font-medium text-gray-900">{heading}</div>
+                        <div className="text-xs text-slate-500">項目 {index + 1}</div>
+                        <div className="break-anywhere text-base font-medium text-white">{heading}</div>
                         {content ? (
-                          <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                          <div className="whitespace-pre-wrap break-words text-sm text-slate-200">
                             {content}
                           </div>
                         ) : (
-                          <div className="text-sm text-gray-400">目前尚未填寫內容。</div>
+                          <div className="text-sm text-slate-500">目前尚未填寫內容。</div>
                         )}
                       </div>
                     </div>
@@ -2154,7 +2435,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 })}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 p-6 text-center text-sm text-slate-500">
                 尚未新增心得 / 筆記，按右上角加號建立第一筆內容。
               </div>
             )
@@ -2856,6 +3137,77 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
               >
                 {noteSaving ? "儲存中…" : "儲存內容"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quickEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={closeQuickEditor}
+        >
+          <div
+            className="w-full max-w-lg space-y-5 rounded-2xl border border-slate-700 bg-slate-950 p-6 text-slate-200 shadow-2xl shadow-black/60"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <h2 id="quick-editor-title" className="text-xl font-semibold text-white">
+                快速編輯 {quickEditConfig[quickEditor.field].label}
+              </h2>
+              <p className="text-sm text-slate-500">
+                更新後會立即儲存至雲端，並同步更新最後編輯時間。
+              </p>
+            </div>
+            <div>
+              {quickEditConfig[quickEditor.field].multiline ? (
+                <textarea
+                  ref={quickEditorInputRef as RefObject<HTMLTextAreaElement>}
+                  value={quickEditor.value}
+                  onChange={(event) => handleQuickEditorChange(event.target.value)}
+                  rows={6}
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-base text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  placeholder={quickEditConfig[quickEditor.field].placeholder}
+                  disabled={quickEditorSaving}
+                />
+              ) : (
+                <input
+                  ref={quickEditorInputRef as RefObject<HTMLInputElement>}
+                  value={quickEditor.value}
+                  onChange={(event) => handleQuickEditorChange(event.target.value)}
+                  className="h-12 w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 text-base text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  placeholder={quickEditConfig[quickEditor.field].placeholder}
+                  disabled={quickEditorSaving}
+                />
+              )}
+            </div>
+
+            {quickEditorError && (
+              <div className="break-anywhere rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                {quickEditorError}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeQuickEditor}
+                disabled={quickEditorSaving}
+                className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleQuickEditorSave}
+                disabled={quickEditorSaving}
+                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+              >
+                {quickEditorSaving ? "儲存中…" : "儲存變更"}
               </button>
             </div>
           </div>

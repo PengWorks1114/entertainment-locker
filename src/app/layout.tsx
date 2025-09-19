@@ -19,10 +19,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="zh-Hant">
-      <body className="bg-gray-100 text-gray-900">
+    <html lang="zh-Hant" data-theme="dark">
+      <body className="bg-zinc-950 text-slate-100 antialiased">
         <AppHeader />
-        <div className="pt-4">{children}</div>
+        <div className="pt-6">{children}</div>
       </body>
     </html>
   );
