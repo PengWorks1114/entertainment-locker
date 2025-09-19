@@ -14,6 +14,8 @@ const activeLinkClass = `${baseLinkClass} bg-gray-900 text-white shadow-sm`;
 const actionButtonClass =
   "rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 transition hover:border-gray-400 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70";
 
+type ThemeMode = "light" | "dark";
+
 export default function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
@@ -21,6 +23,7 @@ export default function AppHeader() {
   const [authReady, setAuthReady] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -46,6 +49,50 @@ export default function AppHeader() {
     ],
     []
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem("app-theme");
+      if (stored === "light" || stored === "dark") {
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.theme = stored;
+        }
+        setTheme(stored);
+        return;
+      }
+      const mediaQuery =
+        typeof window.matchMedia === "function"
+          ? window.matchMedia("(prefers-color-scheme: dark)")
+          : null;
+      const prefersDark = mediaQuery?.matches ?? false;
+      const next = prefersDark ? "dark" : "light";
+      if (typeof document !== "undefined") {
+        document.documentElement.dataset.theme = next;
+      }
+      setTheme(next);
+    } catch {
+      if (typeof document !== "undefined") {
+        document.documentElement.dataset.theme = "light";
+      }
+      setTheme("light");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+    }
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("app-theme", theme);
+      } catch {
+        // ignore write errors
+      }
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!navOpen) {
@@ -91,6 +138,13 @@ export default function AppHeader() {
       setSigningOut(false);
     }
   }
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+  };
+
+  const themeLabel = theme === "dark" ? "主題:黑" : "主題:白";
+  const nextThemeLabel = theme === "dark" ? "切換為白主題" : "切換為黑主題";
 
   return (
     <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -166,6 +220,17 @@ export default function AppHeader() {
                       </li>
                     );
                   })}
+                  <li>
+                    <button
+                      type="button"
+                      onClick={toggleTheme}
+                      className={`${inactiveLinkClass} w-full text-left`}
+                      aria-label={nextThemeLabel}
+                      title={nextThemeLabel}
+                    >
+                      {themeLabel}
+                    </button>
+                  </li>
                 </ul>
               </nav>
             ) : null}

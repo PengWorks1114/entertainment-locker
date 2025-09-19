@@ -178,6 +178,8 @@ type AttributeDraftState = {
   nextUpdateAt: string;
 };
 
+type SectionKey = "progress" | "appearances" | "notes";
+
 const defaultProgressType =
   (PROGRESS_TYPE_OPTIONS[0]?.value as ProgressType | undefined) ?? "chapter";
 
@@ -252,6 +254,18 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     useState<NoteFeedback | null>(null);
   const [favoritePending, setFavoritePending] = useState(false);
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
+    progress: true,
+    appearances: true,
+    notes: true,
+  });
+
+  const toggleSection = useCallback((key: SectionKey) => {
+    setSectionOpen((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }, []);
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
   const thumbStyle = useMemo(
@@ -908,6 +922,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             }
           : prev
       );
+      setSectionOpen((prev) => ({ ...prev, appearances: true }));
       setAppearanceFeedback({
         type: "success",
         message: "已新增登場項目",
@@ -1039,6 +1054,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       });
       return;
     }
+    setSectionOpen((prev) => ({ ...prev, appearances: true }));
     const target = item.appearances?.[index];
     if (!target) {
       setAppearanceFeedback({
@@ -1517,35 +1533,51 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           )}
         </section>
 
-        <section className="space-y-6 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-gray-900">進度概覽</h2>
-            <p className="text-xs text-gray-500">雙擊主進度可快速編輯。</p>
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-900">進度概覽</h2>
+              <p className="text-xs text-gray-500">雙擊主進度可快速編輯。</p>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => toggleSection("progress")}
+                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                aria-expanded={sectionOpen.progress}
+              >
+                {sectionOpen.progress ? "收合" : "展開"}
+              </button>
+            </div>
           </div>
 
-          <div
-            className="cursor-text rounded-xl bg-gray-50 px-4 py-3 transition hover:bg-blue-50"
-            onDoubleClick={openProgressEditor}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                openProgressEditor();
-              }
-            }}
-            role="button"
-            tabIndex={0}
-            title="雙擊以快速編輯主進度"
-          >
-            <div className="text-sm font-medium text-gray-900">主進度</div>
-            <div className="break-anywhere text-sm text-gray-700">
-              {progressSummary}
-            </div>
-          </div>
-          {primary?.updatedAt && (
-            <div className="text-xs text-gray-500">
-              主進度更新於：{formatDateTime(primary.updatedAt)}
-            </div>
-          )}
+          {sectionOpen.progress ? (
+            <>
+              <div
+                className="cursor-text rounded-xl bg-gray-50 px-4 py-3 transition hover:bg-blue-50"
+                onDoubleClick={openProgressEditor}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    openProgressEditor();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                title="雙擊以快速編輯主進度"
+              >
+                <div className="text-sm font-medium text-gray-900">主進度</div>
+                <div className="break-anywhere text-sm text-gray-700">
+                  {progressSummary}
+                </div>
+              </div>
+              {primary?.updatedAt && (
+                <div className="text-xs text-gray-500">
+                  主進度更新於：{formatDateTime(primary.updatedAt)}
+                </div>
+              )}
+            </>
+          ) : null}
           {progressFeedback && (
             <div
               className={`break-anywhere rounded-xl px-3 py-2 text-sm ${
@@ -1572,6 +1604,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <p className="text-xs text-gray-500">雙擊項目可快速編輯。</p>
             </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => toggleSection("appearances")}
+                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                aria-expanded={sectionOpen.appearances}
+              >
+                {sectionOpen.appearances ? "收合" : "展開"}
+              </button>
               <button
                 type="button"
                 onClick={openAppearanceReorder}
@@ -1602,118 +1642,134 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               {appearanceFeedback.message}
             </div>
           )}
-          {hasAppearances ? (
-            <div className="space-y-4">
-              {appearances.map((entry, index) => {
-                const appearanceTransform =
-                  entry.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
-                const appearanceStyle = {
-                  transform: `translate(${appearanceTransform.offsetX}%, ${appearanceTransform.offsetY}%) scale(${appearanceTransform.scale})`,
-                  transformOrigin: "center" as const,
-                };
-                const labels = splitAppearanceLabels(entry.labels ?? "");
-                return (
-                  <div
-                    key={`${entry.nameZh}-${index}`}
-                    className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
-                    onDoubleClick={() => openAppearanceEditor(index)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openAppearanceEditor(index);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    title="雙擊以編輯此登場物件"
-                  >
-                    {entry.thumbUrl ? (
-                      <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={entry.thumbUrl}
-                          alt={`${entry.nameZh} 縮圖`}
-                          className="h-full w-full select-none object-cover"
-                          style={appearanceStyle}
-                          loading="lazy"
-                          draggable={false}
-                        />
+          {sectionOpen.appearances ? (
+            hasAppearances ? (
+              <div className="space-y-4">
+                {appearances.map((entry, index) => {
+                  const appearanceTransform =
+                    entry.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+                  const appearanceStyle = {
+                    transform: `translate(${appearanceTransform.offsetX}%, ${appearanceTransform.offsetY}%) scale(${appearanceTransform.scale})`,
+                    transformOrigin: "center" as const,
+                  };
+                  const labels = splitAppearanceLabels(entry.labels ?? "");
+                  return (
+                    <div
+                      key={`${entry.nameZh}-${index}`}
+                      className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                      onDoubleClick={() => openAppearanceEditor(index)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openAppearanceEditor(index);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="雙擊以編輯此登場物件"
+                    >
+                      {entry.thumbUrl ? (
+                        <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={entry.thumbUrl}
+                            alt={`${entry.nameZh} 縮圖`}
+                            className="h-full w-full select-none object-cover"
+                            style={appearanceStyle}
+                            loading="lazy"
+                            draggable={false}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="flex-1 space-y-2">
+                        <div className="break-anywhere text-base font-medium text-gray-900">
+                          {entry.nameZh}
+                        </div>
+                        {entry.nameOriginal && (
+                          <div className="break-anywhere text-sm text-gray-600">
+                            {entry.nameOriginal}
+                          </div>
+                        )}
+                        {labels.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {labels.map((label, labelIndex) => (
+                              <span
+                                key={`${label}-${labelIndex}`}
+                                className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {entry.note && (
+                          <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
+                            {entry.note}
+                          </div>
+                        )}
                       </div>
-                    ) : null}
-                    <div className="flex-1 space-y-2">
-                      <div className="break-anywhere text-base font-medium text-gray-900">
-                        {entry.nameZh}
-                      </div>
-                      {entry.nameOriginal && (
-                        <div className="break-anywhere text-sm text-gray-600">
-                          {entry.nameOriginal}
-                        </div>
-                      )}
-                      {labels.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {labels.map((label, labelIndex) => (
-                            <span
-                              key={`${label}-${labelIndex}`}
-                              className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {entry.note && (
-                        <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
-                          {entry.note}
-                        </div>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
-              尚未新增登場項目，按右上角加號建立第一筆資料。
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+                尚未新增登場項目，按右上角加號建立第一筆資料。
+              </div>
+            )
+          ) : null}
         </section>
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
-            <p className="text-xs text-gray-500">雙擊內容可快速編輯。</p>
-          </div>
-          {hasInsightNote ? (
-            <div
-              className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner transition hover:bg-blue-50 cursor-text"
-              onDoubleClick={openNoteEditor}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  openNoteEditor();
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              title="雙擊以快速編輯心得 / 筆記"
-            >
-              {insightNote}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-900">心得 / 筆記</h2>
+              <p className="text-xs text-gray-500">雙擊內容可快速編輯。</p>
             </div>
-          ) : (
-            <p
-              className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400 transition hover:bg-blue-50 cursor-pointer"
-              onDoubleClick={openNoteEditor}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  openNoteEditor();
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              title="雙擊以新增心得 / 筆記"
-            >
-              目前尚未填寫心得 / 筆記。
-            </p>
-          )}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => toggleSection("notes")}
+                className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                aria-expanded={sectionOpen.notes}
+              >
+                {sectionOpen.notes ? "收合" : "展開"}
+              </button>
+            </div>
+          </div>
+          {sectionOpen.notes ? (
+            hasInsightNote ? (
+              <div
+                className="whitespace-pre-wrap break-words rounded-xl bg-white px-4 py-3 text-sm text-gray-800 shadow-inner transition hover:bg-blue-50 cursor-text"
+                onDoubleClick={openNoteEditor}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    openNoteEditor();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                title="雙擊以快速編輯心得 / 筆記"
+              >
+                {insightNote}
+              </div>
+            ) : (
+              <p
+                className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400 transition hover:bg-blue-50 cursor-pointer"
+                onDoubleClick={openNoteEditor}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    openNoteEditor();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                title="雙擊以新增心得 / 筆記"
+              >
+                目前尚未填寫心得 / 筆記。
+              </p>
+            )
+          ) : null}
           {noteFeedback && (
             <div
               className={`rounded-xl px-3 py-2 text-sm ${

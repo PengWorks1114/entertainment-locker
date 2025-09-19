@@ -41,6 +41,8 @@ export const PROGRESS_TYPE_VALUES = [
   "percent",
   "page",
   "level",
+  "season",
+  "part",
 ] as const;
 
 export type ProgressType = (typeof PROGRESS_TYPE_VALUES)[number];
@@ -52,6 +54,8 @@ export const PROGRESS_TYPE_OPTIONS: { value: ProgressType; label: string }[] = [
   { value: "percent", label: "百分比" },
   { value: "page", label: "頁數" },
   { value: "level", label: "等級" },
+  { value: "season", label: "季" },
+  { value: "part", label: "部" },
 ];
 
 export type ThumbTransform = {

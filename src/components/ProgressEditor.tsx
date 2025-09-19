@@ -149,7 +149,7 @@ function ProgressFields({ state, onChange, disabled }: ProgressFieldsProps) {
           <input
             type="number"
             inputMode="decimal"
-            step="0.1"
+            step="1"
             value={state.value}
             onChange={(event) => onChange("value", event.target.value)}
             className="h-12 w-full rounded-xl border px-4 text-base"

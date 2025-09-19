@@ -204,7 +204,7 @@ export default function ThumbEditorDialog({
                   height: "100%",
                   transform: `translate(${local.offsetX}%, ${local.offsetY}%) scale(${local.scale})`,
                   transformOrigin: "center",
-                  objectFit: "cover",
+                  objectFit: "contain",
                 }}
                 draggable={false}
                 onLoad={() => {
