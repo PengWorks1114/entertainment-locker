@@ -58,6 +58,7 @@ export default function QuickAddItemPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clipboardCheckedRef = useRef(false);
+  const gestureRetryHandlerRef = useRef<(() => void) | null>(null);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -155,6 +156,18 @@ export default function QuickAddItemPage() {
     }
 
     let canceled = false;
+    const gestureEvents: Array<keyof DocumentEventMap> = ["pointerup", "touchend"];
+
+    function clearGestureRetry() {
+      if (!gestureRetryHandlerRef.current) {
+        return;
+      }
+      const handler = gestureRetryHandlerRef.current;
+      gestureEvents.forEach((eventName) => {
+        document.removeEventListener(eventName, handler as EventListener);
+      });
+      gestureRetryHandlerRef.current = null;
+    }
 
     async function detectClipboard() {
       try {
@@ -190,6 +203,33 @@ export default function QuickAddItemPage() {
           });
         }
       } catch (err) {
+        if (!canceled) {
+          const needsGesture =
+            err instanceof DOMException
+              ? err.name === "NotAllowedError" || err.name === "SecurityError"
+              : typeof err === "object" && err !== null && "message" in err
+                ? String((err as { message?: unknown }).message).toLowerCase().includes("gesture")
+                : false;
+          if (needsGesture) {
+            clipboardCheckedRef.current = false;
+            if (!gestureRetryHandlerRef.current) {
+              const handler = () => {
+                if (canceled) {
+                  return;
+                }
+                clearGestureRetry();
+                triggerDetection();
+              };
+              gestureRetryHandlerRef.current = handler;
+              gestureEvents.forEach((eventName) => {
+                document.addEventListener(eventName, handler as EventListener, {
+                  once: true,
+                });
+              });
+            }
+            return;
+          }
+        }
         console.debug("讀取剪貼簿失敗", err);
       }
     }
@@ -220,6 +260,7 @@ export default function QuickAddItemPage() {
 
     return () => {
       canceled = true;
+      clearGestureRetry();
     };
   }, [pathname]);
 

@@ -1234,7 +1234,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     activeAppearanceEditor?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
 
   return (
-    <main className="min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
+    <main className="item-form-shell min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         <section className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1242,7 +1242,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               <h1 className="item-form-title text-2xl font-semibold text-gray-900">
                 {mode === "edit" ? "編輯物件" : "新增物件"}
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="item-form-subtitle text-sm text-gray-500">
                 可只填寫主要標題後儲存，其他欄位日後再補。
               </p>
               {cabinets.length === 0 && (
