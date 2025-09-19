@@ -140,7 +140,7 @@ export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <Link
           href={detailHref}
-          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
+          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner transition hover:shadow-md"
         >
           {item.thumbUrl ? (
             canUseOptimizedThumb ? (

@@ -51,9 +51,6 @@ export default function ItemThumbCard({
 
   const trimmedTitle = (item.titleZh ?? "").trim();
   const displayTitle = trimmedTitle.length > 0 ? trimmedTitle : "未命名物件";
-  const limitedTitle = displayTitle.slice(0, 10);
-  const firstLine = limitedTitle.slice(0, 5);
-  const secondLine = limitedTitle.slice(5);
 
   const progressDisplay = (() => {
     if (loading) {
@@ -96,58 +93,28 @@ export default function ItemThumbCard({
   );
 
   const titleContent = (
-    <span className="block text-sm font-semibold leading-snug text-gray-900">
-      {firstLine && (
-        <span className="block break-anywhere">
-          {highlightMatches(firstLine, searchTerm)}
-        </span>
-      )}
-      {secondLine && (
-        <span className="block break-anywhere">
-          {highlightMatches(secondLine, searchTerm)}
-        </span>
-      )}
-      {!firstLine && !secondLine && (
-        <span className="block break-anywhere">
-          {highlightMatches(displayTitle, searchTerm)}
-        </span>
-      )}
+    <span
+      className="line-clamp-2 break-anywhere text-sm font-semibold leading-snug text-gray-900"
+      title={displayTitle}
+    >
+      {highlightMatches(displayTitle, searchTerm)}
     </span>
   );
 
   const imageWrapperClass =
     "relative h-24 w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner";
 
-  const imageElement = primaryLink ? (
-    <a
-      href={primaryLink.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`${imageWrapperClass} transition hover:shadow-md`}
-      aria-label={item.titleZh ? `${item.titleZh} 來源連結` : "來源連結"}
-    >
-      {imageNode}
-    </a>
-  ) : (
+  const imageElement = (
     <Link
       href={detailHref}
       className={`${imageWrapperClass} transition hover:shadow-md`}
-      aria-label={item.titleZh ? `${item.titleZh} 詳細頁面` : "詳細頁面"}
+      aria-label={`${displayTitle} 詳細頁面`}
     >
       {imageNode}
     </Link>
   );
 
-  const titleElement = primaryLink ? (
-    <a
-      href={primaryLink.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="transition hover:text-blue-600"
-    >
-      {titleContent}
-    </a>
-  ) : (
+  const titleElement = (
     <Link href={detailHref} className="transition hover:text-blue-600">
       {titleContent}
     </Link>
@@ -160,7 +127,21 @@ export default function ItemThumbCard({
         {titleElement}
         <div className="flex items-baseline gap-1">
           <span className="text-[11px] text-gray-500">主進度</span>
-          <span className="text-sm font-medium text-gray-800">{progressDisplay}</span>
+          {primaryLink ? (
+            <a
+              href={primaryLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-gray-800 transition hover:text-blue-600"
+              aria-label={`${displayTitle} 點我觀看`}
+            >
+              {progressDisplay}
+            </a>
+          ) : (
+            <span className="text-sm font-medium text-gray-800">
+              {progressDisplay}
+            </span>
+          )}
         </div>
       </div>
     </article>

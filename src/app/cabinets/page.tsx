@@ -372,7 +372,7 @@ export default function CabinetsPage() {
                       <div className="flex gap-4 sm:flex-1">
                         <Link
                           href={`/cabinet/${encodedId}`}
-                          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
+                          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner transition hover:shadow-md"
                         >
                           {row.thumbUrl ? (
                             canUseOptimizedThumb ? (

@@ -58,7 +58,7 @@ export default function ItemListRow({ item, searchTerm = "" }: ItemListRowProps)
         <div className="flex flex-1 gap-4">
           <Link
             href={detailHref}
-            className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-inner"
+            className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-inner transition hover:shadow-md"
           >
             {item.thumbUrl ? (
               canUseOptimizedThumb ? (
