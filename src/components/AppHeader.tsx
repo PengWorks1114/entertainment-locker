@@ -99,6 +99,31 @@ export default function AppHeader() {
           Entertainment Locker
         </Link>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            {user ? (
+              <>
+                {user.email && (
+                  <span className="hidden truncate max-w-[12rem] sm:inline">
+                    {user.email}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className={actionButtonClass}
+                >
+                  {signingOut ? "登出中…" : "登出"}
+                </button>
+              </>
+            ) : authReady ? (
+              <Link href="/login" className={actionButtonClass}>
+                登入 / 註冊
+              </Link>
+            ) : (
+              <span>…</span>
+            )}
+          </div>
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -144,31 +169,6 @@ export default function AppHeader() {
                 </ul>
               </nav>
             ) : null}
-          </div>
-          <div className="flex items-center gap-3 text-sm text-gray-600">
-          {user ? (
-            <>
-              {user.email && (
-                <span className="hidden truncate max-w-[12rem] sm:inline">
-                  {user.email}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={handleSignOut}
-                disabled={signingOut}
-                className={actionButtonClass}
-              >
-                {signingOut ? "登出中…" : "登出"}
-              </button>
-            </>
-          ) : authReady ? (
-            <Link href="/login" className={actionButtonClass}>
-              登入 / 註冊
-            </Link>
-          ) : (
-            <span>…</span>
-          )}
           </div>
         </div>
       </div>

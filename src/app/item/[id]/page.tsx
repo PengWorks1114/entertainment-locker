@@ -1087,9 +1087,26 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-        <header className="flex flex-col gap-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-          <div className="space-y-3">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 sm:gap-8">
+        {item.cabinetId && !cabinetMissing ? (
+          <div className="flex justify-end">
+            <Link
+              href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
+              className={backButtonClass}
+            >
+              上一頁
+            </Link>
+          </div>
+        ) : null}
+        <header className="relative flex flex-col gap-6 rounded-3xl border border-gray-100 bg-white/90 p-6 shadow-sm sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <FavoriteToggleButton
+            isFavorite={item.isFavorite}
+            onToggle={handleFavoriteToggle}
+            disabled={favoritePending}
+            ariaLabel={favoriteLabel}
+            className="absolute right-6 top-6"
+          />
+          <div className="space-y-3 pr-4 sm:pr-16">
             <h1 className="text-3xl font-semibold text-gray-900">{item.titleZh}</h1>
             {item.titleAlt && <p className="text-base text-gray-500">{item.titleAlt}</p>}
             <div className="flex flex-wrap gap-3 text-sm text-gray-600">
@@ -1113,15 +1130,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
           </div>
-          <div className="flex w-full flex-col gap-3 text-sm sm:w-auto sm:min-w-[16rem] sm:flex-none sm:items-end">
-            <div className="flex justify-end">
-              <FavoriteToggleButton
-                isFavorite={item.isFavorite}
-                onToggle={handleFavoriteToggle}
-                disabled={favoritePending}
-                ariaLabel={favoriteLabel}
-              />
-            </div>
+          <div className="flex w-full flex-col gap-3 pt-12 text-sm sm:w-auto sm:min-w-[16rem] sm:flex-none sm:items-end sm:pt-0">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               {primaryLink && (
                 <a
@@ -1132,14 +1141,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 >
                   點我觀看
                 </a>
-              )}
-              {item.cabinetId && !cabinetMissing && (
-                <Link
-                  href={`/cabinet/${encodeURIComponent(item.cabinetId)}`}
-                  className={`${backButtonClass} w-full sm:w-auto`}
-                >
-                  上一頁
-                </Link>
               )}
               <Link
                 href={`/item/${encodeURIComponent(item.id)}/edit`}

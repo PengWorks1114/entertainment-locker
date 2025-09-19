@@ -204,9 +204,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   );
   const [links, setLinks] = useState<LinkState[]>([]);
   const [appearances, setAppearances] = useState<AppearanceState[]>([]);
+  const [collapsedAppearances, setCollapsedAppearances] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
-  const [pendingRedirectId, setPendingRedirectId] = useState<string | null>(null);
+  const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(itemId));
   const [saving, setSaving] = useState(false);
@@ -556,17 +557,52 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     );
   }, [availableTagSuggestions, tagQuery]);
 
+  useEffect(() => {
+    setCollapsedAppearances((prev) => {
+      const next: Record<string, boolean> = {};
+      let changed = false;
+      const ids = new Set(appearances.map((item) => item.id));
+      for (const appearance of appearances) {
+        if (Object.prototype.hasOwnProperty.call(prev, appearance.id)) {
+          next[appearance.id] = prev[appearance.id];
+        } else {
+          next[appearance.id] = false;
+          changed = true;
+        }
+      }
+      if (!changed) {
+        for (const key of Object.keys(prev)) {
+          if (!ids.has(key)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (!changed && Object.keys(prev).length !== Object.keys(next).length) {
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [appearances]);
+
+  const toggleAppearanceCollapsed = useCallback((id: string) => {
+    setCollapsedAppearances((prev) => ({
+      ...prev,
+      [id]: !(prev[id] ?? false),
+    }));
+  }, []);
+
   const handleMessageDialogClose = useCallback(() => {
     setMessageDialogOpen(false);
     setMessage("");
   }, []);
 
   useEffect(() => {
-    if (!messageDialogOpen && pendingRedirectId) {
-      router.replace(`/item/${pendingRedirectId}/edit`);
-      setPendingRedirectId(null);
+    if (!messageDialogOpen && pendingRedirect) {
+      router.replace(pendingRedirect);
+      setPendingRedirect(null);
     }
-  }, [messageDialogOpen, pendingRedirectId, router]);
+  }, [messageDialogOpen, pendingRedirect, router]);
 
   useEffect(() => {
     if (!messageDialogOpen) {
@@ -619,7 +655,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setError("");
     setMessage("");
     setMessageDialogOpen(false);
-    setPendingRedirectId(null);
+    setPendingRedirect(null);
 
     const allowedTags = new Set(cabinetTags);
     const tags = Array.from(
@@ -765,14 +801,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       }
       if (mode === "edit" && itemId) {
         await updateDoc(doc(db, "item", itemId), docData);
-        setMessage("已儲存");
+        setMessage("已儲存，按「確定」後返回詳細頁面");
+        setPendingRedirect(`/item/${itemId}`);
         setMessageDialogOpen(true);
       } else {
         const docRef = await addDoc(collection(db, "item"), {
           ...docData,
           createdAt: serverTimestamp(),
         });
-        setPendingRedirectId(docRef.id);
+        setPendingRedirect(`/item/${docRef.id}/edit`);
         setMessage("已建立，按「確定」後前往編輯頁面");
         setMessageDialogOpen(true);
       }
@@ -1471,6 +1508,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 <div className="space-y-3">
                   {appearances.map((appearance, index) => {
                     const isDragging = draggingAppearanceId === appearance.id;
+                    const isCollapsed = collapsedAppearances[appearance.id] ?? false;
+                    const displayName = appearance.nameZh.trim()
+                      ? appearance.nameZh.trim()
+                      : "未填寫";
                     return (
                       <div
                         key={appearance.id}
@@ -1483,14 +1524,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                           }
                         }}
                         onDragEnd={handleAppearanceDragEnd}
-                        className={`space-y-3 rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
+                        className={`rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
                           isDragging
                             ? "border-blue-300 bg-blue-50/60"
                             : "border-gray-200 hover:border-blue-200"
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
                             <div
                               className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm"
                               aria-hidden
@@ -1498,78 +1539,94 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                               <span className="text-base leading-none">≡</span>
                             </div>
                             <span>項目 {index + 1}</span>
+                            <span className="text-sm text-gray-700">
+                              中文名稱：{displayName}
+                            </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveAppearance(index)}
-                            className="h-9 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
-                          >
-                            移除
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleAppearanceCollapsed(appearance.id)}
+                              className="h-9 rounded-lg border px-3 text-sm text-gray-600 transition hover:border-gray-300"
+                            >
+                              {isCollapsed ? "展開" : "收合"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAppearance(index)}
+                              className="h-9 rounded-lg border px-3 text-sm text-red-600 transition hover:border-red-200"
+                            >
+                              移除
+                            </button>
+                          </div>
                         </div>
-                        <label className="space-y-1">
-                          <span className="text-sm text-gray-600">中文名稱 *</span>
-                          <input
-                            value={appearance.nameZh}
-                            onChange={(e) =>
-                              handleAppearanceChange(
-                                index,
-                                "nameZh",
-                                e.target.value
-                              )
-                            }
-                            className={inputClass}
-                            placeholder="例如：主角名稱"
-                          />
-                        </label>
-                        <label className="space-y-1">
-                          <span className="text-sm text-gray-600">原文名稱</span>
-                          <input
-                            value={appearance.nameOriginal}
-                            onChange={(e) =>
-                              handleAppearanceChange(
-                                index,
-                                "nameOriginal",
-                                e.target.value
-                              )
-                            }
-                            className={inputClass}
-                            placeholder="例如：Character Name"
-                          />
-                        </label>
-                        <label className="space-y-1">
-                          <span className="text-sm text-gray-600">標籤（以逗號分隔）</span>
-                          <input
-                            value={appearance.labels}
-                            onChange={(e) =>
-                              handleAppearanceChange(
-                                index,
-                                "labels",
-                                e.target.value
-                              )
-                            }
-                            className={inputClass}
-                            placeholder="例如：夥伴, 雙劍使"
-                          />
-                        </label>
-                        <ThumbLinkField
-                          value={appearance.thumbUrl}
-                          onChange={(value) =>
-                            handleAppearanceChange(index, "thumbUrl", value)
-                          }
-                          onEdit={() => setAppearanceEditorIndex(index)}
-                        />
-                        <label className="space-y-1">
-                          <span className="text-sm text-gray-600">備註</span>
-                          <textarea
-                            value={appearance.note}
-                            onChange={(e) =>
-                              handleAppearanceChange(index, "note", e.target.value)
-                            }
-                            className="min-h-[100px] w-full rounded-xl border px-4 py-3 text-base"
-                            placeholder="補充相關背景或描述"
-                          />
-                        </label>
+                        {!isCollapsed ? (
+                          <div className="mt-3 space-y-3">
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">中文名稱 *</span>
+                              <input
+                                value={appearance.nameZh}
+                                onChange={(e) =>
+                                  handleAppearanceChange(
+                                    index,
+                                    "nameZh",
+                                    e.target.value
+                                  )
+                                }
+                                className={inputClass}
+                                placeholder="例如：主角名稱"
+                              />
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">原文名稱</span>
+                              <input
+                                value={appearance.nameOriginal}
+                                onChange={(e) =>
+                                  handleAppearanceChange(
+                                    index,
+                                    "nameOriginal",
+                                    e.target.value
+                                  )
+                                }
+                                className={inputClass}
+                                placeholder="例如：Character Name"
+                              />
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">標籤（以逗號分隔）</span>
+                              <input
+                                value={appearance.labels}
+                                onChange={(e) =>
+                                  handleAppearanceChange(
+                                    index,
+                                    "labels",
+                                    e.target.value
+                                  )
+                                }
+                                className={inputClass}
+                                placeholder="例如：夥伴, 雙劍使"
+                              />
+                            </label>
+                            <ThumbLinkField
+                              value={appearance.thumbUrl}
+                              onChange={(value) =>
+                                handleAppearanceChange(index, "thumbUrl", value)
+                              }
+                              onEdit={() => setAppearanceEditorIndex(index)}
+                            />
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">備註</span>
+                              <textarea
+                                value={appearance.note}
+                                onChange={(e) =>
+                                  handleAppearanceChange(index, "note", e.target.value)
+                                }
+                                className="min-h-[100px] w-full rounded-xl border px-4 py-3 text-base"
+                                placeholder="補充相關背景或描述"
+                              />
+                            </label>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
