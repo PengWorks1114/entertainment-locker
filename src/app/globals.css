@@ -29,6 +29,11 @@ body {
   background-image: linear-gradient(135deg, #f8fafc, #ffffff 45%, #e2e8f0);
 }
 
+.login-page-shell {
+  background-color: #f8fafc;
+  background-image: linear-gradient(135deg, #f8fafc, #ffffff 45%, #e2e8f0);
+}
+
 :root[data-theme="dark"] {
   --background: #0b1120;
   --foreground: #e2e8f0;
@@ -158,6 +163,11 @@ body {
 :root[data-theme="dark"] .item-form-shell {
   background-color: #020617 !important;
   background-image: linear-gradient(135deg, #020617, #0f172a 45%, #1e293b) !important;
+}
+
+:root[data-theme="dark"] .login-page-shell {
+  background-color: #020617 !important;
+  background-image: linear-gradient(135deg, #020617, #0f172a 45%, #1f2937) !important;
 }
 
 :root[data-theme="dark"] .item-form-title {

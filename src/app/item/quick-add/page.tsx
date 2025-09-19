@@ -139,9 +139,14 @@ export default function QuickAddItemPage() {
 
   useEffect(() => {
     clipboardCheckedRef.current = false;
-  }, [pathname]);
+  }, [pathname, user]);
 
   useEffect(() => {
+    if (!user) {
+      clipboardCheckedRef.current = false;
+      return;
+    }
+
     if (clipboardCheckedRef.current) {
       return;
     }
@@ -262,7 +267,7 @@ export default function QuickAddItemPage() {
       canceled = true;
       clearGestureRetry();
     };
-  }, [pathname]);
+  }, [pathname, user]);
 
   const hasCabinet = cabinets.length > 0;
 

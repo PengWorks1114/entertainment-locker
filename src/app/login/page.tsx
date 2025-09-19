@@ -177,7 +177,7 @@ export default function LoginPage() {
   const inactiveToggleClass = `${toggleButtonBase} text-gray-600 hover:text-gray-900`;
 
   return (
-    <main className="min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-12">
+    <main className="login-page-shell min-h-[100dvh] px-4 py-12">
       <div className="mx-auto w-full max-w-md space-y-6">
         <div className="rounded-3xl border border-gray-100 bg-white/90 p-8 shadow-xl backdrop-blur">
           <header className="mb-6 text-center">
