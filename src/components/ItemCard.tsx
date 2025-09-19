@@ -15,6 +15,7 @@ import {
   type ItemRecord,
 } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
+import { highlightMatches } from "@/lib/highlight";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
@@ -26,6 +27,7 @@ const updateFrequencyLabelMap = new Map(
 
 type ItemCardProps = {
   item: ItemRecord;
+  searchTerm?: string;
 };
 
 function formatTimestamp(timestamp?: Timestamp | null): string {
@@ -48,7 +50,7 @@ function formatDateOnly(timestamp?: Timestamp | null): string {
     .padStart(2, "0")}`;
 }
 
-export default function ItemCard({ item }: ItemCardProps) {
+export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
   const { primary, summary, updating, loading, error, success, increment } =
     usePrimaryProgress(item);
   const {
@@ -105,11 +107,11 @@ export default function ItemCard({ item }: ItemCardProps) {
             className="line-clamp-2 break-anywhere text-2xl font-semibold leading-tight text-gray-900"
             title={item.titleZh}
           >
-            {item.titleZh}
+            {highlightMatches(item.titleZh, searchTerm)}
           </h3>
           {item.titleAlt && (
             <p className="line-clamp-2 break-anywhere text-sm text-gray-500" title={item.titleAlt}>
-              {item.titleAlt}
+              {highlightMatches(item.titleAlt, searchTerm)}
             </p>
           )}
         </div>
@@ -223,12 +225,12 @@ export default function ItemCard({ item }: ItemCardProps) {
               {ratingDisplay}
             </span>
           </div>
-          <div className="space-y-1">
-            <div className="text-xs text-gray-500">作者 / 製作</div>
-            <div className="line-clamp-2 break-anywhere font-medium text-gray-900" title={authorDisplay}>
-              {authorDisplay}
-            </div>
+        <div className="space-y-1">
+          <div className="text-xs text-gray-500">作者 / 製作</div>
+          <div className="line-clamp-2 break-anywhere font-medium text-gray-900" title={authorDisplay}>
+            {highlightMatches(authorDisplay, searchTerm)}
           </div>
+        </div>
         </div>
       </div>
 

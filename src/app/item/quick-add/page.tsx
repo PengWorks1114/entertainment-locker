@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -57,6 +57,7 @@ export default function QuickAddItemPage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const clipboardCheckedRef = useRef(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -133,6 +134,68 @@ export default function QuickAddItemPage() {
       setForm((prev) => ({ ...prev, cabinetId: cabinets[0].id }));
     }
   }, [cabinets, form.cabinetId]);
+
+  useEffect(() => {
+    if (clipboardCheckedRef.current) {
+      return;
+    }
+    clipboardCheckedRef.current = true;
+
+    if (typeof window === "undefined" || typeof navigator === "undefined") {
+      return;
+    }
+
+    const clipboard = navigator.clipboard;
+    if (!clipboard || typeof clipboard.readText !== "function") {
+      return;
+    }
+
+    let canceled = false;
+
+    async function detectClipboard() {
+      try {
+        const text = await clipboard.readText();
+        if (canceled) {
+          return;
+        }
+        const trimmed = text.trim();
+        if (!trimmed) {
+          return;
+        }
+        if (isValidHttpUrl(trimmed)) {
+          const confirmed = window.confirm("是否將剪貼簿網址填入來源連結 ?");
+          if (!confirmed) {
+            return;
+          }
+          setForm((prev) => {
+            if (prev.sourceUrl.trim().length > 0) {
+              return prev;
+            }
+            return { ...prev, sourceUrl: trimmed };
+          });
+        } else {
+          const confirmed = window.confirm("是否將剪貼簿文字填入主要標題 ?");
+          if (!confirmed) {
+            return;
+          }
+          setForm((prev) => {
+            if (prev.titleZh.trim().length > 0) {
+              return prev;
+            }
+            return { ...prev, titleZh: trimmed };
+          });
+        }
+      } catch (err) {
+        console.debug("讀取剪貼簿失敗", err);
+      }
+    }
+
+    detectClipboard();
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const hasCabinet = cabinets.length > 0;
 

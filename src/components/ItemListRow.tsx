@@ -10,12 +10,14 @@ import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
 import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import type { ItemRecord } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
+import { highlightMatches } from "@/lib/highlight";
 
 type ItemListRowProps = {
   item: ItemRecord;
+  searchTerm?: string;
 };
 
-export default function ItemListRow({ item }: ItemListRowProps) {
+export default function ItemListRow({ item, searchTerm = "" }: ItemListRowProps) {
   const { listDisplay, increment, updating, loading, error, success } =
     usePrimaryProgress(item);
   const {
@@ -88,21 +90,21 @@ export default function ItemListRow({ item }: ItemListRowProps) {
           </Link>
 
           <div className="min-w-0 flex-1 space-y-1">
-            <Link
-              href={detailHref}
-              className="block text-base font-semibold text-gray-900 transition hover:text-blue-600 line-clamp-2 break-anywhere"
-              title={item.titleZh}
+          <Link
+            href={detailHref}
+            className="block text-base font-semibold text-gray-900 transition hover:text-blue-600 line-clamp-2 break-anywhere"
+            title={item.titleZh}
+          >
+            {highlightMatches(item.titleZh, searchTerm)}
+          </Link>
+          {item.titleAlt && (
+            <div
+              className="line-clamp-2 break-anywhere text-xs text-gray-500"
+              title={item.titleAlt}
             >
-              {item.titleZh}
-            </Link>
-            {item.titleAlt && (
-              <div
-                className="line-clamp-2 break-anywhere text-xs text-gray-500"
-                title={item.titleAlt}
-              >
-                {item.titleAlt}
-              </div>
-            )}
+              {highlightMatches(item.titleAlt, searchTerm)}
+            </div>
+          )}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1 text-xs text-gray-600">
                 {tags.map((tag) => {

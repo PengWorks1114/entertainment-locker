@@ -515,6 +515,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return sorted;
   }, [items, filters]);
 
+  const highlightQuery = filters.search.trim();
   const pageSize = filters.pageSize || PAGE_SIZE_OPTIONS[0];
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const startIndex = (currentPage - 1) * pageSize;
@@ -994,13 +995,13 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           ) : viewMode === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visibleItems.map((item) => (
-                <ItemCard key={item.id} item={item} />
+                <ItemCard key={item.id} item={item} searchTerm={highlightQuery} />
               ))}
             </div>
           ) : (
             <div className="space-y-3">
               {visibleItems.map((item) => (
-                <ItemListRow key={item.id} item={item} />
+                <ItemListRow key={item.id} item={item} searchTerm={highlightQuery} />
               ))}
             </div>
           )}
