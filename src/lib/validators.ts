@@ -138,9 +138,9 @@ function validateUrl(value: string, message: string): string {
 }
 
 export function parseItemForm(input: ItemFormInput): ItemFormData {
-  const titleZh = assertString(input.titleZh, "中文標題必填").trim();
+  const titleZh = assertString(input.titleZh, "主要標題必填").trim();
   if (!titleZh) {
-    throw new ValidationError("中文標題必填");
+    throw new ValidationError("主要標題必填");
   }
 
   const cabinetId = assertString(input.cabinetId, "請選擇櫃子").trim();

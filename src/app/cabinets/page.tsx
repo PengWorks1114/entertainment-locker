@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -18,6 +19,12 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  DEFAULT_THUMB_TRANSFORM,
+  isOptimizedImageUrl,
+  normalizeThumbTransform,
+} from "@/lib/image-utils";
+import type { ThumbTransform } from "@/lib/types";
 import { buttonClass } from "@/lib/ui";
 
 type Cabinet = {
@@ -26,6 +33,8 @@ type Cabinet = {
   order: number;
   createdMs: number;
   note: string | null;
+  thumbUrl: string | null;
+  thumbTransform: ThumbTransform | null;
 };
 
 type Feedback = {
@@ -91,6 +100,13 @@ export default function CabinetsPage() {
               createdMs,
               order: orderValue,
               note: noteValue,
+              thumbUrl:
+                typeof data?.thumbUrl === "string" && data.thumbUrl.trim().length > 0
+                  ? data.thumbUrl.trim()
+                  : null,
+              thumbTransform: data?.thumbTransform
+                ? normalizeThumbTransform(data.thumbTransform)
+                : null,
             } satisfies Cabinet;
           })
           .sort((a, b) => {
@@ -138,6 +154,8 @@ export default function CabinetsPage() {
         tags: [],
         order: highestOrder + 1,
         note: null,
+        thumbUrl: null,
+        thumbTransform: null,
       });
       setName("");
       setFeedback({ type: "success", message: "已新增櫃子" });
@@ -338,24 +356,65 @@ export default function CabinetsPage() {
               {list.map((row) => {
                 const displayName = row.name || "未命名櫃子";
                 const encodedId = encodeURIComponent(row.id);
+                const thumbTransform =
+                  row.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+                const thumbStyle = {
+                  transform: `translate(${thumbTransform.offsetX}%, ${thumbTransform.offsetY}%) scale(${thumbTransform.scale})`,
+                  transformOrigin: "center",
+                } as const;
+                const canUseOptimizedThumb = isOptimizedImageUrl(row.thumbUrl);
                 return (
                   <li
                     key={row.id}
                     className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-                      <div className="space-y-1">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+                      <div className="flex gap-4 sm:flex-1">
                         <Link
                           href={`/cabinet/${encodedId}`}
-                          className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                          className="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner"
                         >
-                          {displayName}
+                          {row.thumbUrl ? (
+                            canUseOptimizedThumb ? (
+                              <Image
+                                src={row.thumbUrl}
+                                alt={`${displayName} 縮圖`}
+                                fill
+                                sizes="80px"
+                                className="object-cover"
+                                style={thumbStyle}
+                                draggable={false}
+                              />
+                            ) : (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={row.thumbUrl}
+                                alt={`${displayName} 縮圖`}
+                                className="h-full w-full select-none object-cover"
+                                style={thumbStyle}
+                                loading="lazy"
+                                draggable={false}
+                              />
+                            )
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+                              無縮圖
+                            </div>
+                          )}
                         </Link>
-                        {row.note && (
-                          <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
-                        )}
+                        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                          <Link
+                            href={`/cabinet/${encodedId}`}
+                            className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                          >
+                            {displayName}
+                          </Link>
+                          {row.note && (
+                            <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
+                      <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
                         <Link
                           href={`/cabinet/${encodedId}`}
                           className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}

@@ -160,7 +160,7 @@ export default function QuickAddItemPage() {
 
     const titleZh = form.titleZh.trim();
     if (!titleZh) {
-      setError("中文標題必填");
+      setError("主要標題必填");
       return;
     }
 
@@ -356,7 +356,7 @@ export default function QuickAddItemPage() {
 
             <div className="space-y-2">
               <label htmlFor="titleZh" className="text-sm font-medium text-gray-700">
-                中文標題
+                主要標題
               </label>
               <input
                 id="titleZh"
@@ -364,7 +364,7 @@ export default function QuickAddItemPage() {
                 className={inputClass}
                 value={form.titleZh}
                 onChange={(event) => handleInputChange("titleZh", event.target.value)}
-                placeholder="請輸入中文標題"
+                placeholder="請輸入主要標題"
                 required
               />
             </div>

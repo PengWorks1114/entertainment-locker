@@ -987,7 +987,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     const trimmedTitle = titleDraft.titleZh.trim();
     if (!trimmedTitle) {
-      setTitleError("中文標題為必填欄位");
+      setTitleError("主要標題為必填欄位");
       return;
     }
     const trimmedAlt = titleDraft.titleAlt.trim();
@@ -1969,7 +1969,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             >
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <div className="text-xs text-gray-500">中文標題 *</div>
+                  <div className="text-xs text-gray-500">主要標題 *</div>
                   <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
                     {item.titleZh}
                   </h1>
@@ -2566,7 +2566,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             </div>
             <div className="space-y-4">
               <label className="block space-y-1">
-                <span className="text-base">中文標題 *</span>
+                <span className="text-base">主要標題 *</span>
                 <input
                   ref={titleZhInputRef}
                   value={titleDraft.titleZh}

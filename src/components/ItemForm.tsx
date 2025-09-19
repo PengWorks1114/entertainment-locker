@@ -1243,7 +1243,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 {mode === "edit" ? "編輯物件" : "新增物件"}
               </h1>
               <p className="text-sm text-gray-500">
-                可只填寫中文標題後儲存，其他欄位日後再補。
+                可只填寫主要標題後儲存，其他欄位日後再補。
               </p>
               {cabinets.length === 0 && (
                 <p className="text-sm text-red-600">
@@ -1303,7 +1303,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="text-base">中文標題 *</label>
+                <label className="text-base">主要標題 *</label>
                 <input
                   value={form.titleZh}
                   onChange={(e) =>

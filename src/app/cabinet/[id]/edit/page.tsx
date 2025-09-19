@@ -8,6 +8,15 @@ import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { deleteCabinetWithItems } from "@/lib/firestore-utils";
+import ThumbLinkField from "@/components/ThumbLinkField";
+import ThumbEditorDialog from "@/components/ThumbEditorDialog";
+import {
+  clampThumbTransform,
+  DEFAULT_THUMB_TRANSFORM,
+  normalizeThumbTransform,
+  prepareThumbTransform,
+} from "@/lib/image-utils";
+import type { ThumbTransform } from "@/lib/types";
 
 type CabinetEditPageProps = {
   params: Promise<{ id: string }>;
@@ -23,10 +32,15 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  const [thumbUrl, setThumbUrl] = useState("");
+  const [thumbTransform, setThumbTransform] = useState<ThumbTransform>(
+    () => ({ ...DEFAULT_THUMB_TRANSFORM })
+  );
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [canEdit, setCanEdit] = useState(false);
+  const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -49,6 +63,9 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setCanEdit(false);
       setName("");
       setNote("");
+      setThumbUrl("");
+      setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
+      setThumbEditorOpen(false);
       setMessage(null);
       setDeleteError(null);
       return;
@@ -74,6 +91,9 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setCanEdit(false);
           setLoading(false);
           setNote("");
+          setThumbUrl("");
+          setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
+          setThumbEditorOpen(false);
           return;
         }
         const data = snap.data();
@@ -82,6 +102,9 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setCanEdit(false);
           setLoading(false);
           setNote("");
+          setThumbUrl("");
+          setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
+          setThumbEditorOpen(false);
           return;
         }
         const nameValue =
@@ -94,6 +117,17 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             ? data.note.trim()
             : "";
         setNote(noteValue);
+        const thumbUrlValue =
+          typeof data?.thumbUrl === "string" && data.thumbUrl.trim().length > 0
+            ? data.thumbUrl.trim()
+            : "";
+        setThumbUrl(thumbUrlValue);
+        setThumbTransform(
+          thumbUrlValue && data?.thumbTransform
+            ? normalizeThumbTransform(data.thumbTransform)
+            : { ...DEFAULT_THUMB_TRANSFORM }
+        );
+        setThumbEditorOpen(false);
         setCanEdit(true);
         setLoading(false);
       })
@@ -103,6 +137,9 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setCanEdit(false);
         setLoading(false);
         setNote("");
+        setThumbUrl("");
+        setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
+        setThumbEditorOpen(false);
       });
     return () => {
       active = false;
@@ -122,6 +159,18 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       return;
     }
     const trimmedNote = note.trim();
+    const trimmedThumbUrl = thumbUrl.trim();
+    if (trimmedThumbUrl) {
+      try {
+        const parsed = new URL(trimmedThumbUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("invalid");
+        }
+      } catch {
+        setMessage("請輸入有效的縮圖連結");
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -132,13 +181,27 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         return;
       }
       const cabinetRef = doc(db, "cabinet", cabinetId);
+      const preparedThumbTransform = trimmedThumbUrl
+        ? prepareThumbTransform(thumbTransform)
+        : null;
       await updateDoc(cabinetRef, {
         name: trimmed,
         note: trimmedNote ? trimmedNote : null,
+        thumbUrl: trimmedThumbUrl || null,
+        thumbTransform: trimmedThumbUrl ? preparedThumbTransform : null,
         updatedAt: serverTimestamp(),
       });
       setName(trimmed);
       setNote(trimmedNote);
+      setThumbUrl(trimmedThumbUrl);
+      setThumbTransform(
+        trimmedThumbUrl
+          ? clampThumbTransform(
+              preparedThumbTransform ?? { ...DEFAULT_THUMB_TRANSFORM }
+            )
+          : { ...DEFAULT_THUMB_TRANSFORM }
+      );
+      setThumbEditorOpen(false);
       setMessage("已更新櫃子資料");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
@@ -270,6 +333,28 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 className={inputClass}
               />
             </label>
+            <ThumbLinkField
+              value={thumbUrl}
+              onChange={(value) => {
+                setThumbUrl(value);
+                if (!value.trim()) {
+                  setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
+                }
+              }}
+              disabled={saving}
+              onEdit={() => setThumbEditorOpen(true)}
+            />
+            <ThumbEditorDialog
+              open={thumbEditorOpen}
+              imageUrl={thumbUrl.trim()}
+              value={thumbTransform}
+              onClose={() => setThumbEditorOpen(false)}
+              shape="portrait"
+              onApply={(next) => {
+                setThumbTransform(clampThumbTransform(next));
+                setThumbEditorOpen(false);
+              }}
+            />
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
               <textarea
