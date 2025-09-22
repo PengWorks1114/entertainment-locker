@@ -243,6 +243,25 @@ export default function CabinetsPage() {
     });
   }
 
+  function moveSelectedToEdge(position: "start" | "end") {
+    if (selectedIndex < 0 || reorderList.length === 0) {
+      return;
+    }
+    const targetIndex = position === "start" ? 0 : reorderList.length - 1;
+    if (selectedIndex === targetIndex) {
+      return;
+    }
+    setReorderList((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      const next = [...prev];
+      const [item] = next.splice(selectedIndex, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  }
+
   async function saveReorder() {
     if (!user) {
       setReorderError("請先登入");
@@ -538,7 +557,7 @@ export default function CabinetsPage() {
               )}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => moveSelected(-1)}
@@ -556,6 +575,24 @@ export default function CabinetsPage() {
                   className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   下移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSelectedToEdge("start")}
+                  disabled={selectedIndex <= 0}
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最上
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSelectedToEdge("end")}
+                  disabled={
+                    selectedIndex === -1 || selectedIndex === reorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最下
                 </button>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">

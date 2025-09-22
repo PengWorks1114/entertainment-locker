@@ -367,8 +367,8 @@ export default function CabinetTagQuickEditor({
               {message}
             </div>
           ) : null}
-          <div className="flex-1 overflow-hidden min-h-0">
-            <div className="h-full overflow-y-auto rounded-2xl border border-gray-100 bg-white/80">
+          <div className="flex-1 min-h-0">
+            <div className="h-full overflow-y-auto rounded-2xl border border-gray-100 bg-white/80 pr-1">
               {filteredTags.length === 0 ? (
                 <p className="px-4 py-6 text-center text-sm text-gray-500">
                   目前沒有符合條件的標籤。

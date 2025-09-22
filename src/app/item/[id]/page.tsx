@@ -1380,6 +1380,29 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     [noteReorderSaving, noteReorderSelectedIndex]
   );
 
+  const moveNoteReorderSelectionToEdge = useCallback(
+    (edge: "start" | "end") => {
+      if (noteReorderSaving || noteReorderSelectedIndex === -1) {
+        return;
+      }
+      setNoteReorderList((prev) => {
+        if (prev.length === 0) {
+          return prev;
+        }
+        const targetIndex = edge === "start" ? 0 : prev.length - 1;
+        if (noteReorderSelectedIndex === targetIndex) {
+          return prev;
+        }
+        const next = [...prev];
+        const [moved] = next.splice(noteReorderSelectedIndex, 1);
+        next.splice(targetIndex, 0, moved);
+        setNoteReorderSelectedIndex(targetIndex);
+        return next;
+      });
+    },
+    [noteReorderSaving, noteReorderSelectedIndex]
+  );
+
   async function handleNoteReorderSave() {
     if (!item) {
       setNoteReorderError("找不到物件資料");
@@ -1474,6 +1497,29 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         const [moved] = next.splice(appearanceReorderSelectedIndex, 1);
         next.splice(newIndex, 0, moved);
         setAppearanceReorderSelectedIndex(newIndex);
+        return next;
+      });
+    },
+    [appearanceReorderSaving, appearanceReorderSelectedIndex]
+  );
+
+  const moveAppearanceReorderSelectionToEdge = useCallback(
+    (edge: "start" | "end") => {
+      if (appearanceReorderSaving || appearanceReorderSelectedIndex === -1) {
+        return;
+      }
+      setAppearanceReorderList((prev) => {
+        if (prev.length === 0) {
+          return prev;
+        }
+        const targetIndex = edge === "start" ? 0 : prev.length - 1;
+        if (appearanceReorderSelectedIndex === targetIndex) {
+          return prev;
+        }
+        const next = [...prev];
+        const [moved] = next.splice(appearanceReorderSelectedIndex, 1);
+        next.splice(targetIndex, 0, moved);
+        setAppearanceReorderSelectedIndex(targetIndex);
         return next;
       });
     },
@@ -3079,7 +3125,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => moveAppearanceReorderSelection(-1)}
@@ -3101,6 +3147,28 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   下移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveAppearanceReorderSelectionToEdge("start")}
+                  disabled={
+                    appearanceReorderSaving || appearanceReorderSelectedIndex <= 0
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最上
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveAppearanceReorderSelectionToEdge("end")}
+                  disabled={
+                    appearanceReorderSaving ||
+                    appearanceReorderSelectedIndex === -1 ||
+                    appearanceReorderSelectedIndex === appearanceReorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最下
                 </button>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -3182,7 +3250,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               )}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => moveNoteReorderSelection(-1)}
@@ -3202,6 +3270,26 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   下移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveNoteReorderSelectionToEdge("start")}
+                  disabled={noteReorderSaving || noteReorderSelectedIndex <= 0}
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最上
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveNoteReorderSelectionToEdge("end")}
+                  disabled={
+                    noteReorderSaving ||
+                    noteReorderSelectedIndex === -1 ||
+                    noteReorderSelectedIndex === noteReorderList.length - 1
+                  }
+                  className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  移到最下
                 </button>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">

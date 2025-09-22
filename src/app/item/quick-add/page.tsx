@@ -282,7 +282,7 @@ export default function QuickAddItemPage() {
     }
 
     const progressValueInput = form.progressValue.trim();
-    let parsedProgressValue: number | null = null;
+    let parsedProgressValue = 1;
     if (progressValueInput) {
       const parsedValue = Number(progressValueInput);
       if (!Number.isFinite(parsedValue) || parsedValue < 0) {
@@ -341,18 +341,16 @@ export default function QuickAddItemPage() {
         updatedAt: serverTimestamp(),
       });
 
-      if (parsedProgressValue !== null) {
-        await addDoc(collection(db, "item", docRef.id, "progress"), {
-          platform: QUICK_ADD_PROGRESS_PLATFORM,
-          type: QUICK_ADD_PROGRESS_TYPE,
-          value: parsedProgressValue,
-          unit: QUICK_ADD_PROGRESS_UNIT,
-          note: null,
-          link: null,
-          isPrimary: true,
-          updatedAt: serverTimestamp(),
-        });
-      }
+      await addDoc(collection(db, "item", docRef.id, "progress"), {
+        platform: QUICK_ADD_PROGRESS_PLATFORM,
+        type: QUICK_ADD_PROGRESS_TYPE,
+        value: parsedProgressValue,
+        unit: QUICK_ADD_PROGRESS_UNIT,
+        note: null,
+        link: null,
+        isPrimary: true,
+        updatedAt: serverTimestamp(),
+      });
 
       router.replace(`/item/${docRef.id}`);
     } catch (err) {
