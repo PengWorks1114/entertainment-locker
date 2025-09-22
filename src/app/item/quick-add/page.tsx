@@ -339,6 +339,7 @@ export default function QuickAddItemPage() {
         titleZh,
         titleAlt: null,
         author: null,
+        language: null,
         tags: [],
         links,
         thumbUrl: resolvedThumbUrl || null,

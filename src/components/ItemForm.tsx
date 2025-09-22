@@ -31,10 +31,13 @@ import CabinetTagQuickEditor from "./CabinetTagQuickEditor";
 import ProgressEditor from "./ProgressEditor";
 import { buttonClass } from "@/lib/ui";
 import {
+  ITEM_LANGUAGE_OPTIONS,
+  ITEM_LANGUAGE_VALUES,
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   UPDATE_FREQUENCY_OPTIONS,
   UPDATE_FREQUENCY_VALUES,
+  type ItemLanguage,
   type ItemStatus,
   type ThumbTransform,
   type UpdateFrequency,
@@ -186,6 +189,7 @@ type ItemFormState = {
   titleZh: string;
   titleAlt: string;
   author: string;
+  language: ItemLanguage | "";
   selectedTags: string[];
   progressNote: string;
   note: string;
@@ -208,6 +212,7 @@ function createDefaultState(initialCabinetId?: string): ItemFormState {
     titleZh: "",
     titleAlt: "",
     author: "",
+    language: "",
     selectedTags: [],
     progressNote: "",
     note: "",
@@ -399,6 +404,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           )
             ? (data.updateFrequency as UpdateFrequency)
             : "";
+        const language =
+          typeof data.language === "string" &&
+          ITEM_LANGUAGE_VALUES.includes(data.language as ItemLanguage)
+            ? (data.language as ItemLanguage)
+            : "";
         const ratingValue =
           typeof data.rating === "number" && Number.isFinite(data.rating)
             ? String(data.rating)
@@ -426,6 +436,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           titleZh: (data.titleZh as string) ?? "",
           titleAlt: (data.titleAlt as string) ?? "",
           author: (data.author as string) ?? "",
+          language,
           selectedTags: loadedTags,
           progressNote: (data.progressNote as string) ?? "",
           note: (data.note as string) ?? "",
@@ -754,6 +765,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         titleZh: form.titleZh,
         titleAlt: form.titleAlt,
         author: form.author,
+        language: form.language,
         tags,
         links: filteredLinks,
         thumbUrl: form.thumbUrl,
@@ -789,6 +801,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         titleZh: parsedData.titleZh,
         titleAlt: parsedData.titleAlt ?? null,
         author: parsedData.author ?? null,
+        language: parsedData.language ?? null,
         tags: parsedData.tags,
         links: parsedData.links,
         thumbUrl: resolvedThumbUrl ?? null,
@@ -849,6 +862,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         titleZh: parsedData.titleZh,
         titleAlt: parsedData.titleAlt ?? "",
         author: parsedData.author ?? "",
+        language: parsedData.language ?? "",
         selectedTags: parsedData.tags,
         progressNote: parsedData.progressNote ?? "",
         note: parsedData.note ?? "",
@@ -1344,6 +1358,26 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                     placeholder="選填"
                     className={inputClass}
                   />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-base">語言</span>
+                  <select
+                    value={form.language}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        language: event.target.value as ItemLanguage | "",
+                      }))
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">未選擇</option>
+                    {ITEM_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 

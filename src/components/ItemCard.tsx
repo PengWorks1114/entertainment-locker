@@ -10,6 +10,7 @@ import { useFavoriteToggle } from "@/hooks/useFavoriteToggle";
 import { usePrimaryProgress } from "@/hooks/usePrimaryProgress";
 import { DEFAULT_THUMB_TRANSFORM, isOptimizedImageUrl } from "@/lib/image-utils";
 import {
+  ITEM_LANGUAGE_OPTIONS,
   ITEM_STATUS_OPTIONS,
   UPDATE_FREQUENCY_OPTIONS,
   type ItemRecord,
@@ -19,6 +20,10 @@ import { highlightMatches } from "@/lib/highlight";
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
+);
+
+const languageLabelMap = new Map(
+  ITEM_LANGUAGE_OPTIONS.map((option) => [option.value, option.label])
 );
 
 const updateFrequencyLabelMap = new Map(
@@ -93,6 +98,9 @@ export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
     : "未設定";
   const authorDisplay =
     item.author && item.author.trim().length > 0 ? item.author : "未設定";
+  const languageDisplay = item.language
+    ? languageLabelMap.get(item.language) ?? item.language
+    : "未設定";
   const updateFrequencyLabel = item.updateFrequency
     ? updateFrequencyLabelMap.get(item.updateFrequency) ?? item.updateFrequency
     : "未設定";
@@ -229,6 +237,12 @@ export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
           <div className="text-xs text-gray-500">作者 / 製作</div>
           <div className="line-clamp-2 break-anywhere font-medium text-gray-900" title={authorDisplay}>
             {highlightMatches(authorDisplay, searchTerm)}
+          </div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs text-gray-500">語言</div>
+          <div className="line-clamp-2 break-anywhere font-medium text-gray-900" title={languageDisplay}>
+            {languageDisplay}
           </div>
         </div>
         </div>

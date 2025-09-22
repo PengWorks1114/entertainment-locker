@@ -33,10 +33,13 @@ import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
 import { buttonClass } from "@/lib/ui";
 import {
+  ITEM_LANGUAGE_OPTIONS,
+  ITEM_LANGUAGE_VALUES,
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   PROGRESS_TYPE_OPTIONS,
   type AppearanceRecord,
+  type ItemLanguage,
   type ItemRecord,
   type ItemStatus,
   type ProgressType,
@@ -54,6 +57,10 @@ import {
 
 const statusLabelMap = new Map(
   ITEM_STATUS_OPTIONS.map((option) => [option.value, option.label])
+);
+
+const languageLabelMap = new Map(
+  ITEM_LANGUAGE_OPTIONS.map((option) => [option.value, option.label])
 );
 
 const updateFrequencyLabelMap = new Map(
@@ -179,6 +186,7 @@ type AttributeDraftState = {
   status: ItemStatus;
   rating: string;
   author: string;
+  language: ItemLanguage | "";
   updateFrequency: UpdateFrequency | "";
   nextUpdateAt: string;
 };
@@ -267,6 +275,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     status: ITEM_STATUS_OPTIONS[0]?.value ?? "planning",
     rating: "",
     author: "",
+    language: "",
     updateFrequency: "",
     nextUpdateAt: "",
   });
@@ -448,6 +457,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             typeof data.titleZh === "string" && data.titleZh ? data.titleZh : "(未命名物件)",
           titleAlt: typeof data.titleAlt === "string" ? data.titleAlt : null,
           author: typeof data.author === "string" ? data.author : null,
+          language:
+            typeof data.language === "string" &&
+            ITEM_LANGUAGE_VALUES.includes(data.language as ItemLanguage)
+              ? (data.language as ItemLanguage)
+              : null,
           tags,
           links,
           thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
@@ -817,6 +831,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         : "";
     const authorValue =
       typeof item.author === "string" ? item.author : "";
+    const languageValue =
+      item.language && ITEM_LANGUAGE_VALUES.includes(item.language)
+        ? item.language
+        : "";
     const updateFrequencyValue =
       item.updateFrequency &&
       UPDATE_FREQUENCY_VALUES.includes(item.updateFrequency)
@@ -826,6 +844,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       status: statusValue,
       rating: ratingValue,
       author: authorValue,
+      language: languageValue,
       updateFrequency: updateFrequencyValue,
       nextUpdateAt: formatTimestampToInput(item.nextUpdateAt),
     });
@@ -853,6 +872,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const statusValue = attributeDraft.status;
     if (!ITEM_STATUS_VALUES.includes(statusValue)) {
       setAttributeError("狀態值不在允許範圍");
+      return;
+    }
+    const languageValue = attributeDraft.language;
+    if (
+      languageValue &&
+      !ITEM_LANGUAGE_VALUES.includes(languageValue)
+    ) {
+      setAttributeError("語言值不在允許範圍");
       return;
     }
     const updateFrequencyValue = attributeDraft.updateFrequency;
@@ -902,6 +929,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         status: statusValue,
         rating: ratingValue !== null ? ratingValue : null,
         author: trimmedAuthor ? trimmedAuthor : null,
+        language: languageValue || null,
         updateFrequency: resolvedUpdateFrequency,
         nextUpdateAt: nextUpdateTimestamp,
         updatedAt: serverTimestamp(),
@@ -913,6 +941,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               status: statusValue,
               rating: ratingValue !== null ? ratingValue : null,
               author: trimmedAuthor ? trimmedAuthor : null,
+              language: languageValue || null,
               updateFrequency: resolvedUpdateFrequency,
               nextUpdateAt: nextUpdateTimestamp,
               updatedAt: Timestamp.now(),
@@ -1964,6 +1993,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     typeof item.rating === "number" && Number.isFinite(item.rating)
       ? item.rating.toFixed(item.rating % 1 === 0 ? 0 : 1)
       : "未設定";
+  const languageLabel = item.language
+    ? languageLabelMap.get(item.language) ?? item.language
+    : "未設定";
   const updateFrequencyLabel = item.updateFrequency
     ? updateFrequencyLabelMap.get(item.updateFrequency) ?? item.updateFrequency
     : "未設定";
@@ -2161,6 +2193,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       <div className="break-anywhere text-base text-gray-900">
                         {item.author && item.author.trim().length > 0 ? item.author : "未設定"}
                       </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500">語言</div>
+                      <div className="break-anywhere text-base text-gray-900">{languageLabel}</div>
                     </div>
                     <div className="space-y-1">
                       <div className="text-sm text-gray-500">更新頻率</div>
@@ -2872,6 +2908,27 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   placeholder="選填"
                   disabled={attributeSaving}
                 />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-base">語言</span>
+                <select
+                  value={attributeDraft.language}
+                  onChange={(event) =>
+                    setAttributeDraft((prev) => ({
+                      ...prev,
+                      language: event.target.value as ItemLanguage | "",
+                    }))
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  disabled={attributeSaving}
+                >
+                  <option value="">未選擇</option>
+                  {ITEM_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="block space-y-1">
                 <span className="text-base">更新頻率</span>

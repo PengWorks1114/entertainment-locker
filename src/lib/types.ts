@@ -18,6 +18,17 @@ export const ITEM_STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
   { value: "dropped", label: "棄追" },
 ];
 
+export const ITEM_LANGUAGE_VALUES = ["zh", "ja", "en", "ko"] as const;
+
+export type ItemLanguage = (typeof ITEM_LANGUAGE_VALUES)[number];
+
+export const ITEM_LANGUAGE_OPTIONS: { value: ItemLanguage; label: string }[] = [
+  { value: "zh", label: "中文" },
+  { value: "ja", label: "日文" },
+  { value: "en", label: "英文" },
+  { value: "ko", label: "韓文" },
+];
+
 export const UPDATE_FREQUENCY_VALUES = [
   "weekly",
   "biweekly",
@@ -91,6 +102,7 @@ export type ItemRecord = {
   titleZh: string;
   titleAlt?: string | null;
   author?: string | null;
+  language?: ItemLanguage | null;
   tags: string[];
   links: ItemLink[];
   thumbUrl?: string | null;

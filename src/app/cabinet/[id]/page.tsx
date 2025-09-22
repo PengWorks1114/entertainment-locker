@@ -21,9 +21,12 @@ import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 import {
+  ITEM_LANGUAGE_OPTIONS,
+  ITEM_LANGUAGE_VALUES,
   ITEM_STATUS_OPTIONS,
   ITEM_STATUS_VALUES,
   UPDATE_FREQUENCY_VALUES,
+  type ItemLanguage,
   type ItemRecord,
   type ItemStatus,
   type UpdateFrequency,
@@ -46,6 +49,7 @@ type ViewMode = "grid" | "thumb" | "list";
 type FilterState = {
   search: string;
   status: ItemStatus | "all";
+  language: ItemLanguage | "";
   ratingMin: string;
   ratingMax: string;
   hasNextUpdate: HasNextUpdateFilter;
@@ -92,6 +96,7 @@ function getPaginationRange(totalPages: number, currentPage: number): (number | 
 const defaultFilters: FilterState = {
   search: "",
   status: "all",
+  language: "",
   ratingMin: "",
   ratingMax: "",
   hasNextUpdate: "all",
@@ -120,6 +125,16 @@ function parseTagsFromParams(params: ReturnType<typeof useSearchParams>): string
     });
   }
   return Array.from(new Set(list));
+}
+
+function parseLanguageFromParams(
+  params: ReturnType<typeof useSearchParams>
+): ItemLanguage | "" {
+  const value = params.get("language");
+  if (value && ITEM_LANGUAGE_VALUES.includes(value as ItemLanguage)) {
+    return value as ItemLanguage;
+  }
+  return "";
 }
 
 function normalizeCabinetTags(input: unknown): string[] {
@@ -151,6 +166,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [listError, setListError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
+    language: parseLanguageFromParams(searchParams),
     tags: parseTagsFromParams(searchParams),
   }));
   const [currentPage, setCurrentPage] = useState(1);
@@ -328,6 +344,11 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               typeof data.titleZh === "string" && data.titleZh ? data.titleZh : "(未命名物件)",
             titleAlt: typeof data.titleAlt === "string" ? data.titleAlt : null,
             author: typeof data.author === "string" ? data.author : null,
+            language:
+              typeof data.language === "string" &&
+              ITEM_LANGUAGE_VALUES.includes(data.language as ItemLanguage)
+                ? (data.language as ItemLanguage)
+                : null,
             tags,
             links,
             thumbUrl: typeof data.thumbUrl === "string" ? data.thumbUrl : null,
@@ -373,6 +394,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   }, [
     filters.search,
     filters.status,
+    filters.language,
     filters.ratingMin,
     filters.ratingMax,
     filters.hasNextUpdate,
@@ -384,18 +406,23 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
 
   useEffect(() => {
     const tagsFromParams = parseTagsFromParams(searchParams);
+    const languageFromParams = parseLanguageFromParams(searchParams);
     setFilters((prev) => {
       const prevSet = new Set(prev.tags);
       const nextList = tagsFromParams;
       const nextSet = new Set(nextList);
       const sameSize = prevSet.size === nextSet.size;
-      if (
-        sameSize &&
-        Array.from(prevSet).every((tag) => nextSet.has(tag))
-      ) {
+      const sameTags =
+        sameSize && Array.from(prevSet).every((tag) => nextSet.has(tag));
+      const sameLanguage = prev.language === languageFromParams;
+      if (sameTags && sameLanguage) {
         return prev;
       }
-      return { ...prev, tags: nextList };
+      return {
+        ...prev,
+        tags: sameTags ? prev.tags : nextList,
+        language: languageFromParams,
+      };
     });
   }, [searchParams]);
 
@@ -460,6 +487,9 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
         }
       }
       if (filters.status !== "all" && item.status !== filters.status) {
+        return false;
+      }
+      if (filters.language && item.language !== filters.language) {
         return false;
       }
       const rating =
@@ -557,6 +587,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const hasActiveFilters =
     filters.search.trim().length > 0 ||
     filters.status !== "all" ||
+    filters.language !== defaultFilters.language ||
     filters.ratingMin.trim().length > 0 ||
     filters.ratingMax.trim().length > 0 ||
     filters.hasNextUpdate !== "all" ||
@@ -743,7 +774,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             hidden={filtersCollapsed}
             aria-hidden={filtersCollapsed}
           >
-            <div className="grid gap-4 lg:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-5">
               <label className="space-y-1">
                 <span className="text-sm text-gray-600">搜尋作品</span>
                 <input
@@ -764,6 +795,26 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                 >
                   <option value="all">全部狀態</option>
                   {ITEM_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">語言</span>
+                <select
+                  value={filters.language}
+                  onChange={(event) =>
+                    updateFilter(
+                      "language",
+                      event.target.value as ItemLanguage | ""
+                    )
+                  }
+                  className={`${selectClass} w-full`}
+                >
+                  <option value="">全部語言</option>
+                  {ITEM_LANGUAGE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>

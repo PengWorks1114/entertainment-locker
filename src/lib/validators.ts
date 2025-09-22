@@ -1,8 +1,10 @@
 import {
+  ITEM_LANGUAGE_VALUES,
   ITEM_STATUS_VALUES,
   PROGRESS_TYPE_VALUES,
   UPDATE_FREQUENCY_VALUES,
   type ItemLink,
+  type ItemLanguage,
   type ItemStatus,
   type ProgressType,
   type ThumbTransform,
@@ -49,6 +51,7 @@ export type ItemFormInput = {
   titleZh: string;
   titleAlt?: string | undefined;
   author?: string | undefined;
+  language?: string | undefined;
   tags?: string[] | undefined;
   links?: ItemLink[] | undefined;
   thumbUrl?: string | undefined;
@@ -69,6 +72,7 @@ export type ItemFormData = {
   titleZh: string;
   titleAlt?: string;
   author?: string;
+  language?: ItemLanguage;
   tags: string[];
   links: ItemLink[];
   thumbUrl?: string;
@@ -184,6 +188,16 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
     const author = assertString(input.author, "作者格式錯誤").trim();
     if (author) {
       data.author = author;
+    }
+  }
+
+  if (input.language !== undefined) {
+    const language = assertString(input.language, "語言格式錯誤").trim();
+    if (language) {
+      if (!ITEM_LANGUAGE_VALUES.includes(language as ItemLanguage)) {
+        throw new ValidationError("語言值不在允許範圍");
+      }
+      data.language = language as ItemLanguage;
     }
   }
 
