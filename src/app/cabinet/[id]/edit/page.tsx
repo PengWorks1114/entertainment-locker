@@ -156,11 +156,22 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         const isCabinetLocked = Boolean(data?.isLocked);
         setLocked(isCabinetLocked);
         setInitialLocked(isCabinetLocked);
-        setStoredLockCode(
-          typeof data?.lockCode === "number" && Number.isSafeInteger(data.lockCode)
-            ? String(data.lockCode)
-            : null
-        );
+        setStoredLockCode(() => {
+          const rawCode = data?.lockCode;
+          if (typeof rawCode === "number" && Number.isSafeInteger(rawCode)) {
+            return String(rawCode);
+          }
+          if (typeof rawCode === "string") {
+            const trimmed = rawCode.trim();
+            if (/^[0-9]+$/.test(trimmed)) {
+              const parsed = Number(trimmed);
+              if (Number.isSafeInteger(parsed)) {
+                return String(parsed);
+              }
+            }
+          }
+          return null;
+        });
         setLockCode("");
         setLockCodeConfirm("");
         setUnlockCode("");
@@ -336,12 +347,20 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
 
   const inputClass =
     "h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none";
+  const smallInputClass =
+    "h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none";
   const primaryButtonClass =
     "h-12 w-full rounded-xl bg-black px-6 text-base text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
   const secondaryButtonClass =
     "inline-flex w-full items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 sm:w-auto";
   const dangerButtonClass =
     "inline-flex w-full items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
+  const lockButtonClass =
+    "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/30";
+  const lockButtonPrimaryClass =
+    "bg-black text-white shadow-sm hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
+  const lockButtonSecondaryClass =
+    "border border-gray-200 bg-white text-gray-700 shadow-sm hover:border-gray-300 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70";
 
   async function handleDeleteCabinet() {
     if (!user || !canEdit || deleting) {
@@ -469,43 +488,60 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 setThumbEditorOpen(false);
               }}
             />
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <label className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <span className="text-sm font-medium text-gray-900">鎖定此櫃子</span>
+            <section className="space-y-3 rounded-2xl border border-gray-200 bg-white/80 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">鎖定此櫃子</p>
                   <p className="text-xs text-gray-500">
-                    鎖定後將無法瀏覽櫃子內容，僅能於編輯頁面解除鎖定。
+                    {locked
+                      ? "目前為鎖定狀態，訪客將無法瀏覽櫃子內容。"
+                      : "尚未鎖定，可以瀏覽櫃子內容。"}
                   </p>
                 </div>
-                <input
-                  type="checkbox"
-                  className="mt-1 h-5 w-5 rounded border-gray-300 text-black focus:ring-black"
-                  checked={locked}
-                  onChange={(event) => {
-                    const nextLocked = event.target.checked;
-                    setLocked(nextLocked);
-                    if (nextLocked) {
-                      setUnlockCode("");
-                    } else {
-                      setLockCode("");
-                      setLockCodeConfirm("");
-                    }
-                  }}
-                  disabled={saving}
-                />
-              </label>
-              {locked ? (
-                <div className="mt-3 space-y-2">
-                  {initialLocked && storedLockCode !== null ? (
-                    <p className="text-xs text-gray-500">
-                      如需更換鎖定密碼，請輸入新的數字密碼並再次確認。
-                      若留空則維持原密碼。
-                    </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {locked ? (
+                    <button
+                      type="button"
+                      className={`${lockButtonClass} ${lockButtonSecondaryClass}`}
+                      onClick={() => {
+                        setLocked(false);
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                        setUnlockCode("");
+                      }}
+                      disabled={saving}
+                    >
+                      解除鎖定
+                    </button>
                   ) : (
-                    <p className="text-xs text-gray-500">
-                      請設定 1 組僅包含數字的鎖定密碼，並再次輸入以確認。
-                    </p>
+                    <button
+                      type="button"
+                      className={`${lockButtonClass} ${lockButtonPrimaryClass}`}
+                      onClick={() => {
+                        setLocked(true);
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                        setUnlockCode("");
+                      }}
+                      disabled={saving}
+                    >
+                      設定鎖定
+                    </button>
                   )}
+                  {initialLocked && storedLockCode !== null && !locked && (
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
+                      需要輸入密碼後儲存才會解除
+                    </span>
+                  )}
+                </div>
+              </div>
+              {locked ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-gray-50/80 px-4 py-3 text-xs text-gray-500">
+                    {initialLocked && storedLockCode !== null
+                      ? "如需更換鎖定密碼，請輸入新的數字密碼並再次確認；若留空則沿用原密碼。"
+                      : "請設定僅包含數字的鎖定密碼，並再次輸入以確認。"}
+                  </div>
                   <label className="space-y-1">
                     <span className="text-xs text-gray-600">鎖定密碼</span>
                     <input
@@ -514,7 +550,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       autoComplete="off"
                       value={lockCode}
                       onChange={(event) => setLockCode(event.target.value)}
-                      className={inputClass}
+                      className={smallInputClass}
                       disabled={saving}
                     />
                   </label>
@@ -526,16 +562,16 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       autoComplete="off"
                       value={lockCodeConfirm}
                       onChange={(event) => setLockCodeConfirm(event.target.value)}
-                      className={inputClass}
+                      className={smallInputClass}
                       disabled={saving}
                     />
                   </label>
                 </div>
               ) : initialLocked ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-gray-500">
-                    為了保護資料安全，解除鎖定前請輸入目前的鎖定密碼。
-                  </p>
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-gray-50/80 px-4 py-3 text-xs text-gray-500">
+                    為了保護資料安全，解除鎖定前請輸入目前的鎖定密碼並儲存變更。
+                  </div>
                   <label className="space-y-1">
                     <span className="text-xs text-gray-600">解除鎖定密碼</span>
                     <input
@@ -544,13 +580,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       autoComplete="off"
                       value={unlockCode}
                       onChange={(event) => setUnlockCode(event.target.value)}
-                      className={inputClass}
+                      className={smallInputClass}
                       disabled={saving}
                     />
                   </label>
                 </div>
               ) : null}
-            </div>
+            </section>
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
               <textarea
