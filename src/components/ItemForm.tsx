@@ -27,6 +27,7 @@ import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { fetchOpenGraphImage } from "@/lib/opengraph";
 import ThumbLinkField from "./ThumbLinkField";
 import ThumbEditorDialog from "./ThumbEditorDialog";
+import CabinetTagQuickEditor from "./CabinetTagQuickEditor";
 import ProgressEditor from "./ProgressEditor";
 import { buttonClass } from "@/lib/ui";
 import {
@@ -256,6 +257,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     null
   );
   const [draggingInsightId, setDraggingInsightId] = useState<string | null>(null);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
   const [appearanceEditorIndex, setAppearanceEditorIndex] = useState<number | null>(
     null
@@ -268,6 +270,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     createSectionState(mode === "create")
   );
   const previousCabinetIdRef = useRef<string | null>(null);
+
+  const selectedCabinet = useMemo(
+    () => cabinets.find((entry) => entry.id === form.cabinetId) ?? null,
+    [cabinets, form.cabinetId]
+  );
 
   const fetchCabinetTags = useCallback(
     async (cabinetId: string, force = false): Promise<string[]> => {
@@ -349,6 +356,10 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       setForm((prev) => ({ ...prev, cabinetId: fallback.id }));
     }
   }, [cabinets, form.cabinetId]);
+
+  useEffect(() => {
+    setTagManagerOpen(false);
+  }, [form.cabinetId]);
 
   useEffect(() => {
     if (!user || !itemId) return;
@@ -918,6 +929,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   }
 
   function handleAddAppearance() {
+    setSectionOpen((prev) => ({ ...prev, appearances: true }));
     setAppearances((prev) => [
       ...prev,
       {
@@ -1063,6 +1075,7 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   }
 
   function handleAddInsight() {
+    setSectionOpen((prev) => ({ ...prev, insight: true }));
     setInsightNotes((prev) => [
       ...prev,
       { id: generateLocalId(), title: "", content: "" },
@@ -1331,12 +1344,19 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-base">標籤</span>
                   {form.cabinetId && (
-                    <Link
-                      href={`/cabinet/${encodeURIComponent(form.cabinetId)}/tags`}
-                      className="text-xs text-blue-600 underline-offset-4 hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => setTagManagerOpen(true)}
+                      className="text-xs text-blue-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
+                      disabled={selectedCabinet?.isLocked || !user}
+                      title={
+                        selectedCabinet?.isLocked
+                          ? "此櫃子已鎖定，請先解除鎖定"
+                          : undefined
+                      }
                     >
                       管理標籤
-                    </Link>
+                    </button>
                   )}
                 </div>
 
@@ -1448,14 +1468,15 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               actions={
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    setSectionOpen((prev) => ({ ...prev, links: true }));
                     setLinks((prev) =>
                       normalizePrimaryLinks([
                         ...prev,
                         { label: "", url: "", isPrimary: prev.length === 0 },
                       ])
-                    )
-                  }
+                    );
+                  }}
                   className="h-10 rounded-lg border px-3 text-sm text-gray-700 transition hover:border-gray-300"
                 >
                   新增連結
@@ -2084,6 +2105,43 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
           </div>
         </div>
       )}
+      {form.cabinetId && user ? (
+        <CabinetTagQuickEditor
+          open={tagManagerOpen}
+          onClose={() => setTagManagerOpen(false)}
+          cabinetId={form.cabinetId}
+          cabinetName={selectedCabinet?.name ?? ""}
+          userId={user.uid}
+          tags={cabinetTags}
+          onTagsChange={(nextTags) => {
+            setCabinetTags(nextTags);
+            if (form.cabinetId) {
+              tagsCacheRef.current[form.cabinetId] = nextTags;
+            }
+          }}
+          onTagRenamed={(previousTag, nextTag) => {
+            setForm((prev) => ({
+              ...prev,
+              selectedTags: prev.selectedTags.map((tag) =>
+                tag === previousTag ? nextTag : tag
+              ),
+            }));
+          }}
+          onTagDeleted={(target) => {
+            setForm((prev) => ({
+              ...prev,
+              selectedTags: prev.selectedTags.filter((tag) => tag !== target),
+            }));
+          }}
+          onStatus={(status) => {
+            setTagStatus({
+              message: status.message ?? null,
+              error: status.error ?? null,
+              saving: false,
+            });
+          }}
+        />
+      ) : null}
     </main>
   );
 }

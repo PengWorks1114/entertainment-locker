@@ -606,7 +606,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                         disabled={lockSaving}
                       />
                     </label>
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                       <button
                         type="button"
                         onClick={() => {
@@ -633,7 +633,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                     <p className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
                       此櫃子已鎖定，如需瀏覽請先解除鎖定。
                     </p>
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                       <button
                         type="button"
                         onClick={() => {
@@ -674,7 +674,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       disabled={lockSaving}
                     />
                   </label>
-                  <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => {
