@@ -32,6 +32,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lockSaving, setLockSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
@@ -46,11 +47,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
 
   const [locked, setLocked] = useState(false);
-  const [initialLocked, setInitialLocked] = useState(false);
   const [storedLockCode, setStoredLockCode] = useState<string | null>(null);
   const [lockCode, setLockCode] = useState("");
   const [lockCodeConfirm, setLockCodeConfirm] = useState("");
   const [unlockCode, setUnlockCode] = useState("");
+  const [lockMode, setLockMode] = useState<"idle" | "locking" | "unlocking">(
+    "idle"
+  );
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -79,11 +82,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setMessage(null);
       setDeleteError(null);
       setLocked(false);
-      setInitialLocked(false);
       setStoredLockCode(null);
       setLockCode("");
       setLockCodeConfirm("");
       setUnlockCode("");
+      setLockMode("idle");
       return;
     }
     let active = true;
@@ -111,11 +114,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
           setLocked(false);
-          setInitialLocked(false);
           setStoredLockCode(null);
           setLockCode("");
           setLockCodeConfirm("");
           setUnlockCode("");
+          setLockMode("idle");
           return;
         }
         const data = snap.data();
@@ -128,11 +131,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
           setLocked(false);
-          setInitialLocked(false);
           setStoredLockCode(null);
           setLockCode("");
           setLockCodeConfirm("");
           setUnlockCode("");
+          setLockMode("idle");
           return;
         }
         const nameValue =
@@ -158,7 +161,6 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setThumbEditorOpen(false);
         const isCabinetLocked = Boolean(data?.isLocked);
         setLocked(isCabinetLocked);
-        setInitialLocked(isCabinetLocked);
         setStoredLockCode(() => {
           const rawCode = data?.lockCode;
           if (typeof rawCode === "number" && Number.isSafeInteger(rawCode)) {
@@ -178,6 +180,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setLockCode("");
         setLockCodeConfirm("");
         setUnlockCode("");
+        setLockMode("idle");
         setCanEdit(true);
         setLoading(false);
       })
@@ -191,7 +194,6 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
         setThumbEditorOpen(false);
         setLocked(false);
-        setInitialLocked(false);
         setStoredLockCode(null);
         setLockCode("");
         setLockCodeConfirm("");
@@ -232,63 +234,19 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     let lockCodeToPersist: number | null = null;
 
     if (locked) {
-      const nextLockCodeRaw = lockCode.trim();
-      const nextLockCodeConfirmRaw = lockCodeConfirm.trim();
-      const needsNewCode = !initialLocked || storedLockCode === null;
-
-      if (needsNewCode || nextLockCodeRaw || nextLockCodeConfirmRaw) {
-        if (!nextLockCodeRaw || !nextLockCodeConfirmRaw) {
-          setMessage("請輸入並確認鎖定密碼");
-          setSaving(false);
-          return;
-        }
-        if (nextLockCodeRaw !== nextLockCodeConfirmRaw) {
-          setMessage("鎖定密碼與確認密碼不一致");
-          setSaving(false);
-          return;
-        }
-        if (!/^[0-9]+$/.test(nextLockCodeRaw)) {
-          setMessage("鎖定密碼僅能輸入數字");
-          setSaving(false);
-          return;
-        }
-        const parsedLockCode = Number(nextLockCodeRaw);
-        if (!Number.isSafeInteger(parsedLockCode)) {
-          setMessage("鎖定密碼過長，請輸入較短的數字");
-          setSaving(false);
-          return;
-        }
-        lockCodeToPersist = parsedLockCode;
-      } else if (storedLockCode !== null) {
-        const storedNumber = Number(storedLockCode);
-        if (!Number.isSafeInteger(storedNumber)) {
-          setMessage("鎖定密碼已損毀，請輸入新的鎖定密碼");
-          setSaving(false);
-          return;
-        }
-        lockCodeToPersist = storedNumber;
-      } else {
-        setMessage("請輸入鎖定密碼");
+      if (storedLockCode === null) {
+        setMessage("鎖定密碼已遺失，請重新設定鎖定密碼");
         setSaving(false);
         return;
       }
-    } else {
-      if (initialLocked && storedLockCode !== null) {
-        const unlockCodeRaw = unlockCode.trim();
-        if (!unlockCodeRaw) {
-          setMessage("請輸入鎖定密碼以解除鎖定");
-          setSaving(false);
-          return;
-        }
-        if (
-          unlockCodeRaw !== storedLockCode &&
-          unlockCodeRaw !== MASTER_UNLOCK_CODE
-        ) {
-          setMessage("鎖定密碼不正確，無法解除鎖定");
-          setSaving(false);
-          return;
-        }
+      const storedNumber = Number(storedLockCode);
+      if (!Number.isSafeInteger(storedNumber)) {
+        setMessage("鎖定密碼已損毀，請重新設定鎖定密碼");
+        setSaving(false);
+        return;
       }
+      lockCodeToPersist = storedNumber;
+    } else {
       lockCodeToPersist = null;
     }
 
@@ -325,13 +283,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       );
       setThumbEditorOpen(false);
       setLocked(locked);
-      setInitialLocked(locked);
       setStoredLockCode(
         lockCodeToPersist !== null ? String(lockCodeToPersist) : null
       );
       setLockCode("");
       setLockCodeConfirm("");
       setUnlockCode("");
+      setLockMode("idle");
       setMessage("已更新櫃子資料");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
@@ -361,12 +319,112 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     "inline-flex w-full items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-900 sm:w-auto";
   const dangerButtonClass =
     "inline-flex w-full items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm text-red-600 shadow-sm transition hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-70";
-  const lockButtonClass =
-    "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/30";
-  const lockButtonPrimaryClass =
-    "bg-black text-white shadow-sm hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300";
-  const lockButtonSecondaryClass =
-    "border border-gray-200 bg-white text-gray-700 shadow-sm hover:border-gray-300 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70";
+
+  async function handleLockSave(action: "lock" | "unlock") {
+    if (!user || !canEdit || lockSaving) {
+      return;
+    }
+
+    if (action === "lock") {
+      const nextLockCodeRaw = lockCode.trim();
+      const nextLockCodeConfirmRaw = lockCodeConfirm.trim();
+
+      if (!nextLockCodeRaw || !nextLockCodeConfirmRaw) {
+        setMessage("請輸入並確認鎖定密碼");
+        return;
+      }
+      if (nextLockCodeRaw !== nextLockCodeConfirmRaw) {
+        setMessage("鎖定密碼與確認密碼不一致");
+        return;
+      }
+      if (!/^[0-9]+$/.test(nextLockCodeRaw)) {
+        setMessage("鎖定密碼僅能輸入數字");
+        return;
+      }
+      const parsedLockCode = Number(nextLockCodeRaw);
+      if (!Number.isSafeInteger(parsedLockCode)) {
+        setMessage("鎖定密碼過長，請輸入較短的數字");
+        return;
+      }
+
+      try {
+        setLockSaving(true);
+        const db = getFirebaseDb();
+        if (!db) {
+          setError("Firebase 尚未設定");
+          setLockSaving(false);
+          return;
+        }
+        const cabinetRef = doc(db, "cabinet", cabinetId);
+        await updateDoc(cabinetRef, {
+          isLocked: true,
+          lockCode: parsedLockCode,
+          updatedAt: serverTimestamp(),
+        });
+        invalidateCabinetOptions(user.uid);
+        setLocked(true);
+        setStoredLockCode(String(parsedLockCode));
+        setLockCode("");
+        setLockCodeConfirm("");
+        setUnlockCode("");
+        setLockMode("idle");
+        setMessage("已更新鎖定設定");
+      } catch (err) {
+        console.error("更新鎖定設定失敗", err);
+        setMessage("儲存鎖定設定時發生錯誤");
+      } finally {
+        setLockSaving(false);
+      }
+      return;
+    }
+
+    const unlockCodeRaw = unlockCode.trim();
+    if (!unlockCodeRaw) {
+      setMessage("請輸入鎖定密碼以解除鎖定");
+      return;
+    }
+    if (storedLockCode === null) {
+      if (unlockCodeRaw !== MASTER_UNLOCK_CODE) {
+        setMessage("鎖定密碼不正確，無法解除鎖定");
+        return;
+      }
+    } else if (
+      unlockCodeRaw !== storedLockCode &&
+      unlockCodeRaw !== MASTER_UNLOCK_CODE
+    ) {
+      setMessage("鎖定密碼不正確，無法解除鎖定");
+      return;
+    }
+
+    try {
+      setLockSaving(true);
+      const db = getFirebaseDb();
+      if (!db) {
+        setError("Firebase 尚未設定");
+        setLockSaving(false);
+        return;
+      }
+      const cabinetRef = doc(db, "cabinet", cabinetId);
+      await updateDoc(cabinetRef, {
+        isLocked: false,
+        lockCode: null,
+        updatedAt: serverTimestamp(),
+      });
+      invalidateCabinetOptions(user.uid);
+      setLocked(false);
+      setStoredLockCode(null);
+      setLockCode("");
+      setLockCodeConfirm("");
+      setUnlockCode("");
+      setLockMode("idle");
+      setMessage("已解除鎖定");
+    } catch (err) {
+      console.error("解除鎖定失敗", err);
+      setMessage("解除鎖定時發生錯誤");
+    } finally {
+      setLockSaving(false);
+    }
+  }
 
   async function handleDeleteCabinet() {
     if (!user || !canEdit || deleting) {
@@ -494,150 +552,6 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 setThumbEditorOpen(false);
               }}
             />
-            <section className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-gray-900">鎖定此櫃子</p>
-                  <p className="text-xs text-gray-500">
-                    使用鎖定密碼限制他人瀏覽櫃子內容，忘記密碼時可使用備援密碼 6472 解鎖。
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
-                      locked
-                        ? "bg-red-100 text-red-600"
-                        : "bg-emerald-100 text-emerald-600"
-                    }`}
-                  >
-                    {locked ? "已鎖定" : "未鎖定"}
-                  </span>
-                  <button
-                    type="button"
-                    className={`${lockButtonClass} ${
-                      locked
-                        ? lockButtonSecondaryClass
-                        : lockButtonPrimaryClass
-                    }`}
-                    onClick={() => {
-                      setLocked((prev) => {
-                        const next = !prev;
-                        setLockCode("");
-                        setLockCodeConfirm("");
-                        setUnlockCode("");
-                        return next;
-                      });
-                    }}
-                    disabled={saving}
-                  >
-                    {locked ? "切換為解除鎖定" : "切換為鎖定"}
-                  </button>
-                </div>
-              </div>
-              {locked ? (
-                <div className="space-y-4">
-                  <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                    <p>
-                      {initialLocked && storedLockCode !== null
-                        ? "如需更換鎖定密碼，請輸入新的數字密碼並再次確認；若留空則沿用原密碼。"
-                        : "請輸入要設定的鎖定密碼並再次確認，僅能輸入數字。"}
-                    </p>
-                    <p>完成後請儲存鎖定設定。</p>
-                  </div>
-                  <label className="space-y-1">
-                    <span className="text-xs text-gray-600">鎖定密碼</span>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={lockCode}
-                      onChange={(event) => setLockCode(event.target.value)}
-                      className={smallInputClass}
-                      disabled={saving}
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-xs text-gray-600">確認鎖定密碼</span>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={lockCodeConfirm}
-                      onChange={(event) => setLockCodeConfirm(event.target.value)}
-                      className={smallInputClass}
-                      disabled={saving}
-                    />
-                  </label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      className={`${lockButtonClass} ${lockButtonSecondaryClass} sm:w-32`}
-                      onClick={() => {
-                        setLocked(false);
-                        setLockCode("");
-                        setLockCodeConfirm("");
-                        setUnlockCode("");
-                      }}
-                      disabled={saving}
-                    >
-                      取消鎖定
-                    </button>
-                    <button
-                      type="submit"
-                      className={`${lockButtonClass} ${lockButtonPrimaryClass} sm:w-40`}
-                      disabled={saving}
-                    >
-                      儲存鎖定設定
-                    </button>
-                  </div>
-                </div>
-              ) : initialLocked ? (
-                <div className="space-y-4">
-                  <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                    <p>解除鎖定前需輸入目前的鎖定密碼或備援密碼 6472。</p>
-                    <p>完成後點擊下方按鈕儲存變更。</p>
-                  </div>
-                  <label className="space-y-1">
-                    <span className="text-xs text-gray-600">解除鎖定密碼</span>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={unlockCode}
-                      onChange={(event) => setUnlockCode(event.target.value)}
-                      className={smallInputClass}
-                      disabled={saving}
-                    />
-                  </label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      className={`${lockButtonClass} ${lockButtonSecondaryClass} sm:w-32`}
-                      onClick={() => {
-                        setLocked(true);
-                        setLockCode("");
-                        setLockCodeConfirm("");
-                        setUnlockCode("");
-                      }}
-                      disabled={saving}
-                    >
-                      回到鎖定
-                    </button>
-                    <button
-                      type="submit"
-                      className={`${lockButtonClass} ${lockButtonPrimaryClass} sm:w-40`}
-                      disabled={saving}
-                    >
-                      儲存並解除鎖定
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                  尚未鎖定櫃子，若需要保護內容，請切換為鎖定並設定密碼後儲存變更。
-                </div>
-              )}
-            </section>
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
               <textarea
@@ -657,22 +571,171 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         ) : null}
 
         {!loading && canEdit && (
-          <section className="space-y-4 rounded-2xl border border-red-200 bg-red-50/70 p-6 shadow-sm">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-red-700">刪除此櫃子</h2>
-              <p className="text-sm text-red-600">
-                刪除後將移除櫃子內所有作品與進度資料，無法復原，請再次確認。
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleDeleteCabinet}
-              disabled={deleting}
-              className={dangerButtonClass}
-            >
-              {deleting ? "刪除中…" : "刪除此櫃子"}
-            </button>
-          </section>
+          <>
+            <section className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold text-gray-900">鎖定此櫃子</h2>
+                  <p className="text-sm text-gray-500">
+                    需要時可透過鎖定保護櫃子內容，解除鎖定請前往此處輸入密碼。
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                    locked
+                      ? "bg-red-100 text-red-600"
+                      : "bg-emerald-100 text-emerald-600"
+                  }`}
+                >
+                  {locked ? "已鎖定" : "未鎖定"}
+                </span>
+              </div>
+              {locked ? (
+                lockMode === "unlocking" ? (
+                  <div className="space-y-4">
+                    <label className="space-y-1">
+                      <span className="text-xs text-gray-600">解除鎖定密碼</span>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={unlockCode}
+                        onChange={(event) => setUnlockCode(event.target.value)}
+                        className={smallInputClass}
+                        disabled={lockSaving}
+                      />
+                    </label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLockMode("idle");
+                          setUnlockCode("");
+                        }}
+                        className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 sm:w-32"
+                        disabled={lockSaving}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleLockSave("unlock")}
+                        className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-40"
+                        disabled={lockSaving}
+                      >
+                        確認解除鎖定
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                      此櫃子已鎖定，如需瀏覽請先解除鎖定。
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLockMode("unlocking");
+                          setUnlockCode("");
+                        }}
+                        className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-40"
+                        disabled={lockSaving}
+                      >
+                        解除鎖定
+                      </button>
+                    </div>
+                  </div>
+                )
+              ) : lockMode === "locking" ? (
+                <div className="space-y-4">
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-600">鎖定密碼</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={lockCode}
+                      onChange={(event) => setLockCode(event.target.value)}
+                      className={smallInputClass}
+                      disabled={lockSaving}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-600">確認鎖定密碼</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={lockCodeConfirm}
+                      onChange={(event) => setLockCodeConfirm(event.target.value)}
+                      className={smallInputClass}
+                      disabled={lockSaving}
+                    />
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLockMode("idle");
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                      }}
+                      className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 sm:w-32"
+                      disabled={lockSaving}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLockSave("lock")}
+                      className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-40"
+                      disabled={lockSaving}
+                    >
+                      確認鎖定
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                    櫃子目前未鎖定，可設定密碼避免他人瀏覽內容。
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLockMode("locking");
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                      }}
+                      className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-40"
+                      disabled={lockSaving}
+                    >
+                      設定鎖定
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-4 rounded-2xl border border-red-200 bg-red-50/70 p-6 shadow-sm">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-red-700">刪除此櫃子</h2>
+                <p className="text-sm text-red-600">
+                  刪除後將移除櫃子內所有作品與進度資料，無法復原，請再次確認。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDeleteCabinet}
+                disabled={deleting}
+                className={dangerButtonClass}
+              >
+                {deleting ? "刪除中…" : "刪除此櫃子"}
+              </button>
+            </section>
+          </>
         )}
 
         {!loading && !canEdit && !error && (
