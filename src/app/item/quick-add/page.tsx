@@ -29,6 +29,7 @@ type FormState = {
 const QUICK_ADD_PROGRESS_PLATFORM = "未設定";
 const QUICK_ADD_PROGRESS_UNIT = "集數";
 const QUICK_ADD_PROGRESS_TYPE: ProgressType = "story";
+const QUICK_ADD_DEFAULT_TITLE = "未命名";
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -292,22 +293,20 @@ export default function QuickAddItemPage() {
     }
 
     let titleZh = form.titleZh.trim();
-    if (!titleZh && !sourceUrl) {
-      setError("請輸入主要標題或有效的來源連結");
-      return;
-    }
 
     setSaving(true);
     setError(null);
     try {
-      if (!titleZh && sourceUrl) {
-        const metadata = await fetchOpenGraphMetadata(sourceUrl);
-        const fetchedTitle = metadata?.title?.trim();
-        if (fetchedTitle) {
-          titleZh = fetchedTitle;
-          setForm((prev) => ({ ...prev, titleZh: fetchedTitle }));
+      if (!titleZh) {
+        if (sourceUrl) {
+          const metadata = await fetchOpenGraphMetadata(sourceUrl);
+          const fetchedTitle = metadata?.title?.trim();
+          const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
+          titleZh = resolvedTitle;
+          setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
         } else {
-          throw new Error("無法自動取得標題，請手動輸入主要標題");
+          titleZh = QUICK_ADD_DEFAULT_TITLE;
+          setForm((prev) => ({ ...prev, titleZh: QUICK_ADD_DEFAULT_TITLE }));
         }
       }
 
@@ -490,7 +489,6 @@ export default function QuickAddItemPage() {
                 value={form.titleZh}
                 onChange={(event) => handleInputChange("titleZh", event.target.value)}
                 placeholder="請輸入主要標題"
-                required
               />
             </div>
 
