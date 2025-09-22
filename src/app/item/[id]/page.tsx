@@ -297,8 +297,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [sectionOpen, setSectionOpen] = useState<Record<SectionKey, boolean>>({
     progress: true,
-    appearances: true,
-    notes: true,
+    appearances: false,
+    notes: false,
   });
 
   const toggleSection = useCallback((key: SectionKey) => {
@@ -2055,7 +2055,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
             )}
             <div className="flex flex-wrap gap-3 text-sm text-gray-600">
-              <span>物件 ID：{item.id}</span>
               {item.cabinetId ? (
                 cabinetMissing ? (
                   <span className="text-red-600">

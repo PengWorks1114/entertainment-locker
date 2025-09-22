@@ -1278,6 +1278,13 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
               onToggle={() => toggleSection("basic")}
               baseClass={baseSectionClass}
             >
+              {mode === "edit" && itemId && (
+                <div className="mb-3 text-sm text-gray-600">
+                  <span className="font-medium text-gray-700">物件 ID：</span>
+                  <span className="select-all">{itemId}</span>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-base">所屬櫃子</label>
                 <select
