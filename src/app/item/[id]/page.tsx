@@ -314,12 +314,37 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     appearances: false,
     notes: false,
   });
+  const [appearanceExpanded, setAppearanceExpanded] =
+    useState<Record<string, boolean>>({});
+  const [noteExpanded, setNoteExpanded] = useState<Record<string, boolean>>({});
 
   const toggleSection = useCallback((key: SectionKey) => {
     setSectionOpen((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
+  }, []);
+
+  const toggleAppearanceEntry = useCallback((index: number) => {
+    setAppearanceExpanded((prev) => {
+      const key = String(index);
+      const current = prev[key] ?? true;
+      return {
+        ...prev,
+        [key]: !current,
+      };
+    });
+  }, []);
+
+  const toggleNoteEntry = useCallback((index: number) => {
+    setNoteExpanded((prev) => {
+      const key = String(index);
+      const current = prev[key] ?? true;
+      return {
+        ...prev,
+        [key]: !current,
+      };
+    });
   }, []);
 
   const derivedThumbTransform = item?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
@@ -335,6 +360,52 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     ]
   );
   const canUseOptimizedThumb = isOptimizedImageUrl(item?.thumbUrl);
+  const appearances = useMemo(
+    () => (item?.appearances ? item.appearances : []),
+    [item?.appearances]
+  );
+  const insightEntries = useMemo(
+    () => normalizeInsightEntries(item?.insightNotes ?? item?.insightNote),
+    [item?.insightNotes, item?.insightNote]
+  );
+  const hasAppearances = appearances.length > 0;
+  const hasInsightEntries = insightEntries.length > 0;
+
+  useEffect(() => {
+    setAppearanceExpanded((prev) => {
+      const next: Record<string, boolean> = {};
+      appearances.forEach((_, index) => {
+        const key = String(index);
+        next[key] = prev[key] ?? true;
+      });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      const hasDiffLength = prevKeys.length !== nextKeys.length;
+      const hasDiffValue = nextKeys.some((key) => next[key] !== prev[key]);
+      if (!hasDiffLength && !hasDiffValue) {
+        return prev;
+      }
+      return next;
+    });
+  }, [appearances]);
+
+  useEffect(() => {
+    setNoteExpanded((prev) => {
+      const next: Record<string, boolean> = {};
+      insightEntries.forEach((_, index) => {
+        const key = String(index);
+        next[key] = prev[key] ?? true;
+      });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      const hasDiffLength = prevKeys.length !== nextKeys.length;
+      const hasDiffValue = nextKeys.some((key) => next[key] !== prev[key]);
+      if (!hasDiffLength && !hasDiffValue) {
+        return prev;
+      }
+      return next;
+    });
+  }, [insightEntries]);
 
   useEffect(() => {
     if (!favoriteError) return;
@@ -2048,12 +2119,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const titleAltContent = item.titleAlt?.trim() ?? "";
   const progressNoteContent = item.progressNote?.trim() ?? "";
   const generalNoteContent = item.note?.trim() ?? "";
-  const appearances = item.appearances ?? [];
-  const insightEntries = normalizeInsightEntries(
-    item.insightNotes ?? item.insightNote
-  );
-  const hasInsightEntries = insightEntries.length > 0;
-  const hasAppearances = appearances.length > 0;
   const canVisitCabinet = Boolean(item.cabinetId) && !cabinetMissing && !cabinetLocked;
   const tagLinkBase = canVisitCabinet
     ? `/cabinet/${encodeURIComponent(item.cabinetId)}`
@@ -2522,6 +2587,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     transformOrigin: "center" as const,
                   };
                   const labels = splitAppearanceLabels(entry.labels ?? "");
+                  const entryKey = String(index);
+                  const isExpanded = appearanceExpanded[entryKey] ?? true;
+                  const bodyId = `appearance-entry-${index}`;
                   return (
                     <div
                       key={`${entry.nameZh}-${index}`}
@@ -2551,14 +2619,29 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         </div>
                       ) : null}
                       <div className="flex-1 space-y-2">
-                        <div className="break-anywhere text-base font-medium text-gray-900">
-                          {entry.nameZh}
-                        </div>
-                        {entry.nameOriginal && (
-                          <div className="break-anywhere text-sm text-gray-600">
-                            {entry.nameOriginal}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="break-anywhere text-base font-medium text-gray-900">
+                            {entry.nameZh}
                           </div>
-                        )}
+                          <button
+                            type="button"
+                            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition hover:border-gray-300 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            aria-expanded={isExpanded}
+                            aria-controls={bodyId}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleAppearanceEntry(index);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.stopPropagation();
+                              }
+                            }}
+                            aria-label={`${isExpanded ? "收合" : "展開"} ${entry.nameZh} 詳細內容`}
+                          >
+                            {isExpanded ? "收合內容" : "展開內容"}
+                          </button>
+                        </div>
                         {labels.length > 0 && (
                           <div className="flex flex-wrap gap-2">
                             {labels.map((label, labelIndex) => (
@@ -2571,11 +2654,22 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                             ))}
                           </div>
                         )}
-                        {entry.note && (
-                          <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
-                            {entry.note}
-                          </div>
-                        )}
+                        <div
+                          id={bodyId}
+                          className={isExpanded ? "space-y-2" : "hidden"}
+                          aria-hidden={!isExpanded}
+                        >
+                          {entry.nameOriginal ? (
+                            <div className="break-anywhere text-sm text-gray-600">
+                              {entry.nameOriginal}
+                            </div>
+                          ) : null}
+                          {entry.note ? (
+                            <div className="break-anywhere whitespace-pre-wrap text-sm text-gray-700">
+                              {entry.note}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   );
@@ -2648,6 +2742,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                     transformOrigin: "center" as const,
                   };
                   const labels = splitAppearanceLabels(entry.labels ?? "");
+                  const entryKey = String(index);
+                  const isExpanded = noteExpanded[entryKey] ?? true;
+                  const bodyId = `note-entry-${index}`;
                   return (
                     <div
                       key={`${heading}-${index}`}
@@ -2677,8 +2774,29 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         </div>
                       ) : null}
                       <div className="flex-1 space-y-2">
-                        <div className="text-xs text-gray-500">項目 {index + 1}</div>
-                        <div className="break-anywhere text-base font-medium text-gray-900">{heading}</div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="break-anywhere text-base font-medium text-gray-900">
+                            {heading}
+                          </div>
+                          <button
+                            type="button"
+                            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition hover:border-gray-300 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                            aria-expanded={isExpanded}
+                            aria-controls={bodyId}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleNoteEntry(index);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.stopPropagation();
+                              }
+                            }}
+                            aria-label={`${isExpanded ? "收合" : "展開"} ${heading} 詳細內容`}
+                          >
+                            {isExpanded ? "收合內容" : "展開內容"}
+                          </button>
+                        </div>
                         {labels.length > 0 && (
                           <div className="flex flex-wrap gap-2">
                             {labels.map((label, labelIndex) => (
@@ -2691,13 +2809,20 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                             ))}
                           </div>
                         )}
-                        {content ? (
-                          <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
-                            {content}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-gray-400">目前尚未填寫內容。</div>
-                        )}
+                        <div
+                          id={bodyId}
+                          className={isExpanded ? "space-y-2" : "hidden"}
+                          aria-hidden={!isExpanded}
+                        >
+                          <div className="text-xs text-gray-500">項目 {index + 1}</div>
+                          {content ? (
+                            <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
+                              {content}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-400">目前尚未填寫內容。</div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
