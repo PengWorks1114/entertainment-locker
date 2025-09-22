@@ -81,6 +81,9 @@ type InsightState = {
   id: string;
   title: string;
   content: string;
+  labels: string;
+  thumbUrl: string;
+  thumbTransform: ThumbTransform;
 };
 
 function normalizeCabinetTags(input: unknown): string[] {
@@ -143,6 +146,9 @@ function mapFirestoreInsights(value: unknown): InsightState[] {
     id: generateLocalId(),
     title: entry.title,
     content: entry.content,
+    labels: entry.labels,
+    thumbUrl: entry.thumbUrl,
+    thumbTransform: { ...entry.thumbTransform },
   }));
 }
 
@@ -163,6 +169,9 @@ function mapFormInsights(list: InsightEntry[]): InsightState[] {
     id: generateLocalId(),
     title: entry.title,
     content: entry.content,
+    labels: entry.labels,
+    thumbUrl: entry.thumbUrl,
+    thumbTransform: { ...entry.thumbTransform },
   }));
 }
 
@@ -236,6 +245,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   const [links, setLinks] = useState<LinkState[]>([]);
   const [appearances, setAppearances] = useState<AppearanceState[]>([]);
   const [insightNotes, setInsightNotes] = useState<InsightState[]>([]);
+  const [insightEditorIndex, setInsightEditorIndex] = useState<number | null>(
+    null
+  );
   const [collapsedAppearances, setCollapsedAppearances] = useState<Record<string, boolean>>({});
   const [collapsedInsights, setCollapsedInsights] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
@@ -528,6 +540,16 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
   }, [appearanceEditorIndex, appearances]);
 
   useEffect(() => {
+    if (insightEditorIndex === null) {
+      return;
+    }
+    const target = insightNotes[insightEditorIndex];
+    if (!target || !target.thumbUrl.trim()) {
+      setInsightEditorIndex(null);
+    }
+  }, [insightEditorIndex, insightNotes]);
+
+  useEffect(() => {
     const currentCabinetId = form.cabinetId;
     if (!currentCabinetId || !user) {
       setCabinetTags([]);
@@ -757,6 +779,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     const insightPayload = insightNotes.map((entry) => ({
       title: entry.title.trim(),
       content: entry.content.trim(),
+      labels: entry.labels.trim(),
+      thumbUrl: entry.thumbUrl.trim(),
+      thumbTransform: entry.thumbTransform,
     }));
 
     try {
@@ -1092,20 +1117,40 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     setSectionOpen((prev) => ({ ...prev, insight: true }));
     setInsightNotes((prev) => [
       ...prev,
-      { id: generateLocalId(), title: "", content: "" },
+      {
+        id: generateLocalId(),
+        title: "",
+        content: "",
+        labels: "",
+        thumbUrl: "",
+        thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
+      },
     ]);
   }
 
   function handleInsightChange(
     index: number,
-    field: "title" | "content",
+    field: "title" | "content" | "labels" | "thumbUrl",
     value: string
   ) {
     setInsightNotes((prev) =>
       prev.map((entry, idx) =>
-        idx === index ? { ...entry, [field]: value } : entry
+        idx === index
+          ? field === "thumbUrl"
+            ? {
+                ...entry,
+                thumbUrl: value,
+                thumbTransform: value.trim()
+                  ? entry.thumbTransform
+                  : { ...DEFAULT_THUMB_TRANSFORM },
+              }
+            : { ...entry, [field]: value }
+          : entry
       )
     );
+    if (field === "thumbUrl" && !value.trim() && insightEditorIndex === index) {
+      setInsightEditorIndex(null);
+    }
   }
 
   function handleRemoveInsight(index: number) {
@@ -1123,6 +1168,18 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         return next;
       });
       return prev.filter((_, idx) => idx !== index);
+    });
+    setInsightEditorIndex((prev) => {
+      if (prev === null) {
+        return prev;
+      }
+      if (prev === index) {
+        return null;
+      }
+      if (prev > index) {
+        return prev - 1;
+      }
+      return prev;
     });
   }
 
@@ -1240,6 +1297,11 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     activeAppearanceEditor?.thumbUrl.trim() ?? "";
   const activeAppearanceTransform =
     activeAppearanceEditor?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+  const activeInsightEditor =
+    insightEditorIndex !== null ? insightNotes[insightEditorIndex] : null;
+  const activeInsightImageUrl = activeInsightEditor?.thumbUrl.trim() ?? "";
+  const activeInsightTransform =
+    activeInsightEditor?.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
 
   return (
     <main className="item-form-shell min-h-[100dvh] bg-gradient-to-br from-gray-50 via-white to-gray-100 px-4 py-8">
@@ -1966,6 +2028,28 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                                 placeholder="輸入心得或筆記"
                               />
                             </label>
+                            <label className="space-y-1">
+                              <span className="text-sm text-gray-600">標籤（以逗號分隔）</span>
+                              <input
+                                value={note.labels}
+                                onChange={(event) =>
+                                  handleInsightChange(
+                                    index,
+                                    "labels",
+                                    event.target.value
+                                  )
+                                }
+                                className={inputClass}
+                                placeholder="例如：心得, 推薦"
+                              />
+                            </label>
+                            <ThumbLinkField
+                              value={note.thumbUrl}
+                              onChange={(value) =>
+                                handleInsightChange(index, "thumbUrl", value)
+                              }
+                              onEdit={() => setInsightEditorIndex(index)}
+                            />
                           </div>
                         ) : null}
                       </div>
@@ -1987,6 +2071,33 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                 </div>
               )}
             </CollapsibleSection>
+
+            <ThumbEditorDialog
+              open={
+                insightEditorIndex !== null &&
+                activeInsightImageUrl.length > 0
+              }
+              imageUrl={activeInsightImageUrl}
+              value={activeInsightTransform}
+              onClose={() => setInsightEditorIndex(null)}
+              onApply={(next) => {
+                const index = insightEditorIndex;
+                if (index === null) {
+                  return;
+                }
+                setInsightNotes((prev) =>
+                  prev.map((item, idx) =>
+                    idx === index
+                      ? {
+                          ...item,
+                          thumbTransform: clampThumbTransform(next),
+                        }
+                      : item
+                  )
+                );
+                setInsightEditorIndex(null);
+              }}
+            />
 
             <CollapsibleSection
               sectionKey="status"

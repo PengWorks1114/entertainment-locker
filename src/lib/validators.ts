@@ -39,11 +39,17 @@ export type AppearanceFormData = {
 export type InsightNoteFormInput = {
   title?: string | undefined;
   content?: string | undefined;
+  labels?: string | undefined;
+  thumbUrl?: string | undefined;
+  thumbTransform?: ThumbTransform | undefined;
 };
 
 export type InsightNoteFormData = {
   title: string;
   content: string;
+  labels: string;
+  thumbUrl: string;
+  thumbTransform: ThumbTransform;
 };
 
 export type ItemFormInput = {
@@ -286,16 +292,42 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
         typeof record.title === "string" ? record.title.trim() : "";
       const content =
         typeof record.content === "string" ? record.content.trim() : "";
-      if (!title && !content) {
+      const labels =
+        typeof record.labels === "string"
+          ? formatAppearanceLabels(record.labels)
+          : "";
+      const thumbUrl =
+        typeof record.thumbUrl === "string" ? record.thumbUrl.trim() : "";
+      if (thumbUrl) {
+        validateUrl(thumbUrl, "請輸入有效的心得縮圖網址");
+      }
+      const thumbTransform = thumbUrl
+        ? normalizeThumbTransform(record.thumbTransform)
+        : { ...DEFAULT_THUMB_TRANSFORM };
+      if (!title && !content && !labels && !thumbUrl) {
         return;
       }
-      notes.push({ title, content });
+      notes.push({
+        title,
+        content,
+        labels,
+        thumbUrl,
+        thumbTransform,
+      });
     });
     data.insightNotes = notes;
   } else if (input.insightNote) {
     const insightNote = assertString(input.insightNote, "心得/筆記格式錯誤").trim();
     if (insightNote) {
-      data.insightNotes = [{ title: "", content: insightNote }];
+      data.insightNotes = [
+        {
+          title: "",
+          content: insightNote,
+          labels: "",
+          thumbUrl: "",
+          thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
+        },
+      ];
     }
   }
 

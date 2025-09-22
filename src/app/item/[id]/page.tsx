@@ -226,6 +226,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     index: number;
     title: string;
     content: string;
+    labels: string;
+    thumbUrl: string;
+    thumbTransform: ThumbTransform;
   } | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -255,6 +258,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [appearanceDeleting, setAppearanceDeleting] = useState(false);
   const [appearanceThumbEditorOpen, setAppearanceThumbEditorOpen] =
     useState(false);
+  const [noteThumbEditorOpen, setNoteThumbEditorOpen] = useState(false);
   const appearanceNameZhInputRef = useRef<HTMLInputElement | null>(null);
   const [appearanceFeedback, setAppearanceFeedback] =
     useState<NoteFeedback | null>(null);
@@ -978,7 +982,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       });
       return;
     }
-    setNoteEditor({ index, title: target.title, content: target.content });
+    setNoteEditor({
+      index,
+      title: target.title,
+      content: target.content,
+      labels: target.labels,
+      thumbUrl: target.thumbUrl,
+      thumbTransform: target.thumbTransform,
+    });
+    setNoteThumbEditorOpen(false);
     setNoteError(null);
   }
 
@@ -988,6 +1000,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     setNoteEditor(null);
     setNoteError(null);
+    setNoteThumbEditorOpen(false);
   }
 
   function openTitleEditor() {
@@ -1325,7 +1338,13 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     );
     const updatedEntries = [
       ...currentEntries,
-      { title: "", content: "未填寫" },
+      {
+        title: "",
+        content: "未填寫",
+        labels: "",
+        thumbUrl: "",
+        thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
+      },
     ];
     const storageList = buildInsightStorageList(updatedEntries);
     setNoteAddPending(true);
@@ -1679,12 +1698,26 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     }
     const title = noteEditor.title.trim();
     const content = noteEditor.content.trim();
+    const labels = formatAppearanceLabels(noteEditor.labels);
+    const trimmedThumbUrl = noteEditor.thumbUrl.trim();
+    const thumbTransform = trimmedThumbUrl
+      ? clampThumbTransform(noteEditor.thumbTransform)
+      : { ...DEFAULT_THUMB_TRANSFORM };
     if (!title && !content) {
       setNoteError("請至少輸入標題或內容");
       return;
     }
     const updatedEntries = currentEntries.map((entry, idx) =>
-      idx === noteEditor.index ? { title, content } : entry
+      idx === noteEditor.index
+        ? {
+            ...entry,
+            title,
+            content,
+            labels,
+            thumbUrl: trimmedThumbUrl,
+            thumbTransform,
+          }
+        : entry
     );
     const storageList = buildInsightStorageList(updatedEntries);
     setNoteSaving(true);
@@ -1706,6 +1739,8 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
           : prev
       );
       setNoteEditor(null);
+      setNoteThumbEditorOpen(false);
+      setNoteThumbEditorOpen(false);
       setNoteFeedback({ type: "success", message: "已更新心得 / 筆記" });
     } catch (err) {
       console.error("更新心得 / 筆記時發生錯誤", err);
@@ -2601,10 +2636,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   const title = entry.title.trim();
                   const content = entry.content.trim();
                   const heading = title || `心得 / 筆記 ${index + 1}`;
+                  const noteTransform = entry.thumbTransform;
+                  const noteStyle = {
+                    transform: `translate(${noteTransform.offsetX}%, ${noteTransform.offsetY}%) scale(${noteTransform.scale})`,
+                    transformOrigin: "center" as const,
+                  };
+                  const labels = splitAppearanceLabels(entry.labels ?? "");
                   return (
                     <div
                       key={`${heading}-${index}`}
-                      className="rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
+                      className="flex items-start gap-4 rounded-2xl border bg-white/80 p-4 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
                       onDoubleClick={() => openNoteEditor(index)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -2616,9 +2657,34 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                       tabIndex={0}
                       title="雙擊以編輯此心得 / 筆記"
                     >
-                      <div className="flex flex-col gap-1">
+                      {entry.thumbUrl ? (
+                        <div className="relative aspect-square w-20 shrink-0 overflow-hidden rounded-lg border bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={entry.thumbUrl}
+                            alt={`${heading} 縮圖`}
+                            className="h-full w-full select-none object-cover"
+                            style={noteStyle}
+                            loading="lazy"
+                            draggable={false}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="flex-1 space-y-2">
                         <div className="text-xs text-gray-500">項目 {index + 1}</div>
                         <div className="break-anywhere text-base font-medium text-gray-900">{heading}</div>
+                        {labels.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {labels.map((label, labelIndex) => (
+                              <span
+                                key={`${label}-${labelIndex}`}
+                                className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {content ? (
                           <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
                             {content}
@@ -3562,6 +3628,42 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   disabled={noteSaving || noteDeleting}
                 />
               </label>
+              <label className="block space-y-1">
+                <span className="text-base">標籤（以逗號分隔）</span>
+                <input
+                  value={noteEditor.labels}
+                  onChange={(event) =>
+                    setNoteEditor((prev) =>
+                      prev ? { ...prev, labels: event.target.value } : prev
+                    )
+                  }
+                  className="h-12 w-full rounded-xl border border-gray-200 px-4 text-base text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="例如：心得, 推薦"
+                  disabled={noteSaving || noteDeleting}
+                />
+              </label>
+              <ThumbLinkField
+                value={noteEditor.thumbUrl}
+                onChange={(value) => {
+                  const trimmed = value.trim();
+                  setNoteEditor((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          thumbUrl: value,
+                          thumbTransform: trimmed
+                            ? prev.thumbTransform
+                            : { ...DEFAULT_THUMB_TRANSFORM },
+                        }
+                      : prev
+                  );
+                  if (!trimmed) {
+                    setNoteThumbEditorOpen(false);
+                  }
+                }}
+                disabled={noteSaving || noteDeleting}
+                onEdit={() => setNoteThumbEditorOpen(true)}
+              />
             </div>
             {noteError && (
               <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>
@@ -3592,6 +3694,23 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 {noteSaving ? "儲存中…" : "儲存內容"}
               </button>
             </div>
+            <ThumbEditorDialog
+              open={
+                noteThumbEditorOpen &&
+                noteEditor.thumbUrl.trim().length > 0
+              }
+              imageUrl={noteEditor.thumbUrl.trim()}
+              value={noteEditor.thumbTransform}
+              onClose={() => setNoteThumbEditorOpen(false)}
+              onApply={(next) => {
+                setNoteEditor((prev) =>
+                  prev
+                    ? { ...prev, thumbTransform: clampThumbTransform(next) }
+                    : prev
+                );
+                setNoteThumbEditorOpen(false);
+              }}
+            />
           </div>
         </div>
       )}

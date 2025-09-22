@@ -93,6 +93,9 @@ export type AppearanceRecord = {
 export type InsightRecord = {
   title?: string | null;
   content?: string | null;
+  labels?: string | null;
+  thumbUrl?: string | null;
+  thumbTransform?: ThumbTransform | null;
 };
 
 export type ItemRecord = {
