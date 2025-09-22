@@ -780,12 +780,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
 
           <div
             id={filtersContentId}
-            className="mt-4 space-y-4"
+            className="mt-4 space-y-6"
             hidden={filtersCollapsed}
             aria-hidden={filtersCollapsed}
           >
-            <div className="grid gap-4 lg:[grid-template-columns:minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
-              <label className="space-y-1 lg:col-span-2">
+            <div className="grid gap-4 lg:grid-cols-12">
+              <label className="space-y-1 lg:col-span-7">
                 <span className="text-sm text-gray-600">搜尋作品</span>
                 <input
                   value={filters.search}
@@ -794,7 +794,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   className={`${inputClass} w-full`}
                 />
               </label>
-              <label className="space-y-1">
+              <label className="space-y-1 lg:col-span-3">
                 <span className="text-sm text-gray-600">狀態</span>
                 <select
                   value={filters.status}
@@ -811,7 +811,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="space-y-1">
+              <label className="space-y-1 lg:col-span-2">
                 <span className="text-sm text-gray-600">語言</span>
                 <select
                   value={filters.language}
@@ -831,52 +831,71 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   ))}
                 </select>
               </label>
-              <label className="space-y-1">
-                <span className="text-sm text-gray-600">評分下限</span>
-                <input
-                  value={filters.ratingMin}
-                  onChange={(event) => updateFilter("ratingMin", event.target.value)}
-                  placeholder="例如：7"
-                  className={`${smallInputClass} lg:max-w-[8rem]`}
-                  inputMode="decimal"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm text-gray-600">評分上限</span>
-                <input
-                  value={filters.ratingMax}
-                  onChange={(event) => updateFilter("ratingMax", event.target.value)}
-                  placeholder="例如：9.5"
-                  className={`${smallInputClass} lg:max-w-[8rem]`}
-                  inputMode="decimal"
-                />
-              </label>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-sm text-gray-600">下次更新</span>
+            <div className="grid gap-4 lg:grid-cols-12">
+              <div className="space-y-2 lg:col-span-5 xl:col-span-4">
+                <span className="text-sm text-gray-600">評分區間</span>
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white/80 px-4 py-3">
+                  <input
+                    value={filters.ratingMin}
+                    onChange={(event) => updateFilter("ratingMin", event.target.value)}
+                    placeholder="最低，例如：7"
+                    className={`${smallInputClass} flex-1 min-w-[6rem]`}
+                    inputMode="decimal"
+                  />
+                  <span className="text-xs text-gray-400">至</span>
+                  <input
+                    value={filters.ratingMax}
+                    onChange={(event) => updateFilter("ratingMax", event.target.value)}
+                    placeholder="最高，例如：9.5"
+                    className={`${smallInputClass} flex-1 min-w-[6rem]`}
+                    inputMode="decimal"
+                  />
+                </div>
+              </div>
+              <label className="space-y-2 lg:col-span-4 xl:col-span-3">
+                <span className="text-sm text-gray-600">下次更新提醒</span>
                 <select
                   value={filters.hasNextUpdate}
                   onChange={(event) =>
                     updateFilter("hasNextUpdate", event.target.value as HasNextUpdateFilter)
                   }
-                  className={`${selectClass} w-full lg:max-w-[12rem]`}
+                  className={`${selectClass} w-full`}
                 >
                   <option value="all">全部</option>
                   <option value="yes">僅顯示有下一次提醒</option>
                   <option value="no">僅顯示未設定提醒</option>
                 </select>
               </label>
-              <label className="space-y-1">
+              <div className="space-y-2 lg:col-span-3 xl:col-span-2">
+                <span className="text-sm text-gray-600">收藏</span>
+                <div className="rounded-xl border border-gray-200 bg-white/80 px-4 py-3 text-sm text-gray-600">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={filters.favoritesOnly}
+                      onChange={(event) =>
+                        updateFilter("favoritesOnly", event.target.checked)
+                      }
+                      className="h-4 w-4 accent-red-500"
+                    />
+                    只顯示最愛
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-12">
+              <div className="space-y-2 lg:col-span-8">
                 <span className="text-sm text-gray-600">排序方式</span>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white/80 px-4 py-3">
                   <select
                     value={filters.sort}
                     onChange={(event) =>
                       updateFilter("sort", event.target.value as SortOption)
                     }
-                    className={`${selectClass} w-full min-w-[10rem] lg:max-w-[14rem]`}
+                    className={`${selectClass} w-full min-w-[12rem] flex-none`}
                   >
                     <option value="updated">最近更新</option>
                     <option value="created">建立時間</option>
@@ -884,7 +903,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                     <option value="title">名稱 A → Z</option>
                     <option value="nextUpdate">下次更新時間</option>
                   </select>
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <div className="flex items-center gap-4 text-sm text-gray-600">
                     <label className="inline-flex items-center gap-1">
                       <input
                         type="radio"
@@ -913,15 +932,15 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                     </label>
                   </div>
                 </div>
-              </label>
-              <label className="space-y-1">
+              </div>
+              <label className="space-y-2 lg:col-span-4">
                 <span className="text-sm text-gray-600">每頁顯示數量</span>
                 <select
                   value={filters.pageSize}
                   onChange={(event) =>
                     updateFilter("pageSize", Number(event.target.value))
                   }
-                  className={`${selectClass} w-full lg:max-w-[10rem]`}
+                  className={`${selectClass} w-full`}
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>
@@ -932,21 +951,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               </label>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={filters.favoritesOnly}
-                  onChange={(event) =>
-                    updateFilter("favoritesOnly", event.target.checked)
-                  }
-                  className="h-4 w-4 accent-red-500"
-                />
-                只顯示最愛
-              </label>
-            </div>
-
-            <div className="space-y-3">
+            <div className="space-y-4 rounded-2xl border border-gray-200 bg-white/70 p-4">
               <div className="space-y-1">
                 <span className="text-sm text-gray-600">標籤篩選</span>
                 <p className="text-xs text-gray-500">
@@ -998,8 +1003,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
               </div>
               {availableTags.length > 0 && (
                 filteredAvailableTags.length > 0 ? (
-                  <div className="space-y-1">
-                    <span className="text-xs text-gray-500">快速加入：</span>
+                  <div className="space-y-2">
+                    <span className="text-xs text-gray-500">快速加入</span>
                     <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
                       {filteredAvailableTags.map((tag) => {
                         const isSelected = filters.tags.includes(tag);
