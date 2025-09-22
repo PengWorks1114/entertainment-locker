@@ -27,8 +27,8 @@ type FormState = {
 };
 
 const QUICK_ADD_PROGRESS_PLATFORM = "未設定";
-const QUICK_ADD_PROGRESS_UNIT = "集數";
-const QUICK_ADD_PROGRESS_TYPE: ProgressType = "story";
+const QUICK_ADD_PROGRESS_UNIT: string | null = null;
+const QUICK_ADD_PROGRESS_TYPE: ProgressType = "chapter";
 const QUICK_ADD_DEFAULT_TITLE = "未命名";
 
 function isValidHttpUrl(value: string): boolean {
