@@ -179,7 +179,7 @@ export default function ItemListRow({ item, searchTerm = "" }: ItemListRowProps)
               type="button"
               onClick={increment}
               disabled={updating || loading}
-              className={`${buttonClass({ variant: "primary", size: "sm" })} w-full sm:w-auto`}
+              className={`progress-button progress-button--sm w-full sm:w-auto`}
             >
               {updating ? "+1…" : "+1"}
             </button>

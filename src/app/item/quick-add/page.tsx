@@ -903,17 +903,20 @@ export default function QuickAddItemPage() {
                     此櫃尚未建立標籤，可直接輸入上方欄位新增。
                   </p>
                 ) : filteredTagSuggestions.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {filteredTagSuggestions.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => void handleCommitTag(tag)}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition hover:border-blue-200 hover:text-blue-600"
-                      >
-                        #{tag}
-                      </button>
-                    ))}
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-500">現有標籤</span>
+                    <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto pr-1">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => void handleCommitTag(tag)}
+                          className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition hover:border-blue-200 hover:text-blue-600"
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <p className="text-sm text-gray-500">

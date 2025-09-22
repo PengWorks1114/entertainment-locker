@@ -138,7 +138,7 @@ export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
             type="button"
             onClick={increment}
             disabled={updating || loading}
-            className={buttonClass({ variant: "primary" })}
+            className="progress-button"
           >
             {updating ? "+1…" : "+1"}
           </button>
