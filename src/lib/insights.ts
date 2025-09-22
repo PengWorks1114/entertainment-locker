@@ -68,25 +68,28 @@ export function normalizeInsightEntries(value: unknown): InsightEntry[] {
 export function buildInsightStorageList(
   entries: InsightEntry[]
 ): InsightRecord[] {
-  return entries
-    .map((entry) => {
-      const title = entry.title.trim();
-      const content = entry.content.trim();
-      const labels = formatAppearanceLabels(entry.labels);
-      const thumbUrl = entry.thumbUrl.trim();
-      const thumbTransform = thumbUrl
-        ? prepareThumbTransform(entry.thumbTransform)
-        : null;
-      if (!title && !content && !labels && !thumbUrl) {
-        return null;
-      }
-      return {
-        title: title || null,
-        content: content || null,
-        labels: labels || null,
-        thumbUrl: thumbUrl || null,
-        thumbTransform,
-      } satisfies InsightRecord;
-    })
-    .filter((entry): entry is InsightRecord => entry !== null);
+  return entries.reduce<InsightRecord[]>((list, entry) => {
+    const title = entry.title.trim();
+    const content = entry.content.trim();
+    const labels = formatAppearanceLabels(entry.labels);
+    const thumbUrl = entry.thumbUrl.trim();
+    const thumbTransform = thumbUrl
+      ? prepareThumbTransform(entry.thumbTransform)
+      : null;
+
+    if (!title && !content && !labels && !thumbUrl) {
+      return list;
+    }
+
+    const record: InsightRecord = {
+      title: title || null,
+      content: content || null,
+      labels: labels || null,
+      thumbUrl: thumbUrl || null,
+      thumbTransform,
+    };
+
+    list.push(record);
+    return list;
+  }, []);
 }
