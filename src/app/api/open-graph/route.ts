@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const FETCH_TIMEOUT_MS = 7000;
 const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
 
-const META_PRIORITY = [
+const META_IMAGE_PRIORITY = [
   "og:image",
   "og:image:url",
   "og:image:secure_url",
@@ -16,6 +16,12 @@ const META_PRIORITY = [
   "twitter:image:large",
   "twitter:image:secure",
   "image",
+];
+
+const META_TITLE_PRIORITY = [
+  "og:title",
+  "twitter:title",
+  "title",
 ];
 
 function extractAttribute(tag: string, attribute: string): string | null {
@@ -42,7 +48,7 @@ function normalizeUrl(candidate: string, base: URL): string | null {
   }
 }
 
-function pickMetaImage(html: string, baseUrl: URL): string | null {
+function collectMetaTags(html: string): Map<string, string> {
   const metaTagRegex = /<meta\s+[^>]*>/gi;
   const candidates = new Map<string, string>();
 
@@ -69,8 +75,16 @@ function pickMetaImage(html: string, baseUrl: URL): string | null {
     candidates.set(normalizedKey, content.trim());
   }
 
-  for (const key of META_PRIORITY) {
-    const value = candidates.get(key);
+  return candidates;
+}
+
+function pickMetaImage(
+  html: string,
+  baseUrl: URL,
+  metaTags: Map<string, string>
+): string | null {
+  for (const key of META_IMAGE_PRIORITY) {
+    const value = metaTags.get(key);
     if (!value) {
       continue;
     }
@@ -89,6 +103,32 @@ function pickMetaImage(html: string, baseUrl: URL): string | null {
       if (resolved) {
         return resolved;
       }
+    }
+  }
+
+  return null;
+}
+
+function pickMetaTitle(
+  html: string,
+  metaTags: Map<string, string>
+): string | null {
+  for (const key of META_TITLE_PRIORITY) {
+    const value = metaTags.get(key);
+    if (value) {
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  const titleRegex = /<title[^>]*>([^<]*)<\/title>/i;
+  const titleMatch = html.match(titleRegex);
+  if (titleMatch) {
+    const content = titleMatch[1]?.trim();
+    if (content) {
+      return content;
     }
   }
 
@@ -174,7 +214,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ image: null });
   }
 
-  const imageUrl = pickMetaImage(html, targetUrl);
-  return Response.json({ image: imageUrl ?? null });
+  const metaTags = collectMetaTags(html);
+  const imageUrl = pickMetaImage(html, targetUrl, metaTags);
+  const title = pickMetaTitle(html, metaTags);
+  return Response.json({ image: imageUrl ?? null, title: title ?? null });
 }
 

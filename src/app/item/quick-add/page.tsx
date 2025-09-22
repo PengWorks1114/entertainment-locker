@@ -7,7 +7,10 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { fetchOpenGraphImage } from "@/lib/opengraph";
+import {
+  fetchOpenGraphImage,
+  fetchOpenGraphMetadata,
+} from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType } from "@/lib/types";
 import {
@@ -244,8 +247,10 @@ export default function QuickAddItemPage() {
   const submitDisabled = useMemo(() => {
     if (!hasCabinet) return true;
     if (saving) return true;
-    return !form.titleZh.trim();
-  }, [form.titleZh, hasCabinet, saving]);
+    const hasTitle = form.titleZh.trim().length > 0;
+    const hasSourceUrl = form.sourceUrl.trim().length > 0;
+    return !hasTitle && !hasSourceUrl;
+  }, [form.sourceUrl, form.titleZh, hasCabinet, saving]);
 
   function handleInputChange<K extends keyof FormState>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -260,12 +265,6 @@ export default function QuickAddItemPage() {
     const cabinetId = form.cabinetId.trim();
     if (!cabinetId) {
       setError("請選擇櫃子");
-      return;
-    }
-
-    const titleZh = form.titleZh.trim();
-    if (!titleZh) {
-      setError("主要標題必填");
       return;
     }
 
@@ -292,9 +291,26 @@ export default function QuickAddItemPage() {
       parsedProgressValue = parsedValue;
     }
 
+    let titleZh = form.titleZh.trim();
+    if (!titleZh && !sourceUrl) {
+      setError("請輸入主要標題或有效的來源連結");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
+      if (!titleZh && sourceUrl) {
+        const metadata = await fetchOpenGraphMetadata(sourceUrl);
+        const fetchedTitle = metadata?.title?.trim();
+        if (fetchedTitle) {
+          titleZh = fetchedTitle;
+          setForm((prev) => ({ ...prev, titleZh: fetchedTitle }));
+        } else {
+          throw new Error("無法自動取得標題，請手動輸入主要標題");
+        }
+      }
+
       const db = getFirebaseDb();
       if (!db) {
         throw new Error("Firebase 尚未設定");

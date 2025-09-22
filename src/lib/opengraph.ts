@@ -1,6 +1,11 @@
-export async function fetchOpenGraphImage(
+type OpenGraphMetadata = {
+  image: string | null;
+  title: string | null;
+};
+
+export async function fetchOpenGraphMetadata(
   url: string
-): Promise<string | null> {
+): Promise<OpenGraphMetadata | null> {
   try {
     const endpoint = `/api/open-graph?url=${encodeURIComponent(url)}`;
     const response = await fetch(endpoint, {
@@ -15,14 +20,28 @@ export async function fetchOpenGraphImage(
       data &&
       typeof data === "object" &&
       "image" in data &&
-      typeof (data as { image: unknown }).image === "string"
+      "title" in data
     ) {
-      const image = (data as { image: string }).image.trim();
-      return image ? image : null;
+      const { image, title } = data as {
+        image: unknown;
+        title: unknown;
+      };
+      const normalizedImage =
+        typeof image === "string" ? image.trim() || null : null;
+      const normalizedTitle =
+        typeof title === "string" ? title.trim() || null : null;
+      return { image: normalizedImage, title: normalizedTitle };
     }
-    return null;
+    return { image: null, title: null };
   } catch {
     return null;
   }
+}
+
+export async function fetchOpenGraphImage(
+  url: string
+): Promise<string | null> {
+  const metadata = await fetchOpenGraphMetadata(url);
+  return metadata?.image ?? null;
 }
 
