@@ -235,6 +235,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const noteEditorWasOpenRef = useRef(false);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const titleZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -717,7 +718,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   };
 
   useEffect(() => {
-    if (!noteEditor) return;
+    const isOpen = Boolean(noteEditor);
+    const justOpened = isOpen && !noteEditorWasOpenRef.current;
+    noteEditorWasOpenRef.current = isOpen;
+    if (!justOpened) {
+      return;
+    }
     const timer = setTimeout(() => {
       const textarea = noteTextareaRef.current;
       if (textarea) {
