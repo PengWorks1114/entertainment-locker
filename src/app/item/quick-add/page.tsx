@@ -12,7 +12,8 @@ import {
   fetchOpenGraphMetadata,
 } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
-import type { ProgressType } from "@/lib/types";
+import type { ProgressType, ItemLanguage } from "@/lib/types";
+import { ITEM_LANGUAGE_OPTIONS, ITEM_LANGUAGE_VALUES } from "@/lib/types";
 import {
   fetchCabinetOptions,
   type CabinetOption,
@@ -21,6 +22,10 @@ import {
 type FormState = {
   cabinetId: string;
   titleZh: string;
+  titleAlt: string;
+  author: string;
+  language: ItemLanguage | "";
+  tags: string;
   sourceUrl: string;
   thumbUrl: string;
   progressValue: string;
@@ -49,6 +54,10 @@ export default function QuickAddItemPage() {
   const [form, setForm] = useState<FormState>({
     cabinetId: "",
     titleZh: "",
+    titleAlt: "",
+    author: "",
+    language: "zh",
+    tags: "",
     sourceUrl: "",
     thumbUrl: "",
     progressValue: "",
@@ -293,6 +302,19 @@ export default function QuickAddItemPage() {
     }
 
     let titleZh = form.titleZh.trim();
+    const titleAlt = form.titleAlt.trim();
+    const author = form.author.trim();
+    const languageValue = form.language;
+    if (languageValue && !ITEM_LANGUAGE_VALUES.includes(languageValue)) {
+      setError("請選擇有效的語言");
+      return;
+    }
+
+    const tags = form.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const uniqueTags = Array.from(new Set(tags));
 
     setSaving(true);
     setError(null);
@@ -337,10 +359,10 @@ export default function QuickAddItemPage() {
         uid: user.uid,
         cabinetId,
         titleZh,
-        titleAlt: null,
-        author: null,
-        language: null,
-        tags: [],
+        titleAlt: titleAlt || null,
+        author: author || null,
+        language: languageValue || null,
+        tags: uniqueTags,
         links,
         thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
@@ -494,6 +516,53 @@ export default function QuickAddItemPage() {
             </div>
 
             <div className="space-y-2">
+              <label htmlFor="titleAlt" className="text-sm font-medium text-gray-700">
+                原文/其他標題（可不填）
+              </label>
+              <input
+                id="titleAlt"
+                type="text"
+                className={inputClass}
+                value={form.titleAlt}
+                onChange={(event) => handleInputChange("titleAlt", event.target.value)}
+                placeholder="選填"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="author" className="text-sm font-medium text-gray-700">
+                作者 / 製作（可不填）
+              </label>
+              <input
+                id="author"
+                type="text"
+                className={inputClass}
+                value={form.author}
+                onChange={(event) => handleInputChange("author", event.target.value)}
+                placeholder="選填"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="language" className="text-sm font-medium text-gray-700">
+                語言
+              </label>
+              <select
+                id="language"
+                className={inputClass}
+                value={form.language}
+                onChange={(event) => handleInputChange("language", event.target.value)}
+              >
+                <option value="">未選擇</option>
+                {ITEM_LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
               <label htmlFor="sourceUrl" className="text-sm font-medium text-gray-700">
                 來源連結
               </label>
@@ -504,6 +573,20 @@ export default function QuickAddItemPage() {
                 value={form.sourceUrl}
                 onChange={(event) => handleInputChange("sourceUrl", event.target.value)}
                 placeholder="https://example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="tags" className="text-sm font-medium text-gray-700">
+                標籤（以逗號分隔，可不填）
+              </label>
+              <input
+                id="tags"
+                type="text"
+                className={inputClass}
+                value={form.tags}
+                onChange={(event) => handleInputChange("tags", event.target.value)}
+                placeholder="例如：冒險, 推理"
               />
             </div>
 
