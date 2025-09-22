@@ -17,6 +17,7 @@ import {
 import ItemCard from "@/components/ItemCard";
 import ItemListRow from "@/components/ItemListRow";
 import ItemThumbCard from "@/components/ItemThumbCard";
+import ItemImageCard from "@/components/ItemImageCard";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
@@ -44,7 +45,7 @@ type CabinetPageProps = {
 type SortOption = "updated" | "title" | "rating" | "nextUpdate" | "created";
 type SortDirection = "asc" | "desc";
 type HasNextUpdateFilter = "all" | "yes" | "no";
-type ViewMode = "grid" | "thumb" | "list";
+type ViewMode = "grid" | "thumb" | "image" | "list";
 
 type FilterState = {
   search: string;
@@ -63,8 +64,9 @@ type FilterState = {
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 30, 40, 50, 100] as const;
 const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: "grid", label: "圖表" },
-  { value: "thumb", label: "縮圖" },
+  { value: "grid", label: "詳細" },
+  { value: "thumb", label: "簡略" },
+  { value: "image", label: "圖片" },
   { value: "list", label: "列表" },
 ];
 
@@ -153,6 +155,7 @@ function normalizeCabinetTags(input: unknown): string[] {
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const { id: cabinetId } = use(params);
   const searchParams = useSearchParams();
+  const storageKey = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
@@ -173,7 +176,16 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const hasInitializedPage = useRef(false);
   const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") {
+      return "grid";
+    }
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored === "grid" || stored === "thumb" || stored === "list" || stored === "image") {
+      return stored;
+    }
+    return "grid";
+  });
   const [filtersCollapsed, setFiltersCollapsed] = useState(true);
   const filtersContentId = "cabinet-filter-panel";
 
@@ -430,20 +442,18 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     if (typeof window === "undefined") {
       return;
     }
-    const key = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
-    const stored = window.localStorage.getItem(key);
-    if (stored === "grid" || stored === "list" || stored === "thumb") {
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored === "grid" || stored === "list" || stored === "thumb" || stored === "image") {
       setViewMode(stored);
     }
-  }, [cabinetId]);
+  }, [cabinetId, storageKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    const key = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
-    window.localStorage.setItem(key, viewMode);
-  }, [viewMode, cabinetId]);
+    window.localStorage.setItem(storageKey, viewMode);
+  }, [viewMode, storageKey]);
 
   const availableTags = useMemo(() => {
     const tagSet = new Set<string>(cabinetTags);
@@ -1078,6 +1088,12 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleItems.map((item) => (
                 <ItemThumbCard key={item.id} item={item} searchTerm={highlightQuery} />
+              ))}
+            </div>
+          ) : viewMode === "image" ? (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {visibleItems.map((item) => (
+                <ItemImageCard key={item.id} item={item} />
               ))}
             </div>
           ) : (

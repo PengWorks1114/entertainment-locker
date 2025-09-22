@@ -73,57 +73,140 @@ function formatSummary(primary: PrimaryProgressState | null, loading: boolean): 
   return `${primary.platform || "未命名平台"}｜${typeLabel} ${valueText}${unitText}`;
 }
 
+type StoreListener = (state: {
+  primary: PrimaryProgressState | null;
+  loading: boolean;
+  error: string | null;
+}) => void;
+
+type StoreEntry = {
+  primary: PrimaryProgressState | null;
+  loading: boolean;
+  error: string | null;
+  listeners: Set<StoreListener>;
+  unsubscribe?: () => void;
+  cleanupTimer: ReturnType<typeof setTimeout> | null;
+};
+
+const STORE_CLEANUP_DELAY = 10000;
+
+const primaryProgressStore = new Map<string, StoreEntry>();
+
+function notifyStore(entry: StoreEntry) {
+  const snapshot = {
+    primary: entry.primary,
+    loading: entry.loading,
+    error: entry.error,
+  } as const;
+  entry.listeners.forEach((listener) => listener(snapshot));
+}
+
+function startSubscription(itemId: string, entry: StoreEntry) {
+  if (entry.unsubscribe) {
+    return;
+  }
+  entry.loading = true;
+  notifyStore(entry);
+  const db = getFirebaseDb();
+  if (!db) {
+    entry.error = "Firebase 尚未設定";
+    entry.loading = false;
+    notifyStore(entry);
+    return;
+  }
+  const progressQuery = query(
+    collection(db, "item", itemId, "progress"),
+    where("isPrimary", "==", true),
+    limit(1)
+  );
+  entry.unsubscribe = onSnapshot(
+    progressQuery,
+    (snap) => {
+      if (snap.empty) {
+        entry.primary = null;
+      } else {
+        const docSnap = snap.docs[0];
+        const data = docSnap.data();
+        const typeValue =
+          typeof data.type === "string" && progressTypeLabelMap.has(data.type as ProgressType)
+            ? (data.type as ProgressType)
+            : "chapter";
+        entry.primary = {
+          id: docSnap.id,
+          platform: typeof data.platform === "string" ? data.platform : "",
+          type: typeValue,
+          value:
+            typeof data.value === "number" && Number.isFinite(data.value) ? data.value : 0,
+          unit: typeof data.unit === "string" ? data.unit : null,
+          updatedAt: data.updatedAt instanceof Timestamp ? (data.updatedAt as Timestamp) : null,
+        } satisfies PrimaryProgressState;
+      }
+      entry.loading = false;
+      entry.error = null;
+      notifyStore(entry);
+    },
+    (err) => {
+      console.error("載入主進度失敗", err);
+      entry.error = "載入主進度失敗";
+      entry.loading = false;
+      notifyStore(entry);
+    }
+  );
+}
+
+function subscribeToPrimaryProgress(itemId: string, listener: StoreListener) {
+  let entry = primaryProgressStore.get(itemId);
+  if (!entry) {
+    entry = {
+      primary: null,
+      loading: true,
+      error: null,
+      listeners: new Set(),
+      unsubscribe: undefined,
+      cleanupTimer: null,
+    } satisfies StoreEntry;
+    primaryProgressStore.set(itemId, entry);
+  }
+  if (entry.cleanupTimer) {
+    clearTimeout(entry.cleanupTimer);
+    entry.cleanupTimer = null;
+  }
+  entry.listeners.add(listener);
+  listener({ primary: entry.primary, loading: entry.loading, error: entry.error });
+  startSubscription(itemId, entry);
+  return () => {
+    const currentEntry = primaryProgressStore.get(itemId);
+    if (!currentEntry) {
+      return;
+    }
+    currentEntry.listeners.delete(listener);
+    if (currentEntry.listeners.size === 0) {
+      currentEntry.cleanupTimer = setTimeout(() => {
+        const latest = primaryProgressStore.get(itemId);
+        if (!latest || latest.listeners.size > 0) {
+          return;
+        }
+        latest.unsubscribe?.();
+        primaryProgressStore.delete(itemId);
+      }, STORE_CLEANUP_DELAY);
+    }
+  };
+}
+
 export function usePrimaryProgress(item: ItemRecord) {
   const [primary, setPrimary] = useState<PrimaryProgressState | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const db = getFirebaseDb();
-    if (!db) {
-      setError("Firebase 尚未設定");
-      setLoading(false);
-      return undefined;
-    }
-    const progressQuery = query(
-      collection(db, "item", item.id, "progress"),
-      where("isPrimary", "==", true),
-      limit(1)
-    );
-    const unsub = onSnapshot(
-      progressQuery,
-      (snap) => {
-        if (snap.empty) {
-          setPrimary(null);
-        } else {
-          const docSnap = snap.docs[0];
-          const data = docSnap.data();
-          const typeValue =
-            typeof data.type === "string" && progressTypeLabelMap.has(data.type as ProgressType)
-              ? (data.type as ProgressType)
-              : "chapter";
-          setPrimary({
-            id: docSnap.id,
-            platform: typeof data.platform === "string" ? data.platform : "",
-            type: typeValue,
-            value:
-              typeof data.value === "number" && Number.isFinite(data.value) ? data.value : 0,
-            unit: typeof data.unit === "string" ? data.unit : null,
-            updatedAt: data.updatedAt instanceof Timestamp ? (data.updatedAt as Timestamp) : null,
-          });
-        }
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        console.error("載入主進度失敗", err);
-        setError("載入主進度失敗");
-        setLoading(false);
-      }
-    );
-    return () => unsub();
+    return subscribeToPrimaryProgress(item.id, ({ primary: next, loading: isLoading, error }) => {
+      setPrimary(next);
+      setLoading(isLoading);
+      setLoadError(error);
+    });
   }, [item.id]);
 
   useEffect(() => {
@@ -137,10 +220,10 @@ export function usePrimaryProgress(item: ItemRecord) {
 
   const handleIncrement = useCallback(async () => {
     if (!primary) {
-      setError("尚未設定主進度，請先在物件頁面新增並設定主進度。");
+      setManualError("尚未設定主進度，請先在物件頁面新增並設定主進度。");
       return;
     }
-    setError(null);
+    setManualError(null);
     setSuccess(null);
     setUpdating(true);
     try {
@@ -164,11 +247,17 @@ export function usePrimaryProgress(item: ItemRecord) {
       setSuccess("已更新主進度");
     } catch (err) {
       console.error("更新主進度時發生錯誤", err);
-      setError("更新主進度時發生錯誤");
+      setManualError("更新主進度時發生錯誤");
     } finally {
       setUpdating(false);
     }
   }, [primary, item.id, item.updateFrequency]);
+
+  const combinedError = manualError ?? loadError;
+
+  const handleSetError = useCallback((value: string | null) => {
+    setManualError(value);
+  }, []);
 
   return {
     primary,
@@ -176,10 +265,10 @@ export function usePrimaryProgress(item: ItemRecord) {
     summary,
     listDisplay,
     updating,
-    error,
+    error: combinedError,
     success,
     increment: handleIncrement,
-    setError,
+    setError: handleSetError,
     setSuccess,
   };
 }
