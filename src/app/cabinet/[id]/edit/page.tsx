@@ -47,7 +47,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
 
   const [locked, setLocked] = useState(false);
-  const [storedLockCode, setStoredLockCode] = useState<string | null>(null);
+  const [storedLockCode, setStoredLockCode] = useState<number | null>(null);
   const [lockCode, setLockCode] = useState("");
   const [lockCodeConfirm, setLockCodeConfirm] = useState("");
   const [unlockCode, setUnlockCode] = useState("");
@@ -164,14 +164,14 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setStoredLockCode(() => {
           const rawCode = data?.lockCode;
           if (typeof rawCode === "number" && Number.isSafeInteger(rawCode)) {
-            return String(rawCode);
+            return rawCode;
           }
           if (typeof rawCode === "string") {
             const trimmed = rawCode.trim();
             if (/^[0-9]+$/.test(trimmed)) {
               const parsed = Number(trimmed);
               if (Number.isSafeInteger(parsed)) {
-                return String(parsed);
+                return parsed;
               }
             }
           }
@@ -239,13 +239,12 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setSaving(false);
         return;
       }
-      const storedNumber = Number(storedLockCode);
-      if (!Number.isSafeInteger(storedNumber)) {
+      if (!Number.isSafeInteger(storedLockCode)) {
         setMessage("鎖定密碼已損毀，請重新設定鎖定密碼");
         setSaving(false);
         return;
       }
-      lockCodeToPersist = storedNumber;
+      lockCodeToPersist = storedLockCode;
     } else {
       lockCodeToPersist = null;
     }
@@ -283,9 +282,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       );
       setThumbEditorOpen(false);
       setLocked(locked);
-      setStoredLockCode(
-        lockCodeToPersist !== null ? String(lockCodeToPersist) : null
-      );
+      setStoredLockCode(lockCodeToPersist);
       setLockCode("");
       setLockCodeConfirm("");
       setUnlockCode("");
@@ -363,7 +360,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         });
         invalidateCabinetOptions(user.uid);
         setLocked(true);
-        setStoredLockCode(String(parsedLockCode));
+        setStoredLockCode(parsedLockCode);
         setLockCode("");
         setLockCodeConfirm("");
         setUnlockCode("");
@@ -383,15 +380,19 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setMessage("請輸入鎖定密碼以解除鎖定");
       return;
     }
-    if (storedLockCode === null) {
-      if (unlockCodeRaw !== MASTER_UNLOCK_CODE) {
-        setMessage("鎖定密碼不正確，無法解除鎖定");
-        return;
-      }
-    } else if (
-      unlockCodeRaw !== storedLockCode &&
-      unlockCodeRaw !== MASTER_UNLOCK_CODE
-    ) {
+    if (!/^[0-9]+$/.test(unlockCodeRaw)) {
+      setMessage("鎖定密碼僅能輸入數字");
+      return;
+    }
+    const unlockCodeValue = Number(unlockCodeRaw);
+    if (!Number.isSafeInteger(unlockCodeValue)) {
+      setMessage("鎖定密碼過長，請重新輸入");
+      return;
+    }
+    const masterUnlocked = unlockCodeRaw === MASTER_UNLOCK_CODE;
+    const matchesStored =
+      storedLockCode !== null && unlockCodeValue === storedLockCode;
+    if (!masterUnlocked && !matchesStored) {
       setMessage("鎖定密碼不正確，無法解除鎖定");
       return;
     }
@@ -592,7 +593,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
               </div>
               {locked ? (
                 lockMode === "unlocking" ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <label className="space-y-1">
                       <span className="text-xs text-gray-600">解除鎖定密碼</span>
                       <input
@@ -605,7 +606,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                         disabled={lockSaving}
                       />
                     </label>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex flex-col gap-3 sm:flex-row">
                       <button
                         type="button"
                         onClick={() => {
@@ -628,11 +629,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <p className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
                       此櫃子已鎖定，如需瀏覽請先解除鎖定。
                     </p>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex flex-col gap-3 sm:flex-row">
                       <button
                         type="button"
                         onClick={() => {
@@ -648,7 +649,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                   </div>
                 )
               ) : lockMode === "locking" ? (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <label className="space-y-1">
                     <span className="text-xs text-gray-600">鎖定密碼</span>
                     <input
@@ -673,7 +674,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       disabled={lockSaving}
                     />
                   </label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="flex flex-col gap-3 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => {
