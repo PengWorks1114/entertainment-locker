@@ -546,10 +546,10 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
                 return (
                   <article
                     key={item.id}
-                    className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white/90 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white/90 p-4 shadow-sm sm:flex-row sm:items-start sm:justify-between"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="h-20 w-16 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner">
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div className="h-20 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner">
                         {item.thumbUrl ? (
                           isOptimizedImageUrl(item.thumbUrl) ? (
                             <Image
@@ -579,7 +579,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
                         )}
                       </div>
                       <div className="space-y-1">
-                        <h2 className="break-anywhere text-lg font-semibold text-gray-900">
+                        <h2 className="line-clamp-2 break-anywhere text-lg font-semibold text-gray-900">
                           {item.title}
                         </h2>
                         {item.deletedAt && (
@@ -589,7 +589,7 @@ export default function CabinetTrashPage({ params }: CabinetTrashPageProps) {
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-none sm:items-center">
                       <button
                         type="button"
                         onClick={() => handleRestore(item.id)}

@@ -784,8 +784,8 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             hidden={filtersCollapsed}
             aria-hidden={filtersCollapsed}
           >
-            <div className="grid gap-4 lg:grid-cols-5">
-              <label className="space-y-1">
+            <div className="grid gap-4 lg:[grid-template-columns:minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+              <label className="space-y-1 lg:col-span-2">
                 <span className="text-sm text-gray-600">搜尋作品</span>
                 <input
                   value={filters.search}
@@ -837,7 +837,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   value={filters.ratingMin}
                   onChange={(event) => updateFilter("ratingMin", event.target.value)}
                   placeholder="例如：7"
-                  className={smallInputClass}
+                  className={`${smallInputClass} lg:max-w-[8rem]`}
                   inputMode="decimal"
                 />
               </label>
@@ -847,7 +847,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   value={filters.ratingMax}
                   onChange={(event) => updateFilter("ratingMax", event.target.value)}
                   placeholder="例如：9.5"
-                  className={smallInputClass}
+                  className={`${smallInputClass} lg:max-w-[8rem]`}
                   inputMode="decimal"
                 />
               </label>
@@ -861,7 +861,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   onChange={(event) =>
                     updateFilter("hasNextUpdate", event.target.value as HasNextUpdateFilter)
                   }
-                  className={`${selectClass} w-full`}
+                  className={`${selectClass} w-full lg:max-w-[12rem]`}
                 >
                   <option value="all">全部</option>
                   <option value="yes">僅顯示有下一次提醒</option>
@@ -876,7 +876,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                     onChange={(event) =>
                       updateFilter("sort", event.target.value as SortOption)
                     }
-                    className={`${selectClass} flex-1 min-w-[10rem]`}
+                    className={`${selectClass} w-full min-w-[10rem] lg:max-w-[14rem]`}
                   >
                     <option value="updated">最近更新</option>
                     <option value="created">建立時間</option>
@@ -921,7 +921,7 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
                   onChange={(event) =>
                     updateFilter("pageSize", Number(event.target.value))
                   }
-                  className={`${selectClass} w-full`}
+                  className={`${selectClass} w-full lg:max-w-[10rem]`}
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>
