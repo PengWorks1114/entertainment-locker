@@ -1,10 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import {
@@ -18,6 +33,20 @@ import {
   fetchCabinetOptions,
   type CabinetOption,
 } from "@/lib/cabinet-options";
+import CabinetTagQuickEditor from "@/components/CabinetTagQuickEditor";
+
+function normalizeCabinetTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map((tag) => String(tag ?? "").trim())
+        .filter((tag): tag is string => tag.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
 
 type FormState = {
   cabinetId: string;
@@ -25,7 +54,7 @@ type FormState = {
   titleAlt: string;
   author: string;
   language: ItemLanguage | "";
-  tags: string;
+  selectedTags: string[];
   sourceUrl: string;
   thumbUrl: string;
   progressValue: string;
@@ -57,7 +86,7 @@ export default function QuickAddItemPage() {
     titleAlt: "",
     author: "",
     language: "zh",
-    tags: "",
+    selectedTags: [],
     sourceUrl: "",
     thumbUrl: "",
     progressValue: "",
@@ -67,6 +96,21 @@ export default function QuickAddItemPage() {
   const clipboardCheckedRef = useRef(false);
   const gestureRetryHandlerRef = useRef<(() => void) | null>(null);
   const pathname = usePathname();
+  const [cabinetTags, setCabinetTags] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState("");
+  const [tagStatus, setTagStatus] = useState<{
+    message: string | null;
+    error: string | null;
+    saving: boolean;
+  }>({
+    message: null,
+    error: null,
+    saving: false,
+  });
+  const [isFetchingTags, setIsFetchingTags] = useState(false);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const tagsCacheRef = useRef<Record<string, string[]>>({});
+  const previousCabinetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -119,6 +163,85 @@ export default function QuickAddItemPage() {
       setForm((prev) => ({ ...prev, cabinetId: fallback.id }));
     }
   }, [cabinets, form.cabinetId]);
+
+  const selectedCabinet = useMemo(
+    () => cabinets.find((entry) => entry.id === form.cabinetId) ?? null,
+    [cabinets, form.cabinetId]
+  );
+
+  const fetchCabinetTags = useCallback(
+    async (cabinetId: string, force = false): Promise<string[]> => {
+      if (!cabinetId || !user) {
+        return [];
+      }
+      if (!force) {
+        const cached = tagsCacheRef.current[cabinetId];
+        if (cached) {
+          return cached;
+        }
+      }
+      try {
+        const db = getFirebaseDb();
+        if (!db) {
+          return [];
+        }
+        const snap = await getDoc(doc(db, "cabinet", cabinetId));
+        if (!snap.exists()) {
+          return [];
+        }
+        const data = snap.data();
+        if (data?.uid !== user.uid) {
+          return [];
+        }
+        return normalizeCabinetTags(data?.tags);
+      } catch (err) {
+        console.error("載入櫃子標籤失敗", err);
+        return [];
+      }
+    },
+    [user]
+  );
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetTags([]);
+      tagsCacheRef.current = {};
+      return;
+    }
+    if (!form.cabinetId) {
+      setCabinetTags([]);
+      return;
+    }
+    let active = true;
+    setIsFetchingTags(true);
+    fetchCabinetTags(form.cabinetId)
+      .then((tags) => {
+        if (!active) return;
+        tagsCacheRef.current[form.cabinetId] = tags;
+        setCabinetTags(tags);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCabinetTags([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsFetchingTags(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.cabinetId, user, fetchCabinetTags]);
+
+  useEffect(() => {
+    const previousCabinetId = previousCabinetIdRef.current;
+    if (previousCabinetId && previousCabinetId !== form.cabinetId) {
+      setForm((prev) => ({ ...prev, selectedTags: [] }));
+      setTagQuery("");
+      setTagStatus({ message: null, error: null, saving: false });
+    }
+    previousCabinetIdRef.current = form.cabinetId;
+  }, [form.cabinetId]);
 
   useEffect(() => {
     clipboardCheckedRef.current = false;
@@ -310,11 +433,15 @@ export default function QuickAddItemPage() {
       return;
     }
 
-    const tags = form.tags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter((tag) => tag.length > 0);
-    const uniqueTags = Array.from(new Set(tags));
+    const allowedTags = new Set(cabinetTags);
+    const uniqueTags = Array.from(
+      new Set(
+        form.selectedTags
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+          .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
+      )
+    );
 
     setSaving(true);
     setError(null);
@@ -403,8 +530,105 @@ export default function QuickAddItemPage() {
     }
   }
 
+  async function handleCommitTag(rawTag: string) {
+    const value = rawTag.trim();
+    if (!value) {
+      setTagStatus({ message: null, error: "請輸入標籤名稱", saving: false });
+      return;
+    }
+    if (!form.cabinetId) {
+      setTagStatus({ message: null, error: "請先選擇櫃子", saving: false });
+      return;
+    }
+    if (tagStatus.saving) {
+      return;
+    }
+    setTagStatus({ message: null, error: null, saving: false });
+    let alreadySelected = false;
+    setForm((prev) => {
+      if (prev.selectedTags.includes(value)) {
+        alreadySelected = true;
+        return prev;
+      }
+      return { ...prev, selectedTags: [...prev.selectedTags, value] };
+    });
+    setTagQuery("");
+    if (alreadySelected) {
+      setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      return;
+    }
+    if (cabinetTags.includes(value)) {
+      setTagStatus({ message: `已加入 #${value}`, error: null, saving: false });
+      return;
+    }
+    const previousTags = cabinetTags;
+    const nextTags = normalizeCabinetTags([...previousTags, value]);
+    setTagStatus({ message: null, error: null, saving: true });
+    setCabinetTags(nextTags);
+    tagsCacheRef.current[form.cabinetId] = nextTags;
+    try {
+      const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
+      await updateDoc(doc(db, "cabinet", form.cabinetId), {
+        tags: nextTags,
+        updatedAt: serverTimestamp(),
+      });
+      setTagStatus({ message: `已新增 #${value}`, error: null, saving: false });
+    } catch (err) {
+      console.error("新增標籤失敗", err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "新增標籤時發生錯誤，請稍後再試";
+      setTagStatus({ message: null, error: message, saving: false });
+      setCabinetTags(previousTags);
+      tagsCacheRef.current[form.cabinetId] = previousTags;
+      setForm((prev) => ({
+        ...prev,
+        selectedTags: prev.selectedTags.filter((tag) => tag !== value),
+      }));
+    }
+  }
+
+  function handleRemoveSelectedTag(tag: string) {
+    setForm((prev) => ({
+      ...prev,
+      selectedTags: prev.selectedTags.filter((item) => item !== tag),
+    }));
+    setTagStatus({ message: null, error: null, saving: false });
+  }
+
+  function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleCommitTag(tagQuery);
+    }
+  }
+
   const inputClass =
     "h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-base shadow-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400";
+
+  const selectedTagSet = useMemo(
+    () => new Set(form.selectedTags),
+    [form.selectedTags]
+  );
+
+  const availableTagSuggestions = useMemo(
+    () => cabinetTags.filter((tag) => !selectedTagSet.has(tag)),
+    [cabinetTags, selectedTagSet]
+  );
+
+  const filteredTagSuggestions = useMemo(() => {
+    const query = tagQuery.trim().toLowerCase();
+    if (!query) {
+      return availableTagSuggestions;
+    }
+    return availableTagSuggestions.filter((tag) =>
+      tag.toLowerCase().includes(query)
+    );
+  }, [availableTagSuggestions, tagQuery]);
 
   if (!authChecked) {
     return (
@@ -576,18 +800,127 @@ export default function QuickAddItemPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="tags" className="text-sm font-medium text-gray-700">
-                標籤（以逗號分隔，可不填）
-              </label>
-              <input
-                id="tags"
-                type="text"
-                className={inputClass}
-                value={form.tags}
-                onChange={(event) => handleInputChange("tags", event.target.value)}
-                placeholder="例如：冒險, 推理"
-              />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-gray-700">
+                  標籤
+                  <span className="ml-1 text-xs font-normal text-gray-500">
+                    （可不填）
+                  </span>
+                </label>
+                {form.cabinetId && (
+                  <button
+                    type="button"
+                    onClick={() => setTagManagerOpen(true)}
+                    className="text-xs text-blue-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
+                    disabled={selectedCabinet?.isLocked || !user}
+                    title={
+                      selectedCabinet?.isLocked
+                        ? "此櫃子已鎖定，請先解除鎖定"
+                        : undefined
+                    }
+                  >
+                    管理標籤
+                  </button>
+                )}
+              </div>
+
+              {form.selectedTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {form.selectedTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs text-blue-700"
+                    >
+                      #{tag}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSelectedTag(tag)}
+                        className="rounded-full p-1 text-blue-500 transition hover:bg-blue-100"
+                        aria-label={`移除標籤 ${tag}`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-500">
+                  尚未選擇標籤，可直接輸入新增或從下方列表挑選。
+                </p>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex flex-1 items-center gap-2">
+                  <input
+                    value={tagQuery}
+                    onChange={(event) => {
+                      setTagQuery(event.target.value);
+                      setTagStatus({ message: null, error: null, saving: false });
+                    }}
+                    onKeyDown={handleTagKeyDown}
+                    placeholder={
+                      form.cabinetId ? "輸入或搜尋標籤" : "請先選擇櫃子"
+                    }
+                    className={inputClass}
+                    disabled={!form.cabinetId}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCommitTag(tagQuery)}
+                  className="h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm text-blue-700 transition hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!form.cabinetId || tagStatus.saving || !tagQuery.trim()}
+                >
+                  {tagStatus.saving ? "處理中…" : "加入標籤"}
+                </button>
+              </div>
+
+              {tagStatus.error ? (
+                <div className="break-anywhere rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                  {tagStatus.error}
+                </div>
+              ) : null}
+              {tagStatus.message ? (
+                <div className="break-anywhere rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                  {tagStatus.message}
+                </div>
+              ) : null}
+
+              {form.selectedTags.some((tag) => !cabinetTags.includes(tag)) && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                  有部分標籤已於此櫃的標籤管理中移除，儲存時將自動忽略。
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-gray-100 bg-white/80 px-4 py-4">
+                {!form.cabinetId ? (
+                  <p className="text-sm text-gray-500">請先選擇櫃子以載入標籤。</p>
+                ) : isFetchingTags ? (
+                  <p className="text-sm text-gray-500">載入標籤中…</p>
+                ) : cabinetTags.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    此櫃尚未建立標籤，可直接輸入上方欄位新增。
+                  </p>
+                ) : filteredTagSuggestions.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {filteredTagSuggestions.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => void handleCommitTag(tag)}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition hover:border-blue-200 hover:text-blue-600"
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    找不到符合的標籤，可直接輸入新增。
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -632,6 +965,43 @@ export default function QuickAddItemPage() {
             </div>
           </form>
         </section>
+        {form.cabinetId && user ? (
+          <CabinetTagQuickEditor
+            open={tagManagerOpen}
+            onClose={() => setTagManagerOpen(false)}
+            cabinetId={form.cabinetId}
+            cabinetName={selectedCabinet?.name ?? ""}
+            userId={user.uid}
+            tags={cabinetTags}
+            onTagsChange={(nextTags) => {
+              setCabinetTags(nextTags);
+              if (form.cabinetId) {
+                tagsCacheRef.current[form.cabinetId] = nextTags;
+              }
+            }}
+            onTagRenamed={(previousTag, nextTag) => {
+              setForm((prev) => ({
+                ...prev,
+                selectedTags: prev.selectedTags.map((tag) =>
+                  tag === previousTag ? nextTag : tag
+                ),
+              }));
+            }}
+            onTagDeleted={(target) => {
+              setForm((prev) => ({
+                ...prev,
+                selectedTags: prev.selectedTags.filter((tag) => tag !== target),
+              }));
+            }}
+            onStatus={(status) => {
+              setTagStatus({
+                message: status.message ?? null,
+                error: status.error ?? null,
+                saving: false,
+              });
+            }}
+          />
+        ) : null}
       </div>
     </main>
   );
