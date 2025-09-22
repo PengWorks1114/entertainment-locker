@@ -43,6 +43,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [canEdit, setCanEdit] = useState(false);
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [initialLocked, setInitialLocked] = useState(false);
+  const [storedLockCode, setStoredLockCode] = useState<string | null>(null);
+  const [lockCode, setLockCode] = useState("");
+  const [lockCodeConfirm, setLockCodeConfirm] = useState("");
+  const [unlockCode, setUnlockCode] = useState("");
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -71,6 +76,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setMessage(null);
       setDeleteError(null);
       setLocked(false);
+      setInitialLocked(false);
+      setStoredLockCode(null);
+      setLockCode("");
+      setLockCodeConfirm("");
+      setUnlockCode("");
       return;
     }
     let active = true;
@@ -98,6 +108,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
           setLocked(false);
+          setInitialLocked(false);
+          setStoredLockCode(null);
+          setLockCode("");
+          setLockCodeConfirm("");
+          setUnlockCode("");
           return;
         }
         const data = snap.data();
@@ -110,6 +125,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
           setThumbEditorOpen(false);
           setLocked(false);
+          setInitialLocked(false);
+          setStoredLockCode(null);
+          setLockCode("");
+          setLockCodeConfirm("");
+          setUnlockCode("");
           return;
         }
         const nameValue =
@@ -133,7 +153,17 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
             : { ...DEFAULT_THUMB_TRANSFORM }
         );
         setThumbEditorOpen(false);
-        setLocked(Boolean(data?.isLocked));
+        const isCabinetLocked = Boolean(data?.isLocked);
+        setLocked(isCabinetLocked);
+        setInitialLocked(isCabinetLocked);
+        setStoredLockCode(
+          typeof data?.lockCode === "number" && Number.isSafeInteger(data.lockCode)
+            ? String(data.lockCode)
+            : null
+        );
+        setLockCode("");
+        setLockCodeConfirm("");
+        setUnlockCode("");
         setCanEdit(true);
         setLoading(false);
       })
@@ -147,6 +177,11 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setThumbTransform({ ...DEFAULT_THUMB_TRANSFORM });
         setThumbEditorOpen(false);
         setLocked(false);
+        setInitialLocked(false);
+        setStoredLockCode(null);
+        setLockCode("");
+        setLockCodeConfirm("");
+        setUnlockCode("");
       });
     return () => {
       active = false;
@@ -180,6 +215,66 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     }
     setSaving(true);
     setError(null);
+    let lockCodeToPersist: number | null = null;
+
+    if (locked) {
+      const nextLockCodeRaw = lockCode.trim();
+      const nextLockCodeConfirmRaw = lockCodeConfirm.trim();
+      const needsNewCode = !initialLocked || storedLockCode === null;
+
+      if (needsNewCode || nextLockCodeRaw || nextLockCodeConfirmRaw) {
+        if (!nextLockCodeRaw || !nextLockCodeConfirmRaw) {
+          setMessage("請輸入並確認鎖定密碼");
+          setSaving(false);
+          return;
+        }
+        if (nextLockCodeRaw !== nextLockCodeConfirmRaw) {
+          setMessage("鎖定密碼與確認密碼不一致");
+          setSaving(false);
+          return;
+        }
+        if (!/^[0-9]+$/.test(nextLockCodeRaw)) {
+          setMessage("鎖定密碼僅能輸入數字");
+          setSaving(false);
+          return;
+        }
+        const parsedLockCode = Number(nextLockCodeRaw);
+        if (!Number.isSafeInteger(parsedLockCode)) {
+          setMessage("鎖定密碼過長，請輸入較短的數字");
+          setSaving(false);
+          return;
+        }
+        lockCodeToPersist = parsedLockCode;
+      } else if (storedLockCode !== null) {
+        const storedNumber = Number(storedLockCode);
+        if (!Number.isSafeInteger(storedNumber)) {
+          setMessage("鎖定密碼已損毀，請輸入新的鎖定密碼");
+          setSaving(false);
+          return;
+        }
+        lockCodeToPersist = storedNumber;
+      } else {
+        setMessage("請輸入鎖定密碼");
+        setSaving(false);
+        return;
+      }
+    } else {
+      if (initialLocked && storedLockCode !== null) {
+        const unlockCodeRaw = unlockCode.trim();
+        if (!unlockCodeRaw) {
+          setMessage("請輸入鎖定密碼以解除鎖定");
+          setSaving(false);
+          return;
+        }
+        if (unlockCodeRaw !== storedLockCode) {
+          setMessage("鎖定密碼不正確，無法解除鎖定");
+          setSaving(false);
+          return;
+        }
+      }
+      lockCodeToPersist = null;
+    }
+
     try {
       const db = getFirebaseDb();
       if (!db) {
@@ -197,6 +292,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         thumbUrl: trimmedThumbUrl || null,
         thumbTransform: trimmedThumbUrl ? preparedThumbTransform : null,
         isLocked: locked,
+        lockCode: lockCodeToPersist,
         updatedAt: serverTimestamp(),
       });
       invalidateCabinetOptions(user.uid);
@@ -212,6 +308,13 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       );
       setThumbEditorOpen(false);
       setLocked(locked);
+      setInitialLocked(locked);
+      setStoredLockCode(
+        lockCodeToPersist !== null ? String(lockCodeToPersist) : null
+      );
+      setLockCode("");
+      setLockCodeConfirm("");
+      setUnlockCode("");
       setMessage("已更新櫃子資料");
     } catch (err) {
       console.error("更新櫃子名稱失敗", err);
@@ -378,10 +481,75 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                   type="checkbox"
                   className="mt-1 h-5 w-5 rounded border-gray-300 text-black focus:ring-black"
                   checked={locked}
-                  onChange={(event) => setLocked(event.target.checked)}
+                  onChange={(event) => {
+                    const nextLocked = event.target.checked;
+                    setLocked(nextLocked);
+                    if (nextLocked) {
+                      setUnlockCode("");
+                    } else {
+                      setLockCode("");
+                      setLockCodeConfirm("");
+                    }
+                  }}
                   disabled={saving}
                 />
               </label>
+              {locked ? (
+                <div className="mt-3 space-y-2">
+                  {initialLocked && storedLockCode !== null ? (
+                    <p className="text-xs text-gray-500">
+                      如需更換鎖定密碼，請輸入新的數字密碼並再次確認。
+                      若留空則維持原密碼。
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      請設定 1 組僅包含數字的鎖定密碼，並再次輸入以確認。
+                    </p>
+                  )}
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-600">鎖定密碼</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={lockCode}
+                      onChange={(event) => setLockCode(event.target.value)}
+                      className={inputClass}
+                      disabled={saving}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-600">確認鎖定密碼</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={lockCodeConfirm}
+                      onChange={(event) => setLockCodeConfirm(event.target.value)}
+                      className={inputClass}
+                      disabled={saving}
+                    />
+                  </label>
+                </div>
+              ) : initialLocked ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-gray-500">
+                    為了保護資料安全，解除鎖定前請輸入目前的鎖定密碼。
+                  </p>
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-600">解除鎖定密碼</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={unlockCode}
+                      onChange={(event) => setUnlockCode(event.target.value)}
+                      className={inputClass}
+                      disabled={saving}
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
