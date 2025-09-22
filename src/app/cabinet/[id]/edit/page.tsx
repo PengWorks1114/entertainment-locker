@@ -23,6 +23,8 @@ type CabinetEditPageProps = {
   params: Promise<{ id: string }>;
 };
 
+const MASTER_UNLOCK_CODE = "6472";
+
 export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const { id: cabinetId } = use(params);
   const router = useRouter();
@@ -42,6 +44,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
+
   const [locked, setLocked] = useState(false);
   const [initialLocked, setInitialLocked] = useState(false);
   const [storedLockCode, setStoredLockCode] = useState<string | null>(null);
@@ -277,7 +280,10 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setSaving(false);
           return;
         }
-        if (unlockCodeRaw !== storedLockCode) {
+        if (
+          unlockCodeRaw !== storedLockCode &&
+          unlockCodeRaw !== MASTER_UNLOCK_CODE
+        ) {
           setMessage("鎖定密碼不正確，無法解除鎖定");
           setSaving(false);
           return;
@@ -488,59 +494,55 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                 setThumbEditorOpen(false);
               }}
             />
-            <section className="space-y-3 rounded-2xl border border-gray-200 bg-white/80 p-5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+            <section className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
                   <p className="text-sm font-semibold text-gray-900">鎖定此櫃子</p>
                   <p className="text-xs text-gray-500">
-                    {locked
-                      ? "目前為鎖定狀態，訪客將無法瀏覽櫃子內容。"
-                      : "尚未鎖定，可以瀏覽櫃子內容。"}
+                    使用鎖定密碼限制他人瀏覽櫃子內容，忘記密碼時可使用備援密碼 6472 解鎖。
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {locked ? (
-                    <button
-                      type="button"
-                      className={`${lockButtonClass} ${lockButtonSecondaryClass}`}
-                      onClick={() => {
-                        setLocked(false);
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      locked
+                        ? "bg-red-100 text-red-600"
+                        : "bg-emerald-100 text-emerald-600"
+                    }`}
+                  >
+                    {locked ? "已鎖定" : "未鎖定"}
+                  </span>
+                  <button
+                    type="button"
+                    className={`${lockButtonClass} ${
+                      locked
+                        ? lockButtonSecondaryClass
+                        : lockButtonPrimaryClass
+                    }`}
+                    onClick={() => {
+                      setLocked((prev) => {
+                        const next = !prev;
                         setLockCode("");
                         setLockCodeConfirm("");
                         setUnlockCode("");
-                      }}
-                      disabled={saving}
-                    >
-                      解除鎖定
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className={`${lockButtonClass} ${lockButtonPrimaryClass}`}
-                      onClick={() => {
-                        setLocked(true);
-                        setLockCode("");
-                        setLockCodeConfirm("");
-                        setUnlockCode("");
-                      }}
-                      disabled={saving}
-                    >
-                      設定鎖定
-                    </button>
-                  )}
-                  {initialLocked && storedLockCode !== null && !locked && (
-                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                      需要輸入密碼後儲存才會解除
-                    </span>
-                  )}
+                        return next;
+                      });
+                    }}
+                    disabled={saving}
+                  >
+                    {locked ? "切換為解除鎖定" : "切換為鎖定"}
+                  </button>
                 </div>
               </div>
               {locked ? (
-                <div className="space-y-3">
-                  <div className="rounded-xl bg-gray-50/80 px-4 py-3 text-xs text-gray-500">
-                    {initialLocked && storedLockCode !== null
-                      ? "如需更換鎖定密碼，請輸入新的數字密碼並再次確認；若留空則沿用原密碼。"
-                      : "請設定僅包含數字的鎖定密碼，並再次輸入以確認。"}
+                <div className="space-y-4">
+                  <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                    <p>
+                      {initialLocked && storedLockCode !== null
+                        ? "如需更換鎖定密碼，請輸入新的數字密碼並再次確認；若留空則沿用原密碼。"
+                        : "請輸入要設定的鎖定密碼並再次確認，僅能輸入數字。"}
+                    </p>
+                    <p>完成後請儲存鎖定設定。</p>
                   </div>
                   <label className="space-y-1">
                     <span className="text-xs text-gray-600">鎖定密碼</span>
@@ -566,11 +568,34 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       disabled={saving}
                     />
                   </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className={`${lockButtonClass} ${lockButtonSecondaryClass} sm:w-32`}
+                      onClick={() => {
+                        setLocked(false);
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                        setUnlockCode("");
+                      }}
+                      disabled={saving}
+                    >
+                      取消鎖定
+                    </button>
+                    <button
+                      type="submit"
+                      className={`${lockButtonClass} ${lockButtonPrimaryClass} sm:w-40`}
+                      disabled={saving}
+                    >
+                      儲存鎖定設定
+                    </button>
+                  </div>
                 </div>
               ) : initialLocked ? (
-                <div className="space-y-3">
-                  <div className="rounded-xl bg-gray-50/80 px-4 py-3 text-xs text-gray-500">
-                    為了保護資料安全，解除鎖定前請輸入目前的鎖定密碼並儲存變更。
+                <div className="space-y-4">
+                  <div className="space-y-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                    <p>解除鎖定前需輸入目前的鎖定密碼或備援密碼 6472。</p>
+                    <p>完成後點擊下方按鈕儲存變更。</p>
                   </div>
                   <label className="space-y-1">
                     <span className="text-xs text-gray-600">解除鎖定密碼</span>
@@ -584,8 +609,34 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
                       disabled={saving}
                     />
                   </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className={`${lockButtonClass} ${lockButtonSecondaryClass} sm:w-32`}
+                      onClick={() => {
+                        setLocked(true);
+                        setLockCode("");
+                        setLockCodeConfirm("");
+                        setUnlockCode("");
+                      }}
+                      disabled={saving}
+                    >
+                      回到鎖定
+                    </button>
+                    <button
+                      type="submit"
+                      className={`${lockButtonClass} ${lockButtonPrimaryClass} sm:w-40`}
+                      disabled={saving}
+                    >
+                      儲存並解除鎖定
+                    </button>
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                  尚未鎖定櫃子，若需要保護內容，請切換為鎖定並設定密碼後儲存變更。
+                </div>
+              )}
             </section>
             <label className="space-y-2">
               <span className="text-sm text-gray-600">櫃子備註</span>
