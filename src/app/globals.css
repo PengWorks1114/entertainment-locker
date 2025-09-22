@@ -216,6 +216,22 @@ body {
   color: #ffffff !important;
 }
 
+:root[data-theme="dark"] select {
+  background-color: #1f2937 !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+:root[data-theme="dark"] select option {
+  background-color: #1f2937;
+  color: #e2e8f0;
+}
+
+:root[data-theme="dark"] select:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.6);
+  outline-offset: 2px;
+}
+
 @layer utilities {
   .line-clamp-2 {
     display: -webkit-box;

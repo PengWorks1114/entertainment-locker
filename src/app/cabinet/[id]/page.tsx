@@ -60,7 +60,7 @@ type FilterState = {
   pageSize: number;
 };
 
-const PAGE_SIZE_OPTIONS = [10, 15, 20, 30] as const;
+const PAGE_SIZE_OPTIONS = [10, 15, 20, 30, 40, 50, 100] as const;
 const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: "grid", label: "圖表" },
