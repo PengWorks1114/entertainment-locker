@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
-import { getFirebaseAuth } from "@/lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { fetchOpenGraphImage } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType } from "@/lib/types";

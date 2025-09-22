@@ -324,7 +324,7 @@ export default function CabinetTagQuickEditor({
             ✕
           </button>
         </div>
-        <div className="flex max-h-[70vh] flex-col gap-4 overflow-hidden px-6 py-5">
+        <div className="flex max-h-[70vh] min-h-0 flex-col gap-4 overflow-hidden px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-[2fr,1fr]">
             <label className="space-y-2">
               <span className="text-sm text-gray-600">新增標籤</span>
@@ -367,7 +367,7 @@ export default function CabinetTagQuickEditor({
               {message}
             </div>
           ) : null}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-h-0">
             <div className="h-full overflow-y-auto rounded-2xl border border-gray-100 bg-white/80">
               {filteredTags.length === 0 ? (
                 <p className="px-4 py-6 text-center text-sm text-gray-500">
