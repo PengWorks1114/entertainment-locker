@@ -64,6 +64,7 @@ const QUICK_ADD_PROGRESS_PLATFORM = "未設定";
 const QUICK_ADD_PROGRESS_UNIT: string | null = null;
 const QUICK_ADD_PROGRESS_TYPE: ProgressType = "chapter";
 const QUICK_ADD_DEFAULT_TITLE = "未命名";
+const QUICK_ADD_LAST_CABINET_STORAGE_KEY = "quick-add:last-cabinet-id";
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -158,9 +159,48 @@ export default function QuickAddItemPage() {
   }, [user]);
 
   useEffect(() => {
-    if (!form.cabinetId && cabinets.length > 0) {
-      const fallback = cabinets.find((item) => !item.isLocked) ?? cabinets[0];
-      setForm((prev) => ({ ...prev, cabinetId: fallback.id }));
+    if (form.cabinetId || cabinets.length === 0) {
+      return;
+    }
+    let storedId: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.localStorage.getItem(
+          QUICK_ADD_LAST_CABINET_STORAGE_KEY
+        );
+        if (saved) {
+          const exists = cabinets.some((cabinet) => cabinet.id === saved);
+          if (exists) {
+            storedId = saved;
+          }
+        }
+      } catch (err) {
+        console.debug("讀取先前選擇的櫃子失敗", err);
+      }
+    }
+    const fallback = cabinets.find((item) => !item.isLocked) ?? cabinets[0];
+    const nextId = storedId ?? fallback.id;
+    setForm((prev) => ({ ...prev, cabinetId: nextId }));
+  }, [cabinets, form.cabinetId]);
+
+  useEffect(() => {
+    if (!form.cabinetId) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const exists = cabinets.some((cabinet) => cabinet.id === form.cabinetId);
+    if (!exists) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        QUICK_ADD_LAST_CABINET_STORAGE_KEY,
+        form.cabinetId
+      );
+    } catch (err) {
+      console.debug("儲存先前選擇的櫃子失敗", err);
     }
   }, [cabinets, form.cabinetId]);
 

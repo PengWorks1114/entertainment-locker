@@ -63,6 +63,15 @@ type FilterState = {
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 30, 40, 50, 100] as const;
 const VIEW_MODE_STORAGE_PREFIX = "cabinet-view-mode";
+const FILTER_STORAGE_PREFIX = "cabinet-filters";
+const SORT_OPTIONS: SortOption[] = [
+  "updated",
+  "title",
+  "rating",
+  "nextUpdate",
+  "created",
+];
+const HAS_NEXT_UPDATE_VALUES: HasNextUpdateFilter[] = ["all", "yes", "no"];
 const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: "grid", label: "詳細" },
   { value: "thumb", label: "簡略" },
@@ -152,10 +161,116 @@ function normalizeCabinetTags(input: unknown): string[] {
   ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
 }
 
+function normalizeStoredFilterTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const unique = new Set<string>();
+  input.forEach((entry) => {
+    const value = typeof entry === "string" ? entry : String(entry ?? "");
+    const trimmed = value.trim();
+    if (trimmed) {
+      unique.add(trimmed);
+    }
+  });
+  return Array.from(unique);
+}
+
+function parseStoredFilters(input: unknown): FilterState | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const value = input as Partial<Record<keyof FilterState, unknown>>;
+  const search =
+    typeof value.search === "string" ? value.search : defaultFilters.search;
+  const statusRaw = value.status;
+  const status: FilterState["status"] =
+    typeof statusRaw === "string" &&
+    (statusRaw === "all" || ITEM_STATUS_VALUES.includes(statusRaw as ItemStatus))
+      ? (statusRaw as FilterState["status"])
+      : defaultFilters.status;
+  const languageRaw = value.language;
+  const language: FilterState["language"] =
+    typeof languageRaw === "string" &&
+    (languageRaw === "" ||
+      ITEM_LANGUAGE_VALUES.includes(languageRaw as ItemLanguage))
+      ? (languageRaw as FilterState["language"])
+      : defaultFilters.language;
+  const ratingMin =
+    typeof value.ratingMin === "string"
+      ? value.ratingMin
+      : defaultFilters.ratingMin;
+  const ratingMax =
+    typeof value.ratingMax === "string"
+      ? value.ratingMax
+      : defaultFilters.ratingMax;
+  const hasNextRaw = value.hasNextUpdate;
+  const hasNextUpdate: FilterState["hasNextUpdate"] =
+    typeof hasNextRaw === "string" &&
+    HAS_NEXT_UPDATE_VALUES.includes(hasNextRaw as HasNextUpdateFilter)
+      ? (hasNextRaw as FilterState["hasNextUpdate"])
+      : defaultFilters.hasNextUpdate;
+  const favoritesOnly =
+    typeof value.favoritesOnly === "boolean"
+      ? value.favoritesOnly
+      : defaultFilters.favoritesOnly;
+  const sortRaw = value.sort;
+  const sort: FilterState["sort"] =
+    typeof sortRaw === "string" && SORT_OPTIONS.includes(sortRaw as SortOption)
+      ? (sortRaw as FilterState["sort"])
+      : defaultFilters.sort;
+  const directionRaw = value.sortDirection;
+  const sortDirection: FilterState["sortDirection"] =
+    typeof directionRaw === "string" &&
+    (directionRaw === "asc" || directionRaw === "desc")
+      ? (directionRaw as FilterState["sortDirection"])
+      : defaultFilters.sortDirection;
+  const tags = normalizeStoredFilterTags(value.tags);
+  const pageSizeRaw = value.pageSize;
+  const pageSize: FilterState["pageSize"] =
+    typeof pageSizeRaw === "number" &&
+    PAGE_SIZE_OPTIONS.includes(
+      pageSizeRaw as (typeof PAGE_SIZE_OPTIONS)[number]
+    )
+      ? (pageSizeRaw as FilterState["pageSize"])
+      : defaultFilters.pageSize;
+  return {
+    search,
+    status,
+    language,
+    ratingMin,
+    ratingMax,
+    hasNextUpdate,
+    favoritesOnly,
+    sort,
+    sortDirection,
+    tags,
+    pageSize,
+  } satisfies FilterState;
+}
+
+function readFiltersFromStorage(storageKey: string): FilterState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parseStoredFilters(parsed);
+  } catch (err) {
+    console.debug("讀取櫃子篩選設定失敗", err);
+    return null;
+  }
+}
+
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const { id: cabinetId } = use(params);
   const searchParams = useSearchParams();
   const storageKey = `${VIEW_MODE_STORAGE_PREFIX}:${cabinetId}`;
+  const filterStorageKey = `${FILTER_STORAGE_PREFIX}:${cabinetId}`;
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [cabinetName, setCabinetName] = useState<string>("");
@@ -167,13 +282,32 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterState>(() => ({
-    ...defaultFilters,
-    language: parseLanguageFromParams(searchParams),
-    tags: parseTagsFromParams(searchParams),
-  }));
+  const [filters, setFilters] = useState<FilterState>(() => {
+    const hasLanguageParam = searchParams.has("language");
+    const hasTagParam = searchParams.has("tag") || searchParams.has("tags");
+    const paramsBase: FilterState = {
+      ...defaultFilters,
+      language: hasLanguageParam
+        ? parseLanguageFromParams(searchParams)
+        : defaultFilters.language,
+      tags: hasTagParam ? parseTagsFromParams(searchParams) : defaultFilters.tags,
+    };
+    if (typeof window === "undefined") {
+      return paramsBase;
+    }
+    const stored = readFiltersFromStorage(filterStorageKey);
+    if (!stored) {
+      return paramsBase;
+    }
+    return {
+      ...stored,
+      language: hasLanguageParam ? paramsBase.language : stored.language,
+      tags: hasTagParam ? paramsBase.tags : stored.tags,
+    } satisfies FilterState;
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const hasInitializedPage = useRef(false);
+  const previousCabinetIdRef = useRef<string | null>(null);
   const [tagQuery, setTagQuery] = useState("");
   const [cabinetTags, setCabinetTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -402,6 +536,31 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   }, [user, canView, cabinetId]);
 
   useEffect(() => {
+    if (previousCabinetIdRef.current === cabinetId) {
+      return;
+    }
+    previousCabinetIdRef.current = cabinetId;
+    const hasLanguageParam = searchParams.has("language");
+    const hasTagParam = searchParams.has("tag") || searchParams.has("tags");
+    const paramsBase: FilterState = {
+      ...defaultFilters,
+      language: hasLanguageParam
+        ? parseLanguageFromParams(searchParams)
+        : defaultFilters.language,
+      tags: hasTagParam ? parseTagsFromParams(searchParams) : defaultFilters.tags,
+    };
+    const stored = readFiltersFromStorage(filterStorageKey);
+    const next = stored
+      ? {
+          ...stored,
+          language: hasLanguageParam ? paramsBase.language : stored.language,
+          tags: hasTagParam ? paramsBase.tags : stored.tags,
+        }
+      : paramsBase;
+    setFilters(next);
+  }, [cabinetId, filterStorageKey, searchParams]);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [
     filters.search,
@@ -417,26 +576,56 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   ]);
 
   useEffect(() => {
+    const hasLanguageParam = searchParams.has("language");
+    const hasTagParam = searchParams.has("tag") || searchParams.has("tags");
+    if (!hasLanguageParam && !hasTagParam) {
+      return;
+    }
     const tagsFromParams = parseTagsFromParams(searchParams);
     const languageFromParams = parseLanguageFromParams(searchParams);
     setFilters((prev) => {
-      const prevSet = new Set(prev.tags);
-      const nextList = tagsFromParams;
-      const nextSet = new Set(nextList);
-      const sameSize = prevSet.size === nextSet.size;
-      const sameTags =
-        sameSize && Array.from(prevSet).every((tag) => nextSet.has(tag));
-      const sameLanguage = prev.language === languageFromParams;
-      if (sameTags && sameLanguage) {
+      let nextLanguage = prev.language;
+      let nextTags = prev.tags;
+      let changed = false;
+      if (hasLanguageParam && prev.language !== languageFromParams) {
+        nextLanguage = languageFromParams;
+        changed = true;
+      }
+      if (hasTagParam) {
+        const prevSet = new Set(prev.tags);
+        const nextSet = new Set(tagsFromParams);
+        const sameSize = prevSet.size === nextSet.size;
+        const sameTags =
+          sameSize && Array.from(prevSet).every((tag) => nextSet.has(tag));
+        if (!sameTags) {
+          nextTags = tagsFromParams;
+          changed = true;
+        }
+      }
+      if (!changed) {
         return prev;
       }
       return {
         ...prev,
-        tags: sameTags ? prev.tags : nextList,
-        language: languageFromParams,
+        language: nextLanguage,
+        tags: nextTags,
       };
     });
   }, [searchParams]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        filterStorageKey,
+        JSON.stringify(filters)
+      );
+    } catch (err) {
+      console.debug("儲存櫃子篩選設定失敗", err);
+    }
+  }, [filters, filterStorageKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
