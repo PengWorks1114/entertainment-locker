@@ -60,7 +60,9 @@ function normalizeHtml(html: string): string {
 
 export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const savedSelection = useRef<Range | null>(null);
   const [colorSelectValue, setColorSelectValue] = useState<string>("");
+  const [headingSelectValue, setHeadingSelectValue] = useState<string>("");
   const [hasFocus, setHasFocus] = useState(false);
 
   const plainText = useMemo(() => createTextFromHtml(value), [value]);
@@ -69,7 +71,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     if (typeof window === "undefined" || !editorRef.current) {
       return;
     }
-    if (window.document.activeElement === editorRef.current) {
+    if (hasFocus) {
       return;
     }
     const currentHtml = editorRef.current.innerHTML;
@@ -77,7 +79,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       return;
     }
     editorRef.current.innerHTML = value || "";
-  }, [value]);
+  }, [hasFocus, value]);
 
   function emitChange() {
     if (!editorRef.current) {
@@ -89,19 +91,49 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     onChange({ html, text });
   }
 
-  function focusEditor() {
-    if (!editorRef.current) {
+  function saveSelection() {
+    if (typeof window === "undefined") {
       return;
     }
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
-      editorRef.current.focus();
+      savedSelection.current = null;
       return;
     }
     const range = selection.getRangeAt(0);
-    if (!editorRef.current.contains(range.startContainer)) {
+    const { current } = editorRef;
+    if (!current || !current.contains(range.startContainer) || !current.contains(range.endContainer)) {
+      savedSelection.current = null;
+      return;
+    }
+    savedSelection.current = range.cloneRange();
+  }
+
+  function restoreSelection() {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection || !savedSelection.current) {
+      return;
+    }
+    selection.removeAllRanges();
+    selection.addRange(savedSelection.current);
+  }
+
+  function focusEditor() {
+    if (typeof window === "undefined" || !editorRef.current) {
+      return;
+    }
+    const selection = window.getSelection();
+    const needsFocus =
+      !selection ||
+      selection.rangeCount === 0 ||
+      !editorRef.current.contains(selection.getRangeAt(0).startContainer);
+    if (needsFocus) {
       editorRef.current.focus();
     }
+    restoreSelection();
   }
 
   function applyFormat(command: string, valueArg?: string) {
@@ -114,6 +146,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       window.document.execCommand("formatBlock", false, valueArg);
     }
     emitChange();
+    saveSelection();
   }
 
   function handleHeadingChange(event: ChangeEvent<HTMLSelectElement>) {
@@ -121,8 +154,10 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     if (!headingValue) {
       return;
     }
+    setHeadingSelectValue(headingValue);
     applyFormat("formatBlock", headingValue === "p" ? "p" : headingValue);
-    event.target.value = "";
+    setHeadingSelectValue("");
+    focusEditor();
   }
 
   function handleColorChange(event: ChangeEvent<HTMLSelectElement>) {
@@ -132,11 +167,15 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     }
     setColorSelectValue(colorValue);
     applyFormat("foreColor", colorValue);
-    setTimeout(() => setColorSelectValue(""), 0);
+    setTimeout(() => {
+      setColorSelectValue("");
+      focusEditor();
+    }, 0);
   }
 
   function handleInput() {
     emitChange();
+    saveSelection();
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -146,6 +185,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       window.document.execCommand("insertText", false, text);
     }
     emitChange();
+    saveSelection();
   }
 
   return (
@@ -153,7 +193,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
       <div className="rich-text-toolbar" role="toolbar" aria-label="文字編輯工具">
         <select
           className="rich-text-select"
-          defaultValue=""
+          value={headingSelectValue}
           onChange={handleHeadingChange}
           aria-label="段落樣式"
         >
@@ -222,11 +262,19 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           onInput={handleInput}
           onBlur={() => {
             setHasFocus(false);
+            savedSelection.current = null;
             emitChange();
           }}
-          onFocus={() => setHasFocus(true)}
+          onFocus={() => {
+            setHasFocus(true);
+            setTimeout(() => {
+              saveSelection();
+            }, 0);
+          }}
           onKeyUp={handleInput}
-          onMouseUp={handleInput}
+          onMouseUp={() => {
+            saveSelection();
+          }}
           onPaste={handlePaste}
           suppressContentEditableWarning
         />
