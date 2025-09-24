@@ -66,7 +66,10 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   const plainText = useMemo(() => createTextFromHtml(value), [value]);
 
   useEffect(() => {
-    if (!editorRef.current) {
+    if (typeof window === "undefined" || !editorRef.current) {
+      return;
+    }
+    if (window.document.activeElement === editorRef.current) {
       return;
     }
     const currentHtml = editorRef.current.innerHTML;
@@ -83,9 +86,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     const rawHtml = editorRef.current.innerHTML;
     const html = normalizeHtml(rawHtml);
     const text = createTextFromHtml(html);
-    if (editorRef.current.innerHTML !== html) {
-      editorRef.current.innerHTML = html;
-    }
     onChange({ html, text });
   }
 
