@@ -14,6 +14,7 @@ type Note = {
   id: string;
   title: string;
   summary: string | null;
+  isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
 };
@@ -55,6 +56,8 @@ export default function NotesPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
@@ -107,6 +110,7 @@ export default function NotesPage() {
               id: docSnap.id,
               title: (data?.title as string) || "",
               summary,
+              isFavorite: Boolean(data?.isFavorite),
               createdMs,
               updatedMs,
             } satisfies Note;
@@ -124,15 +128,18 @@ export default function NotesPage() {
 
   const filteredNotes = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
-    if (!keyword) {
-      return notes;
-    }
     return notes.filter((note) => {
+      if (showFavoritesOnly && !note.isFavorite) {
+        return false;
+      }
+      if (!keyword) {
+        return true;
+      }
       const titleMatch = note.title.toLowerCase().includes(keyword);
       const summaryMatch = (note.summary ?? "").toLowerCase().includes(keyword);
       return titleMatch || summaryMatch;
     });
-  }, [notes, searchTerm]);
+  }, [notes, searchTerm, showFavoritesOnly]);
 
   const sortedNotes = useMemo(() => {
     const base = [...filteredNotes];
@@ -163,7 +170,7 @@ export default function NotesPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sortOption, sortDirection, pageSize]);
+  }, [searchTerm, sortOption, sortDirection, pageSize, showFavoritesOnly]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -195,9 +202,17 @@ export default function NotesPage() {
               className="flex flex-col gap-2 px-6 py-5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <h2 className="line-clamp-2 break-anywhere text-lg font-semibold text-gray-900">
-                  {note.title || "(未命名筆記)"}
-                </h2>
+                <div className="flex min-w-0 items-start gap-2">
+                  {note.isFavorite ? (
+                    <span className="mt-1 text-base text-amber-500" aria-hidden="true">
+                      ★
+                    </span>
+                  ) : null}
+                  <h2 className="line-clamp-2 flex-1 break-anywhere text-lg font-semibold text-gray-900">
+                    {note.title || "(未命名筆記)"}
+                  </h2>
+                  {note.isFavorite ? <span className="sr-only">最愛筆記</span> : null}
+                </div>
                 <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
                   <div className="flex gap-1">
                     <dt className="font-medium">建立：</dt>
@@ -268,67 +283,92 @@ export default function NotesPage() {
           </div>
         ) : null}
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
-            <p className="text-sm text-gray-500">找到目標筆記並調整列表顯示。</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
+              <p className="text-sm text-gray-500">找到目標筆記並調整列表顯示。</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFiltersExpanded((prev) => !prev)}
+              className={buttonClass({ variant: "secondary", size: "sm" })}
+              aria-expanded={filtersExpanded}
+            >
+              {filtersExpanded ? "收合" : "展開"}
+            </button>
           </div>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-            <label className="flex flex-1 flex-col space-y-1">
-              <span className="text-sm text-gray-600">搜尋筆記</span>
-              <input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="輸入標題或備註關鍵字"
-                className="h-12 w-full rounded-xl border px-4 text-base"
-              />
-            </label>
-            <label className="flex flex-1 flex-col space-y-1">
-              <span className="text-sm text-gray-600">排序方式</span>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <select
-                  value={sortOption}
-                  onChange={(event) => setSortOption(event.target.value as SortOption)}
-                  className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
-                >
-                  <option value="recentUpdated">最近更新</option>
-                  <option value="created">建立時間</option>
-                  <option value="title">標題</option>
-                </select>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSortDirection("asc")}
-                    className={directionButtonClass("asc")}
-                    aria-pressed={sortDirection === "asc"}
+          {filtersExpanded ? (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <label className="flex flex-1 flex-col space-y-1">
+                  <span className="text-sm text-gray-600">搜尋筆記</span>
+                  <input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="輸入標題或備註關鍵字"
+                    className="h-12 w-full rounded-xl border px-4 text-base"
+                  />
+                </label>
+                <label className="flex flex-1 flex-col space-y-1">
+                  <span className="text-sm text-gray-600">排序方式</span>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <select
+                      value={sortOption}
+                      onChange={(event) => setSortOption(event.target.value as SortOption)}
+                      className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
+                    >
+                      <option value="recentUpdated">最近更新</option>
+                      <option value="created">建立時間</option>
+                      <option value="title">標題</option>
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSortDirection("asc")}
+                        className={directionButtonClass("asc")}
+                        aria-pressed={sortDirection === "asc"}
+                      >
+                        正序
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortDirection("desc")}
+                        className={directionButtonClass("desc")}
+                        aria-pressed={sortDirection === "desc"}
+                      >
+                        反序
+                      </button>
+                    </div>
+                  </div>
+                </label>
+                <label className="flex flex-col space-y-1">
+                  <span className="text-sm text-gray-600">每頁顯示數量</span>
+                  <select
+                    value={pageSize}
+                    onChange={(event) => setPageSize(Number(event.target.value))}
+                    className="h-12 rounded-xl border bg-white px-4 text-base"
                   >
-                    正序
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSortDirection("desc")}
-                    className={directionButtonClass("desc")}
-                    aria-pressed={sortDirection === "desc"}
-                  >
-                    反序
-                  </button>
-                </div>
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
-            </label>
-            <label className="flex flex-col space-y-1">
-              <span className="text-sm text-gray-600">每頁顯示數量</span>
-              <select
-                value={pageSize}
-                onChange={(event) => setPageSize(Number(event.target.value))}
-                className="h-12 rounded-xl border bg-white px-4 text-base"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={showFavoritesOnly}
+                    onChange={(event) => setShowFavoritesOnly(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                  />
+                  只顯示最愛
+                </label>
+              </div>
+            </div>
+          ) : null}
         </section>
         {content}
         {hasNotes && hasFilteredNotes ? (

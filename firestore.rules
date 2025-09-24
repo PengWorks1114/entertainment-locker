@@ -20,6 +20,7 @@ service cloud.firestore {
         && isNonEmptyString(data.title, 100)
         && isNonEmptyString(data.content, 60000)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
+        && ("isFavorite" in data ? data.isFavorite is bool : true)
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
     }

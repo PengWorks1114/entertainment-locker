@@ -29,6 +29,7 @@ export default function EditNotePage({ params }: PageProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,6 +71,7 @@ export default function EditNotePage({ params }: PageProps) {
         if (!noteId) {
           setFeedback({ type: "error", message: "找不到對應的筆記" });
           setNotFound(true);
+          setIsFavorite(false);
           setLoading(false);
           return;
         }
@@ -81,6 +83,7 @@ export default function EditNotePage({ params }: PageProps) {
           setTitle("");
           setDescription("");
           setContent("");
+          setIsFavorite(false);
           setLoading(false);
           return;
         }
@@ -91,12 +94,14 @@ export default function EditNotePage({ params }: PageProps) {
           setTitle("");
           setDescription("");
           setContent("");
+          setIsFavorite(false);
           setLoading(false);
           return;
         }
-        setTitle(((data.title as string) ?? ""));
+        setTitle((data.title as string) ?? "");
         setDescription(typeof data.description === "string" ? data.description : "");
-        setContent(((data.content as string) ?? ""));
+        setContent((data.content as string) ?? "");
+        setIsFavorite(Boolean(data.isFavorite));
         setFeedback(null);
         setNotFound(false);
       } catch (err) {
@@ -106,6 +111,7 @@ export default function EditNotePage({ params }: PageProps) {
         setTitle("");
         setDescription("");
         setContent("");
+        setIsFavorite(false);
       } finally {
         setLoading(false);
       }
@@ -160,6 +166,7 @@ export default function EditNotePage({ params }: PageProps) {
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
         content: trimmedContent,
+        isFavorite,
         updatedAt: serverTimestamp(),
       });
       setFeedback({ type: "success", message: "已更新筆記" });
@@ -273,6 +280,15 @@ export default function EditNotePage({ params }: PageProps) {
               <span className="block text-right text-xs text-gray-400">
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={isFavorite}
+                onChange={(event) => setIsFavorite(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+              />
+              設為最愛
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>

@@ -24,6 +24,7 @@ export default function NewNotePage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -85,6 +86,7 @@ export default function NewNotePage() {
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
         content: trimmedContent,
+        isFavorite,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -92,6 +94,7 @@ export default function NewNotePage() {
       setTitle("");
       setDescription("");
       setContent("");
+      setIsFavorite(false);
       router.replace("/notes");
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
@@ -168,6 +171,15 @@ export default function NewNotePage() {
               <span className="block text-right text-xs text-gray-400">
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={isFavorite}
+                onChange={(event) => setIsFavorite(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+              />
+              設為最愛
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>

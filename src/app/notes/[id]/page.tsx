@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { deleteDoc, doc, onSnapshot, Timestamp } from "firebase/firestore";
+import { deleteDoc, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
@@ -18,6 +18,7 @@ type Note = {
   title: string;
   description: string | null;
   content: string;
+  isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
 };
@@ -55,6 +56,7 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [favoriting, setFavoriting] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -119,6 +121,7 @@ export default function NoteDetailPage({ params }: PageProps) {
               ? data.description.trim()
               : null,
           content: (data.content as string) || "",
+          isFavorite: Boolean(data.isFavorite),
           createdMs,
           updatedMs,
         });
@@ -174,6 +177,30 @@ export default function NoteDetailPage({ params }: PageProps) {
       setFeedback({ type: "error", message: "刪除筆記時發生錯誤" });
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleToggleFavorite() {
+    if (!note || favoriting) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    try {
+      setFavoriting(true);
+      setFeedback(null);
+      await updateDoc(doc(db, "note", note.id), {
+        isFavorite: !note.isFavorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("更新最愛狀態時發生錯誤", err);
+      setFeedback({ type: "error", message: "更新最愛狀態時發生錯誤" });
+    } finally {
+      setFavoriting(false);
     }
   }
 
@@ -247,14 +274,32 @@ export default function NoteDetailPage({ params }: PageProps) {
           <Link href="/notes" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
             ← 返回筆記本
           </Link>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold text-gray-900">{note.title || "(未命名筆記)"}</h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-2 sm:flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
+                  {note.title || "(未命名筆記)"}
+                </h1>
+                {note.isFavorite ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
+                    最愛
+                  </span>
+                ) : null}
+              </div>
               {note.description ? (
-                <p className="whitespace-pre-line text-sm text-gray-600">{note.description}</p>
+                <p className="break-anywhere whitespace-pre-line text-sm text-gray-600">{note.description}</p>
               ) : null}
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3 sm:flex-none">
+              <button
+                type="button"
+                onClick={handleToggleFavorite}
+                disabled={favoriting}
+                className={buttonClass({ variant: note.isFavorite ? "primary" : "secondary" })}
+                aria-pressed={note.isFavorite}
+              >
+                {favoriting ? "更新中…" : note.isFavorite ? "取消最愛" : "加入最愛"}
+              </button>
               <Link
                 href={`/notes/${note.id}/edit`}
                 className={buttonClass({ variant: "secondary" })}
