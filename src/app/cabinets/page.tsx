@@ -248,6 +248,13 @@ export default function CabinetsPage() {
   }, [totalPages]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentPageSafe]);
+
+  useEffect(() => {
     setReorderPage((prev) => Math.min(prev, reorderTotalPages));
   }, [reorderTotalPages]);
 
