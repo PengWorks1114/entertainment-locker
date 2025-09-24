@@ -46,6 +46,7 @@ export default function AppHeader() {
       { href: "/cabinets", label: "我的櫃子" },
       { href: "/item/new", label: "新增物件" },
       { href: "/item/quick-add", label: "快速新增物件" },
+      { href: "/notes", label: "筆記本" },
     ],
     []
   );
