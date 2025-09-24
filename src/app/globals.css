@@ -122,6 +122,28 @@ body {
   margin: 0;
 }
 
+.rich-text-editable h1,
+.rich-text-editable h2,
+.rich-text-editable h3 {
+  font-weight: 700;
+  line-height: 1.3;
+  color: #111827;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-editable h1 {
+  font-size: 1.75rem;
+}
+
+.rich-text-editable h2 {
+  font-size: 1.375rem;
+}
+
+.rich-text-editable h3 {
+  font-size: 1.125rem;
+}
+
 .rich-text-placeholder {
   pointer-events: none;
   position: absolute;
@@ -349,6 +371,12 @@ body {
 
 :root[data-theme="dark"] .rich-text-placeholder {
   color: #64748b;
+}
+
+:root[data-theme="dark"] .rich-text-editable h1,
+:root[data-theme="dark"] .rich-text-editable h2,
+:root[data-theme="dark"] .rich-text-editable h3 {
+  color: #f8fafc;
 }
 
 :root[data-theme="dark"] .rich-text-content h1,

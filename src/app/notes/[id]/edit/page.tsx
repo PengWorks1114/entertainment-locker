@@ -298,7 +298,7 @@ export default function EditNotePage({ params }: PageProps) {
               />
               設為最愛
             </label>
-            <label className="block space-y-2">
+            <div className="space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
               <RichTextEditor
                 value={contentHtml}
@@ -308,7 +308,7 @@ export default function EditNotePage({ params }: PageProps) {
                 }}
                 placeholder="輸入筆記內容"
               />
-            </label>
+            </div>
             {feedback ? (
               <div
                 className={
