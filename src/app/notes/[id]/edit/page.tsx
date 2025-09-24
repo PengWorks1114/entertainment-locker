@@ -6,6 +6,7 @@ import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
 
+import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
@@ -28,7 +29,8 @@ export default function EditNotePage({ params }: PageProps) {
   const [authChecked, setAuthChecked] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [content, setContent] = useState("");
+  const [contentHtml, setContentHtml] = useState("");
+  const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +84,8 @@ export default function EditNotePage({ params }: PageProps) {
           setNotFound(true);
           setTitle("");
           setDescription("");
-          setContent("");
+          setContentHtml("");
+          setContentText("");
           setIsFavorite(false);
           setLoading(false);
           return;
@@ -93,14 +96,17 @@ export default function EditNotePage({ params }: PageProps) {
           setNotFound(true);
           setTitle("");
           setDescription("");
-          setContent("");
+          setContentHtml("");
+          setContentText("");
           setIsFavorite(false);
           setLoading(false);
           return;
         }
         setTitle((data.title as string) ?? "");
         setDescription(typeof data.description === "string" ? data.description : "");
-        setContent((data.content as string) ?? "");
+        const noteContent = (data.content as string) ?? "";
+        setContentHtml(noteContent);
+        setContentText(extractPlainTextFromHtml(noteContent));
         setIsFavorite(Boolean(data.isFavorite));
         setFeedback(null);
         setNotFound(false);
@@ -110,7 +116,8 @@ export default function EditNotePage({ params }: PageProps) {
         setNotFound(true);
         setTitle("");
         setDescription("");
-        setContent("");
+        setContentHtml("");
+        setContentText("");
         setIsFavorite(false);
       } finally {
         setLoading(false);
@@ -130,7 +137,8 @@ export default function EditNotePage({ params }: PageProps) {
     }
     const trimmedTitle = title.trim();
     const trimmedDescription = description.trim();
-    const trimmedContent = content.trim();
+    const trimmedContentText = contentText.trim();
+    const sanitizedContentHtml = contentHtml.trim();
     if (!trimmedTitle) {
       setFeedback({ type: "error", message: "請填寫筆記標題" });
       return;
@@ -143,7 +151,7 @@ export default function EditNotePage({ params }: PageProps) {
       setFeedback({ type: "error", message: `備註長度不可超過 ${DESCRIPTION_LIMIT} 字` });
       return;
     }
-    if (!trimmedContent) {
+    if (!trimmedContentText) {
       setFeedback({ type: "error", message: "請填寫筆記內容" });
       return;
     }
@@ -165,7 +173,7 @@ export default function EditNotePage({ params }: PageProps) {
       await updateDoc(noteRef, {
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
-        content: trimmedContent,
+        content: sanitizedContentHtml,
         isFavorite,
         updatedAt: serverTimestamp(),
       });
@@ -292,12 +300,13 @@ export default function EditNotePage({ params }: PageProps) {
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
-              <textarea
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
+              <RichTextEditor
+                value={contentHtml}
+                onChange={({ html, text }) => {
+                  setContentHtml(html);
+                  setContentText(text);
+                }}
                 placeholder="輸入筆記內容"
-                required
-                className="min-h-[220px] w-full resize-y rounded-xl border px-4 py-3 text-base"
               />
             </label>
             {feedback ? (

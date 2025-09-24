@@ -320,9 +320,10 @@ export default function NoteDetailPage({ params }: PageProps) {
         {metaInfo}
         <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">筆記內容</h2>
-          <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-gray-700">
-            {note.content}
-          </p>
+          <div
+            className="rich-text-content text-base leading-relaxed text-gray-700"
+            dangerouslySetInnerHTML={{ __html: note.content }}
+          />
         </section>
         {feedback && feedback.type === "error" ? (
           <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

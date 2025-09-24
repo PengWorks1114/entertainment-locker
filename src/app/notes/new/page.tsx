@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
@@ -23,7 +24,8 @@ export default function NewNotePage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [content, setContent] = useState("");
+  const [contentHtml, setContentHtml] = useState("");
+  const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,7 +55,8 @@ export default function NewNotePage() {
     }
     const trimmedTitle = title.trim();
     const trimmedDescription = description.trim();
-    const trimmedContent = content.trim();
+    const trimmedContentText = contentText.trim();
+    const sanitizedContentHtml = contentHtml.trim();
     if (!trimmedTitle) {
       setFeedback({ type: "error", message: "請填寫筆記標題" });
       return;
@@ -66,7 +69,7 @@ export default function NewNotePage() {
       setFeedback({ type: "error", message: `備註長度不可超過 ${DESCRIPTION_LIMIT} 字` });
       return;
     }
-    if (!trimmedContent) {
+    if (!trimmedContentText) {
       setFeedback({ type: "error", message: "請填寫筆記內容" });
       return;
     }
@@ -85,7 +88,7 @@ export default function NewNotePage() {
         uid: user.uid,
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
-        content: trimmedContent,
+        content: sanitizedContentHtml,
         isFavorite,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -93,7 +96,8 @@ export default function NewNotePage() {
       setFeedback({ type: "success", message: "已新增筆記" });
       setTitle("");
       setDescription("");
-      setContent("");
+      setContentHtml("");
+      setContentText("");
       setIsFavorite(false);
       router.replace("/notes");
     } catch (err) {
@@ -183,12 +187,13 @@ export default function NewNotePage() {
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
-              <textarea
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
+              <RichTextEditor
+                value={contentHtml}
+                onChange={({ html, text }) => {
+                  setContentHtml(html);
+                  setContentText(text);
+                }}
                 placeholder="輸入筆記內容"
-                required
-                className="min-h-[220px] w-full resize-y rounded-xl border px-4 py-3 text-base"
               />
             </label>
             {feedback ? (

@@ -34,6 +34,171 @@ body {
   background-image: linear-gradient(135deg, #f8fafc, #ffffff 45%, #e2e8f0);
 }
 
+.rich-text-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rich-text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  background-color: #f8fafc;
+  color: #1f2937;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.rich-text-button:hover {
+  background-color: #f1f5f9;
+  border-color: #d1d5db;
+}
+
+.rich-text-button:active {
+  background-color: #e2e8f0;
+}
+
+.rich-text-button:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.rich-text-select {
+  min-width: 6.5rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+  color: #1f2937;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rich-text-select:focus-visible {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+  outline: none;
+}
+
+.rich-text-editor-shell {
+  position: relative;
+}
+
+.rich-text-editable {
+  min-height: 220px;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  padding: 0.9rem 1rem;
+  font-size: 1rem;
+  line-height: 1.625rem;
+  color: #1f2937;
+  outline: none;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.rich-text-editable:focus {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+}
+
+.rich-text-editable p,
+.rich-text-editable div {
+  margin: 0;
+}
+
+.rich-text-placeholder {
+  pointer-events: none;
+  position: absolute;
+  inset: 0.9rem 1rem;
+  color: #9ca3af;
+  font-size: 1rem;
+  line-height: 1.625rem;
+}
+
+.rich-text-underline {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+
+.rich-text-content {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rich-text-content h1,
+.rich-text-content h2,
+.rich-text-content h3 {
+  font-weight: 700;
+  line-height: 1.3;
+  color: #111827;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-content h1 {
+  font-size: 2rem;
+}
+
+.rich-text-content h2 {
+  font-size: 1.5rem;
+}
+
+.rich-text-content h3 {
+  font-size: 1.25rem;
+}
+
+.rich-text-content p {
+  margin-bottom: 1rem;
+}
+
+.rich-text-content p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-content ul,
+.rich-text-content ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.rich-text-content ul {
+  list-style-type: disc;
+}
+
+.rich-text-content ol {
+  list-style-type: decimal;
+}
+
+.rich-text-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.rich-text-content strong {
+  font-weight: 700;
+}
+
+.rich-text-content u {
+  text-decoration: underline;
+}
+
 :root[data-theme="dark"] {
   --background: #0b1120;
   --foreground: #e2e8f0;
@@ -158,6 +323,42 @@ body {
 
 :root[data-theme="dark"] .text-red-700 {
   color: #fca5a5 !important;
+}
+
+:root[data-theme="dark"] .rich-text-button {
+  border-color: #475569;
+  background-color: rgba(30, 41, 59, 0.7);
+  color: #e2e8f0;
+}
+
+:root[data-theme="dark"] .rich-text-button:hover {
+  background-color: rgba(30, 41, 59, 0.9);
+}
+
+:root[data-theme="dark"] .rich-text-select {
+  border-color: #475569;
+  background-color: rgba(30, 41, 59, 0.7);
+  color: #e2e8f0;
+}
+
+:root[data-theme="dark"] .rich-text-editable {
+  border-color: #475569;
+  background-color: rgba(30, 41, 59, 0.6);
+  color: #e2e8f0;
+}
+
+:root[data-theme="dark"] .rich-text-placeholder {
+  color: #64748b;
+}
+
+:root[data-theme="dark"] .rich-text-content h1,
+:root[data-theme="dark"] .rich-text-content h2,
+:root[data-theme="dark"] .rich-text-content h3 {
+  color: #f8fafc;
+}
+
+:root[data-theme="dark"] .rich-text-content a {
+  color: #93c5fd;
 }
 
 :root[data-theme="dark"] .item-form-shell {
