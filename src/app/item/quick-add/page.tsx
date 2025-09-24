@@ -34,6 +34,7 @@ import {
   type CabinetOption,
 } from "@/lib/cabinet-options";
 import CabinetTagQuickEditor from "@/components/CabinetTagQuickEditor";
+import { hasCabinetItemWithSourceUrl } from "@/lib/firestore-utils";
 
 function normalizeCabinetTags(input: unknown): string[] {
   if (!Array.isArray(input)) {
@@ -502,6 +503,21 @@ export default function QuickAddItemPage() {
       const db = getFirebaseDb();
       if (!db) {
         throw new Error("Firebase 尚未設定");
+      }
+
+      if (sourceUrl) {
+        const hasDuplicate = await hasCabinetItemWithSourceUrl(
+          db,
+          user.uid,
+          cabinetId,
+          sourceUrl
+        );
+        if (hasDuplicate) {
+          const confirmed = window.confirm("已有相同連結物件,是否創建?");
+          if (!confirmed) {
+            return;
+          }
+        }
       }
 
       const links = sourceUrl

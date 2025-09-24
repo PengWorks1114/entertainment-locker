@@ -12,6 +12,7 @@ import {
   type QuerySnapshot,
   type DocumentData,
   type DocumentSnapshot,
+  type Firestore,
 } from "firebase/firestore";
 
 import { getFirebaseDb } from "./firebase";
@@ -114,4 +115,56 @@ export async function deleteCabinetWithItems(cabinetId: string, userId: string) 
   await Promise.all(itemsSnap.docs.map((docSnap) => deleteItemWithProgress(docSnap.id, userId)));
 
   await deleteDoc(cabinetRef);
+}
+
+function normalizeUrlForComparison(input: unknown): string | null {
+  if (typeof input !== "string") {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/\/+$/, "");
+}
+
+export async function hasCabinetItemWithSourceUrl(
+  db: Firestore,
+  userId: string,
+  cabinetId: string,
+  sourceUrl: string,
+  options: { excludeItemId?: string } = {}
+): Promise<boolean> {
+  const normalizedTarget = normalizeUrlForComparison(sourceUrl);
+  if (!normalizedTarget) {
+    return false;
+  }
+
+  const sourceQuery = query(
+    collection(db, "item"),
+    where("uid", "==", userId),
+    where("cabinetId", "==", cabinetId)
+  );
+  const snap = await getDocs(sourceQuery);
+  return snap.docs.some((docSnap) => {
+    if (options.excludeItemId && docSnap.id === options.excludeItemId) {
+      return false;
+    }
+    const data = docSnap.data();
+    if (!data) {
+      return false;
+    }
+    const links = Array.isArray(data.links) ? data.links : [];
+    return links.some((entry: unknown) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+      const urlValue = (entry as { url?: unknown }).url;
+      if (typeof urlValue !== "string") {
+        return false;
+      }
+      const normalized = normalizeUrlForComparison(urlValue);
+      return normalized === normalizedTarget;
+    });
+  });
 }

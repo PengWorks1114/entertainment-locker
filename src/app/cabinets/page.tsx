@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   clearIndexedDbPersistence,
@@ -72,6 +72,7 @@ export default function CabinetsPage() {
   const [reorderSaving, setReorderSaving] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [reorderPage, setReorderPage] = useState(1);
+  const manualReorderNavigationRef = useRef(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>("custom");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1]);
@@ -260,17 +261,36 @@ export default function CabinetsPage() {
 
   useEffect(() => {
     if (!selectedId) {
+      manualReorderNavigationRef.current = false;
       return;
     }
     const targetIndex = reorderList.findIndex((item) => item.id === selectedId);
     if (targetIndex === -1) {
+      manualReorderNavigationRef.current = false;
       return;
     }
     const targetPage = Math.floor(targetIndex / reorderPageSize) + 1;
     if (targetPage !== reorderCurrentPageSafe) {
+      if (manualReorderNavigationRef.current) {
+        manualReorderNavigationRef.current = false;
+        return;
+      }
       setReorderPage(targetPage);
+    } else {
+      manualReorderNavigationRef.current = false;
     }
   }, [reorderCurrentPageSafe, reorderList, reorderPageSize, selectedId]);
+
+  function setReorderPageManually(
+    next: number | ((prev: number) => number)
+  ) {
+    manualReorderNavigationRef.current = true;
+    if (typeof next === "function") {
+      setReorderPage((prev) => next(prev));
+    } else {
+      setReorderPage(next);
+    }
+  }
 
   const feedbackNode = useMemo(() => {
     if (!feedback) return null;
@@ -1033,7 +1053,12 @@ export default function CabinetsPage() {
                           <span>頁面</span>
                           <select
                             value={reorderCurrentPageSafe}
-                            onChange={(event) => setReorderPage(Number(event.target.value))}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                setReorderPageManually(value);
+                              }
+                            }}
                             className="h-9 rounded-lg border bg-white px-2 text-sm"
                           >
                             {reorderPageNumbers.map((pageNumber) => (
@@ -1046,7 +1071,9 @@ export default function CabinetsPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setReorderPage((prev) => Math.max(1, prev - 1))}
+                            onClick={() =>
+                              setReorderPageManually((prev) => Math.max(1, prev - 1))
+                            }
                             disabled={reorderCurrentPageSafe <= 1}
                             className={`${buttonClass({ variant: "secondary", size: "sm" })} disabled:cursor-not-allowed disabled:opacity-60`}
                           >
@@ -1055,7 +1082,7 @@ export default function CabinetsPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              setReorderPage((prev) =>
+                              setReorderPageManually((prev) =>
                                 prev >= reorderTotalPages ? reorderTotalPages : prev + 1
                               )
                             }

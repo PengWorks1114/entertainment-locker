@@ -54,7 +54,10 @@ import {
   type AppearanceFormData,
   type ItemFormData,
 } from "@/lib/validators";
-import { deleteItemWithProgress } from "@/lib/firestore-utils";
+import {
+  deleteItemWithProgress,
+  hasCabinetItemWithSourceUrl,
+} from "@/lib/firestore-utils";
 import {
   fetchCabinetOptions,
   type CabinetOption,
@@ -805,18 +808,37 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         nextUpdateAt: nextUpdateDate,
       });
 
+      const primaryLink =
+        parsedData.links.find((link) => link.isPrimary) ?? parsedData.links[0];
+      const candidateSourceUrl = primaryLink?.url?.trim() ?? "";
+
+      const db = getFirebaseDb();
+      if (!db) {
+        throw new Error("Firebase 尚未設定");
+      }
+
+      if (mode === "create" && candidateSourceUrl) {
+        const hasDuplicate = await hasCabinetItemWithSourceUrl(
+          db,
+          user.uid,
+          parsedData.cabinetId,
+          candidateSourceUrl
+        );
+        if (hasDuplicate) {
+          const confirmed = window.confirm("已有相同連結物件,是否創建?");
+          if (!confirmed) {
+            return;
+          }
+        }
+      }
+
       let resolvedThumbUrl = parsedData.thumbUrl;
       let resolvedThumbTransform = parsedData.thumbTransform;
-      if (mode === "create" && !resolvedThumbUrl) {
-        const primaryLink =
-          parsedData.links.find((link) => link.isPrimary) ??
-          parsedData.links[0];
-        if (primaryLink) {
-          const autoThumb = await fetchOpenGraphImage(primaryLink.url);
-          if (autoThumb) {
-            resolvedThumbUrl = autoThumb;
-            resolvedThumbTransform = { ...DEFAULT_THUMB_TRANSFORM };
-          }
+      if (mode === "create" && !resolvedThumbUrl && primaryLink) {
+        const autoThumb = await fetchOpenGraphImage(primaryLink.url);
+        if (autoThumb) {
+          resolvedThumbUrl = autoThumb;
+          resolvedThumbTransform = { ...DEFAULT_THUMB_TRANSFORM };
         }
       }
 
@@ -862,10 +884,6 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
         docData.isFavorite = false;
       }
 
-      const db = getFirebaseDb();
-      if (!db) {
-        throw new Error("Firebase 尚未設定");
-      }
       if (mode === "edit" && itemId) {
         await updateDoc(doc(db, "item", itemId), docData);
         setMessage("已儲存，按「確定」後返回詳細頁面");
