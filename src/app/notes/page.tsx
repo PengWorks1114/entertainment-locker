@@ -66,6 +66,13 @@ export default function NotesPage() {
     })} whitespace-nowrap px-3`;
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentPage]);
+
+  useEffect(() => {
     const auth = getFirebaseAuth();
     if (!auth) {
       setAuthChecked(true);
@@ -199,7 +206,7 @@ export default function NotesPage() {
           <li key={note.id}>
             <Link
               href={`/notes/${note.id}`}
-              className="flex flex-col gap-2 px-6 py-5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+              className="notes-list-item flex flex-col gap-2 px-6 py-5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-start gap-2">

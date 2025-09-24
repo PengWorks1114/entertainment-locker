@@ -232,6 +232,10 @@ body {
   outline-offset: 2px;
 }
 
+:root[data-theme="dark"] .notes-list-item:hover {
+  background-color: rgba(148, 163, 184, 0.26) !important;
+}
+
 .progress-button {
   display: inline-flex;
   align-items: center;
