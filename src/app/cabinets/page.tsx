@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
-  addDoc,
   clearIndexedDbPersistence,
   collection,
   doc,
@@ -16,6 +15,7 @@ import {
   Timestamp,
   where,
   writeBatch,
+  updateDoc,
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
@@ -31,15 +31,19 @@ import {
   primeCabinetOptionsCache,
 } from "@/lib/cabinet-options";
 
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
+
 type Cabinet = {
   id: string;
   name: string;
   order: number;
   createdMs: number;
+  updatedMs: number;
   note: string | null;
   thumbUrl: string | null;
   thumbTransform: ThumbTransform | null;
   isLocked: boolean;
+  isFavorite: boolean;
 };
 
 type Feedback = {
@@ -47,10 +51,12 @@ type Feedback = {
   message: string;
 };
 
+type SortOption = "custom" | "recentUpdated" | "created" | "asc" | "desc";
+type DisplayMode = "detailed" | "compact" | "list";
+
 export default function CabinetsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [name, setName] = useState("");
   const [list, setList] = useState<Cabinet[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [showReorder, setShowReorder] = useState(false);
@@ -58,6 +64,13 @@ export default function CabinetsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reorderSaving, setReorderSaving] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortOption, setSortOption] = useState<SortOption>("custom");
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -94,6 +107,9 @@ export default function CabinetsPage() {
             const createdAt = data?.createdAt;
             const createdMs =
               createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+            const updatedAt = data?.updatedAt;
+            const updatedMs =
+              updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
             const orderValue =
               typeof data?.order === "number" ? data.order : createdMs;
             const noteValue =
@@ -104,6 +120,7 @@ export default function CabinetsPage() {
               id: docSnap.id,
               name: (data?.name as string) || "",
               createdMs,
+              updatedMs,
               order: orderValue,
               note: noteValue,
               thumbUrl:
@@ -114,6 +131,7 @@ export default function CabinetsPage() {
                 ? normalizeThumbTransform(data.thumbTransform)
                 : null,
               isLocked: Boolean(data?.isLocked),
+              isFavorite: Boolean(data?.isFavorite),
             } satisfies Cabinet;
           })
           .sort((a, b) => {
@@ -137,67 +155,60 @@ export default function CabinetsPage() {
     return () => unSub();
   }, [user]);
 
-  async function addCabinet() {
-    if (!user) {
-      setFeedback({ type: "error", message: "請先登入" });
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setFeedback({ type: "error", message: "名稱不可為空" });
-      return;
-    }
-    setFeedback(null);
-    try {
-      const db = getFirebaseDb();
-      if (!db) {
-        setFeedback({ type: "error", message: "Firebase 尚未設定" });
-        return;
-      }
-      const highestOrder = list.reduce(
-        (max, item) => (item.order > max ? item.order : max),
-        0
-      );
-      await addDoc(collection(db, "cabinet"), {
-        uid: user.uid,
-        name: trimmed,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        tags: [],
-        order: highestOrder + 1,
-        note: null,
-        thumbUrl: null,
-        thumbTransform: null,
-        isLocked: false,
-      });
-      invalidateCabinetOptions(user.uid);
-      setName("");
-      setFeedback({ type: "success", message: "已新增櫃子" });
-    } catch (err) {
-      console.error("新增櫃子時發生錯誤", err);
-      setFeedback({ type: "error", message: "新增櫃子時發生錯誤" });
-    }
-  }
-
-  async function clearCache() {
-    try {
-      const db = getFirebaseDb();
-      if (db) {
-        await terminate(db);
-      }
-    } catch {}
-    try {
-      const db = getFirebaseDb();
-      if (db) {
-        await clearIndexedDbPersistence(db);
-      }
-    } catch {}
-    location.reload();
-  }
-
-  const inputClass = "h-12 w-full rounded-xl border px-4 text-base";
-
   const hasCabinet = list.length > 0;
+
+  const filteredList = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    return list.filter((item) => {
+      if (favoritesOnly && !item.isFavorite) {
+        return false;
+      }
+      if (!keyword) {
+        return true;
+      }
+      const nameMatch = item.name.toLowerCase().includes(keyword);
+      const noteMatch = (item.note ?? "").toLowerCase().includes(keyword);
+      return nameMatch || noteMatch;
+    });
+  }, [favoritesOnly, list, searchTerm]);
+
+  const sortedList = useMemo(() => {
+    if (sortOption === "custom") {
+      return filteredList;
+    }
+    const base = [...filteredList];
+    switch (sortOption) {
+      case "recentUpdated":
+        base.sort((a, b) => b.updatedMs - a.updatedMs);
+        break;
+      case "created":
+        base.sort((a, b) => b.createdMs - a.createdMs);
+        break;
+      case "asc":
+        base.sort((a, b) =>
+          (a.name || "未命名櫃子").localeCompare(b.name || "未命名櫃子")
+        );
+        break;
+      case "desc":
+        base.sort((a, b) =>
+          (b.name || "未命名櫃子").localeCompare(a.name || "未命名櫃子")
+        );
+        break;
+      default:
+        break;
+    }
+    return base;
+  }, [filteredList, sortOption]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const pageStartIndex = (currentPageSafe - 1) * pageSize;
+  const pageItems = sortedList.slice(pageStartIndex, pageStartIndex + pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [favoritesOnly, list.length, pageSize, searchTerm, sortOption]);
+
   const feedbackNode = useMemo(() => {
     if (!feedback) return null;
     const baseClass =
@@ -302,6 +313,59 @@ export default function CabinetsPage() {
     }
   }
 
+  async function clearCache() {
+    try {
+      const db = getFirebaseDb();
+      if (db) {
+        await terminate(db);
+      }
+    } catch {}
+    try {
+      const db = getFirebaseDb();
+      if (db) {
+        await clearIndexedDbPersistence(db);
+      }
+    } catch {}
+    location.reload();
+  }
+
+  async function toggleFavorite(cabinet: Cabinet) {
+    if (!user) {
+      setFeedback({ type: "error", message: "請先登入" });
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    const nextValue = !cabinet.isFavorite;
+    setList((prev) =>
+      prev.map((item) =>
+        item.id === cabinet.id ? { ...item, isFavorite: nextValue } : item
+      )
+    );
+    try {
+      const cabinetRef = doc(db, "cabinet", cabinet.id);
+      await updateDoc(cabinetRef, {
+        isFavorite: nextValue,
+        updatedAt: serverTimestamp(),
+      });
+      setFeedback({
+        type: "success",
+        message: nextValue ? "已加入收藏" : "已從收藏移除",
+      });
+    } catch (err) {
+      console.error("更新收藏狀態失敗", err);
+      setList((prev) =>
+        prev.map((item) =>
+          item.id === cabinet.id ? { ...item, isFavorite: cabinet.isFavorite } : item
+        )
+      );
+      setFeedback({ type: "error", message: "更新收藏狀態時發生錯誤" });
+    }
+  }
+
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -351,6 +415,12 @@ export default function CabinetsPage() {
             >
               清除快取
             </button>
+            <Link
+              href="/cabinets/new"
+              className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+            >
+              新增櫃子
+            </Link>
             <button
               onClick={openReorderDialog}
               className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
@@ -361,146 +431,409 @@ export default function CabinetsPage() {
           </div>
         </header>
 
+        {feedbackNode}
+
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="flex-1 space-y-1">
-              <span className="text-sm text-gray-600">櫃子名稱</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="例如：漫畫、小說、遊戲"
-                className={inputClass}
-              />
-            </label>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
+              <p className="text-sm text-gray-500">
+                找到目標櫃子、調整顯示方式與排序。
+              </p>
+            </div>
             <button
-              onClick={addCabinet}
-              className={buttonClass({ variant: "primary", size: "lg" })}
+              type="button"
+              onClick={() => setFiltersExpanded((prev) => !prev)}
+              className={buttonClass({ variant: "secondary" })}
             >
-              新增櫃子
+              {filtersExpanded ? "收合" : "展開"}
             </button>
           </div>
-          {feedbackNode}
+          {filtersExpanded && (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-4 lg:flex-row">
+                <label className="flex-1 space-y-1">
+                  <span className="text-sm text-gray-600">搜尋櫃子</span>
+                  <input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="輸入名稱或備註關鍵字"
+                    className="h-12 w-full rounded-xl border px-4 text-base"
+                  />
+                </label>
+                <label className="flex-1 space-y-1">
+                  <span className="text-sm text-gray-600">排序方式</span>
+                  <select
+                    value={sortOption}
+                    onChange={(event) =>
+                      setSortOption(event.target.value as SortOption)
+                    }
+                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
+                  >
+                    <option value="custom">自訂</option>
+                    <option value="recentUpdated">最近更新</option>
+                    <option value="created">建立時間</option>
+                    <option value="asc">正序</option>
+                    <option value="desc">反序</option>
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <label className="flex flex-1 flex-col space-y-1">
+                  <span className="text-sm text-gray-600">每頁顯示數量</span>
+                  <select
+                    value={pageSize}
+                    onChange={(event) => setPageSize(Number(event.target.value))}
+                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={favoritesOnly}
+                    onChange={(event) => setFavoritesOnly(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  收藏
+                </label>
+                <label className="flex flex-1 flex-col space-y-1">
+                  <span className="text-sm text-gray-600">顯示方式</span>
+                  <select
+                    value={displayMode}
+                    onChange={(event) =>
+                      setDisplayMode(event.target.value as DisplayMode)
+                    }
+                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
+                  >
+                    <option value="detailed">詳細</option>
+                    <option value="compact">簡略</option>
+                    <option value="list">列表</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="space-y-4">
           <h2 className="text-lg font-semibold text-gray-900">我的櫃子</h2>
           {hasCabinet ? (
-            <ul className="space-y-4">
-              {list.map((row) => {
-                const displayName = row.name || "未命名櫃子";
-                const encodedId = encodeURIComponent(row.id);
-                const thumbTransform =
-                  row.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
-                const thumbStyle = {
-                  transform: `translate(${thumbTransform.offsetX}%, ${thumbTransform.offsetY}%) scale(${thumbTransform.scale})`,
-                  transformOrigin: "center",
-                } as const;
-                const canUseOptimizedThumb = isOptimizedImageUrl(row.thumbUrl);
-                const isLocked = row.isLocked;
-                const coverClassName =
-                  "relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner";
-                const coverContent = row.thumbUrl ? (
-                  canUseOptimizedThumb ? (
-                    <Image
-                      src={row.thumbUrl}
-                      alt={`${displayName} 縮圖`}
-                      fill
-                      sizes="80px"
-                      className="object-cover"
-                      style={thumbStyle}
-                      draggable={false}
-                    />
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={row.thumbUrl}
-                      alt={`${displayName} 縮圖`}
-                      className="h-full w-full select-none object-cover"
-                      style={thumbStyle}
-                      loading="lazy"
-                      draggable={false}
-                    />
-                  )
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
-                    無縮圖
-                  </div>
-                );
-                return (
-                  <li
-                    key={row.id}
-                    className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-                      <div className="flex gap-4 sm:flex-1">
-                        {isLocked ? (
-                          <div
-                            className={`${coverClassName} cursor-not-allowed`}
-                            aria-disabled="true"
-                          >
-                            {coverContent}
-                          </div>
+            pageItems.length > 0 ? (
+              <div className="space-y-4">
+                {displayMode === "detailed" && (
+                  <ul className="space-y-4">
+                    {pageItems.map((row) => {
+                      const displayName = row.name || "未命名櫃子";
+                      const encodedId = encodeURIComponent(row.id);
+                      const thumbTransform =
+                        row.thumbTransform ?? DEFAULT_THUMB_TRANSFORM;
+                      const thumbStyle = {
+                        transform: `translate(${thumbTransform.offsetX}%, ${thumbTransform.offsetY}%) scale(${thumbTransform.scale})`,
+                        transformOrigin: "center",
+                      } as const;
+                      const canUseOptimizedThumb = isOptimizedImageUrl(row.thumbUrl);
+                      const isLocked = row.isLocked;
+                      const coverClassName =
+                        "relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner";
+                      const coverContent = row.thumbUrl ? (
+                        canUseOptimizedThumb ? (
+                          <Image
+                            src={row.thumbUrl}
+                            alt={`${displayName} 縮圖`}
+                            fill
+                            sizes="80px"
+                            className="object-cover"
+                            style={thumbStyle}
+                            draggable={false}
+                          />
                         ) : (
-                          <Link
-                            href={`/cabinet/${encodedId}`}
-                            className={`${coverClassName} transition hover:shadow-md`}
-                          >
-                            {coverContent}
-                          </Link>
-                        )}
-                        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {isLocked ? (
-                              <span className="break-anywhere text-lg font-semibold text-gray-900">
-                                {displayName}
-                              </span>
-                            ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={row.thumbUrl}
+                            alt={`${displayName} 縮圖`}
+                            className="h-full w-full select-none object-cover"
+                            style={thumbStyle}
+                            loading="lazy"
+                            draggable={false}
+                          />
+                        )
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-[10px] font-medium text-gray-400">
+                          無縮圖
+                        </div>
+                      );
+                      return (
+                        <li
+                          key={row.id}
+                          className="space-y-3 rounded-2xl border bg-white/70 p-5 shadow-sm"
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+                            <div className="flex gap-4 sm:flex-1">
+                              {isLocked ? (
+                                <div
+                                  className={`${coverClassName} cursor-not-allowed`}
+                                  aria-disabled="true"
+                                >
+                                  {coverContent}
+                                </div>
+                              ) : (
+                                <Link
+                                  href={`/cabinet/${encodedId}`}
+                                  className={`${coverClassName} transition hover:shadow-md`}
+                                >
+                                  {coverContent}
+                                </Link>
+                              )}
+                              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {isLocked ? (
+                                    <span className="break-anywhere text-lg font-semibold text-gray-900">
+                                      {displayName}
+                                    </span>
+                                  ) : (
+                                    <Link
+                                      href={`/cabinet/${encodedId}`}
+                                      className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                                    >
+                                      {displayName}
+                                    </Link>
+                                  )}
+                                  {isLocked && (
+                                    <span className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                                      已鎖定
+                                    </span>
+                                  )}
+                                  {row.isFavorite && (
+                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                      收藏
+                                    </span>
+                                  )}
+                                </div>
+                                {row.note && (
+                                  <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => toggleFavorite(row)}
+                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                              >
+                                {row.isFavorite ? "取消收藏" : "加入收藏"}
+                              </button>
+                              {isLocked ? (
+                                <span
+                                  className={`${buttonClass({ variant: "secondary" })} w-full cursor-not-allowed opacity-60 sm:w-auto`}
+                                  aria-disabled="true"
+                                >
+                                  已鎖定
+                                </span>
+                              ) : (
+                                <Link
+                                  href={`/cabinet/${encodedId}`}
+                                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                >
+                                  查看物件
+                                </Link>
+                              )}
+                              <Link
+                                href={`/cabinet/${encodedId}/edit`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                              >
+                                編輯櫃子
+                              </Link>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {displayMode === "compact" && (
+                  <ul className="space-y-3">
+                    {pageItems.map((row) => {
+                      const displayName = row.name || "未命名櫃子";
+                      const encodedId = encodeURIComponent(row.id);
+                      return (
+                        <li
+                          key={row.id}
+                          className="rounded-2xl border bg-white/70 p-4 shadow-sm"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Link
+                                  href={`/cabinet/${encodedId}`}
+                                  className="break-anywhere text-base font-semibold text-gray-900 underline-offset-4 hover:underline"
+                                >
+                                  {displayName}
+                                </Link>
+                                {row.isLocked && (
+                                  <span className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                                    已鎖定
+                                  </span>
+                                )}
+                                {row.isFavorite && (
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                    收藏
+                                  </span>
+                                )}
+                              </div>
+                              {row.note && (
+                                <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => toggleFavorite(row)}
+                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                              >
+                                {row.isFavorite ? "取消收藏" : "加入收藏"}
+                              </button>
                               <Link
                                 href={`/cabinet/${encodedId}`}
-                                className="break-anywhere text-lg font-semibold text-gray-900 underline-offset-4 hover:underline"
+                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
                               >
-                                {displayName}
+                                查看物件
                               </Link>
-                            )}
-                            {isLocked && (
-                              <span className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
-                                已鎖定
-                              </span>
-                            )}
+                              <Link
+                                href={`/cabinet/${encodedId}/edit`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                              >
+                                編輯櫃子
+                              </Link>
+                            </div>
                           </div>
-                          {row.note && (
-                            <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
-                        {isLocked ? (
-                          <span
-                            className={`${buttonClass({ variant: "secondary" })} w-full cursor-not-allowed opacity-60 sm:w-auto`}
-                            aria-disabled="true"
-                          >
-                            已鎖定
-                          </span>
-                        ) : (
-                          <Link
-                            href={`/cabinet/${encodedId}`}
-                            className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-                          >
-                            查看物件
-                          </Link>
-                        )}
-                        <Link
-                          href={`/cabinet/${encodedId}/edit`}
-                          className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-                        >
-                          編輯櫃子
-                        </Link>
-                      </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {displayMode === "list" && (
+                  <div className="overflow-x-auto rounded-2xl border bg-white/70 shadow-sm">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3">名稱</th>
+                          <th className="px-4 py-3">備註</th>
+                          <th className="px-4 py-3">收藏</th>
+                          <th className="px-4 py-3">狀態</th>
+                          <th className="px-4 py-3">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {pageItems.map((row) => {
+                          const encodedId = encodeURIComponent(row.id);
+                          return (
+                            <tr key={row.id} className="align-top">
+                              <td className="px-4 py-3">
+                                <Link
+                                  href={`/cabinet/${encodedId}`}
+                                  className="break-anywhere font-medium text-gray-900 underline-offset-4 hover:underline"
+                                >
+                                  {row.name || "未命名櫃子"}
+                                </Link>
+                              </td>
+                              <td className="px-4 py-3 text-gray-600">
+                                {row.note ? (
+                                  <span className="break-anywhere">{row.note}</span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                {row.isFavorite ? (
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                    收藏
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-400">未收藏</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                {row.isLocked ? (
+                                  <span className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+                                    已鎖定
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                                    可使用
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFavorite(row)}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                  >
+                                    {row.isFavorite ? "取消收藏" : "加入收藏"}
+                                  </button>
+                                  <Link
+                                    href={`/cabinet/${encodedId}`}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                  >
+                                    查看物件
+                                  </Link>
+                                  <Link
+                                    href={`/cabinet/${encodedId}/edit`}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                  >
+                                    編輯櫃子
+                                  </Link>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {totalPages > 1 && (
+                  <div className="flex flex-col items-center gap-3 rounded-2xl border bg-white/70 p-4 text-sm shadow-sm sm:flex-row sm:justify-between">
+                    <span className="text-gray-600">
+                      第 {currentPageSafe} / {totalPages} 頁，共 {sortedList.length} 筆
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                        disabled={currentPageSafe <= 1}
+                        className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        上一頁
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCurrentPage((prev) =>
+                            prev >= totalPages ? totalPages : prev + 1
+                          )
+                        }
+                        disabled={currentPageSafe >= totalPages}
+                        className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        下一頁
+                      </button>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
+                沒有符合條件的櫃子，試試調整搜尋或篩選條件。
+              </div>
+            )
           ) : (
             <div className="rounded-2xl border border-dashed bg-white/60 p-6 text-center text-sm text-gray-500">
               尚未建立櫃子，先新增一個分類吧！
