@@ -55,6 +55,12 @@ type SortOption = "custom" | "recentUpdated" | "created" | "name";
 type SortDirection = "asc" | "desc";
 type DisplayMode = "detailed" | "compact" | "list";
 
+const DISPLAY_MODE_OPTIONS: { value: DisplayMode; label: string }[] = [
+  { value: "detailed", label: "詳細" },
+  { value: "compact", label: "簡略" },
+  { value: "list", label: "列表" },
+];
+
 export default function CabinetsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -580,20 +586,29 @@ export default function CabinetsPage() {
                   />
                   收藏
                 </label>
-                <label className="flex flex-1 flex-col space-y-1">
+                <div className="flex flex-1 flex-col space-y-1">
                   <span className="text-sm text-gray-600">顯示方式</span>
-                  <select
-                    value={displayMode}
-                    onChange={(event) =>
-                      setDisplayMode(event.target.value as DisplayMode)
-                    }
-                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
-                  >
-                    <option value="detailed">詳細</option>
-                    <option value="compact">簡略</option>
-                    <option value="list">列表</option>
-                  </select>
-                </label>
+                  <div className="flex overflow-hidden rounded-full border border-gray-200 bg-white">
+                    {DISPLAY_MODE_OPTIONS.map((option) => {
+                      const isActive = displayMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setDisplayMode(option.value)}
+                          className={`flex-1 px-4 py-2 text-sm font-medium transition ${
+                            isActive
+                              ? "bg-gray-900 text-white shadow-sm"
+                              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                          }`}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -698,17 +713,17 @@ export default function CabinetsPage() {
                                 )}
                               </div>
                             </div>
-                            <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
+                            <div className="flex flex-col gap-2 text-sm sm:flex-none sm:flex-row sm:flex-wrap sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => toggleFavorite(row)}
-                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                               >
                                 {row.isFavorite ? "取消收藏" : "加入收藏"}
                               </button>
                               {isLocked ? (
                                 <span
-                                  className={`${buttonClass({ variant: "secondary" })} w-full cursor-not-allowed opacity-60 sm:w-auto`}
+                                  className={`${buttonClass({ variant: "secondary" })} w-full cursor-not-allowed whitespace-nowrap opacity-60 sm:w-auto`}
                                   aria-disabled="true"
                                 >
                                   已鎖定
@@ -716,14 +731,14 @@ export default function CabinetsPage() {
                               ) : (
                                 <Link
                                   href={`/cabinet/${encodedId}`}
-                                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                  className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                                 >
                                   查看物件
                                 </Link>
                               )}
                               <Link
                                 href={`/cabinet/${encodedId}/edit`}
-                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                               >
                                 編輯櫃子
                               </Link>
@@ -745,7 +760,7 @@ export default function CabinetsPage() {
                           className="rounded-2xl border bg-white/70 p-4 shadow-sm"
                         >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0 space-y-1">
+                            <div className="min-w-0 space-y-1 sm:flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                   href={`/cabinet/${encodedId}`}
@@ -774,23 +789,23 @@ export default function CabinetsPage() {
                                 </p>
                               )}
                             </div>
-                            <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
+                            <div className="flex flex-col gap-2 text-sm sm:flex-none sm:flex-row sm:flex-wrap sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => toggleFavorite(row)}
-                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                               >
                                 {row.isFavorite ? "取消收藏" : "加入收藏"}
                               </button>
                               <Link
                                 href={`/cabinet/${encodedId}`}
-                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                               >
                                 查看物件
                               </Link>
                               <Link
                                 href={`/cabinet/${encodedId}/edit`}
-                                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                               >
                                 編輯櫃子
                               </Link>
@@ -864,19 +879,19 @@ export default function CabinetsPage() {
                                   <button
                                     type="button"
                                     onClick={() => toggleFavorite(row)}
-                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                                   >
                                     {row.isFavorite ? "取消收藏" : "加入收藏"}
                                   </button>
                                   <Link
                                     href={`/cabinet/${encodedId}`}
-                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                                   >
                                     查看物件
                                   </Link>
                                   <Link
                                     href={`/cabinet/${encodedId}/edit`}
-                                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                                    className={`${buttonClass({ variant: "secondary" })} w-full whitespace-nowrap sm:w-auto`}
                                   >
                                     編輯櫃子
                                   </Link>

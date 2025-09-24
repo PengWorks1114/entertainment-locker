@@ -4,16 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import {
-  addDoc,
-  collection,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 import { invalidateCabinetOptions } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
@@ -66,21 +57,6 @@ export default function NewCabinetPage() {
     setFeedback(null);
     try {
       const cabinetsRef = collection(db, "cabinet");
-      const orderSnap = await getDocs(
-        query(
-          cabinetsRef,
-          where("uid", "==", user.uid),
-          orderBy("order", "desc"),
-          limit(1)
-        )
-      );
-      let highestOrder = 0;
-      orderSnap.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (typeof data?.order === "number" && data.order > highestOrder) {
-          highestOrder = data.order;
-        }
-      });
       const trimmedNote = note.trim();
       await addDoc(cabinetsRef, {
         uid: user.uid,
@@ -89,7 +65,7 @@ export default function NewCabinetPage() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         tags: [],
-        order: highestOrder + 1,
+        order: Date.now(),
         thumbUrl: null,
         thumbTransform: null,
         isLocked: false,
