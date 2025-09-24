@@ -51,7 +51,8 @@ type Feedback = {
   message: string;
 };
 
-type SortOption = "custom" | "recentUpdated" | "created" | "asc" | "desc";
+type SortOption = "custom" | "recentUpdated" | "created" | "name";
+type SortDirection = "asc" | "desc";
 type DisplayMode = "detailed" | "compact" | "list";
 
 export default function CabinetsPage() {
@@ -64,6 +65,7 @@ export default function CabinetsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reorderSaving, setReorderSaving] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [reorderPage, setReorderPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>("custom");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1]);
@@ -71,6 +73,13 @@ export default function CabinetsPage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const canChangeSortDirection = sortOption !== "custom";
+  const directionButtonClass = (direction: SortDirection) =>
+    `${buttonClass({
+      variant: sortDirection === direction ? "primary" : "secondary",
+      size: "sm",
+    })} whitespace-nowrap px-3`;
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -177,37 +186,78 @@ export default function CabinetsPage() {
       return filteredList;
     }
     const base = [...filteredList];
+    const directionFactor = sortDirection === "asc" ? 1 : -1;
     switch (sortOption) {
       case "recentUpdated":
-        base.sort((a, b) => b.updatedMs - a.updatedMs);
+        base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
         break;
       case "created":
-        base.sort((a, b) => b.createdMs - a.createdMs);
+        base.sort((a, b) => (a.createdMs - b.createdMs) * directionFactor);
         break;
-      case "asc":
-        base.sort((a, b) =>
-          (a.name || "未命名櫃子").localeCompare(b.name || "未命名櫃子")
+      case "name": {
+        const fallback = "未命名櫃子";
+        base.sort(
+          (a, b) =>
+            (a.name || fallback).localeCompare(b.name || fallback, "zh-Hant") *
+            directionFactor
         );
         break;
-      case "desc":
-        base.sort((a, b) =>
-          (b.name || "未命名櫃子").localeCompare(a.name || "未命名櫃子")
-        );
-        break;
+      }
       default:
         break;
     }
     return base;
-  }, [filteredList, sortOption]);
+  }, [filteredList, sortDirection, sortOption]);
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
+  const pageNumbers = useMemo(
+    () => Array.from({ length: totalPages }, (_, index) => index + 1),
+    [totalPages]
+  );
   const pageStartIndex = (currentPageSafe - 1) * pageSize;
   const pageItems = sortedList.slice(pageStartIndex, pageStartIndex + pageSize);
+  const reorderPageSize = pageSize;
+  const reorderTotalPages = Math.max(
+    1,
+    Math.ceil(reorderList.length / reorderPageSize)
+  );
+  const reorderCurrentPageSafe = Math.min(reorderPage, reorderTotalPages);
+  const reorderPageStartIndex = (reorderCurrentPageSafe - 1) * reorderPageSize;
+  const reorderPageItems = reorderList.slice(
+    reorderPageStartIndex,
+    reorderPageStartIndex + reorderPageSize
+  );
+  const reorderPageNumbers = useMemo(
+    () => Array.from({ length: reorderTotalPages }, (_, index) => index + 1),
+    [reorderTotalPages]
+  );
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [favoritesOnly, list.length, pageSize, searchTerm, sortOption]);
+  }, [favoritesOnly, list.length, pageSize, searchTerm, sortDirection, sortOption]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setReorderPage((prev) => Math.min(prev, reorderTotalPages));
+  }, [reorderTotalPages]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+    const targetIndex = reorderList.findIndex((item) => item.id === selectedId);
+    if (targetIndex === -1) {
+      return;
+    }
+    const targetPage = Math.floor(targetIndex / reorderPageSize) + 1;
+    if (targetPage !== reorderCurrentPageSafe) {
+      setReorderPage(targetPage);
+    }
+  }, [reorderCurrentPageSafe, reorderList, reorderPageSize, selectedId]);
 
   const feedbackNode = useMemo(() => {
     if (!feedback) return null;
@@ -227,6 +277,7 @@ export default function CabinetsPage() {
     setReorderList(list.map((item) => ({ ...item })));
     setSelectedId(list[0]?.id ?? null);
     setReorderError(null);
+    setReorderPage(currentPageSafe);
     setShowReorder(true);
   }
 
@@ -236,6 +287,7 @@ export default function CabinetsPage() {
     setReorderList([]);
     setSelectedId(null);
     setReorderError(null);
+    setReorderPage(1);
   }
 
   function moveSelected(offset: -1 | 1) {
@@ -305,6 +357,7 @@ export default function CabinetsPage() {
       setShowReorder(false);
       setReorderList([]);
       setSelectedId(null);
+      setReorderPage(1);
     } catch (err) {
       console.error("更新櫃子順序失敗", err);
       setReorderError("更新櫃子順序時發生錯誤");
@@ -463,19 +516,44 @@ export default function CabinetsPage() {
                 </label>
                 <label className="flex-1 space-y-1">
                   <span className="text-sm text-gray-600">排序方式</span>
-                  <select
-                    value={sortOption}
-                    onChange={(event) =>
-                      setSortOption(event.target.value as SortOption)
-                    }
-                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
-                  >
-                    <option value="custom">自訂</option>
-                    <option value="recentUpdated">最近更新</option>
-                    <option value="created">建立時間</option>
-                    <option value="asc">正序</option>
-                    <option value="desc">反序</option>
-                  </select>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <select
+                      value={sortOption}
+                      onChange={(event) => {
+                        const nextOption = event.target.value as SortOption;
+                        setSortOption(nextOption);
+                        if (nextOption === "custom") {
+                          setSortDirection("desc");
+                        }
+                      }}
+                      className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
+                    >
+                      <option value="custom">自訂</option>
+                      <option value="recentUpdated">最近更新</option>
+                      <option value="created">建立時間</option>
+                      <option value="name">名稱</option>
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSortDirection("asc")}
+                        className={directionButtonClass("asc")}
+                        disabled={!canChangeSortDirection}
+                        aria-pressed={sortDirection === "asc"}
+                      >
+                        正序
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortDirection("desc")}
+                        className={directionButtonClass("desc")}
+                        disabled={!canChangeSortDirection}
+                        aria-pressed={sortDirection === "desc"}
+                      >
+                        反序
+                      </button>
+                    </div>
+                  </div>
                 </label>
               </div>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
@@ -671,7 +749,8 @@ export default function CabinetsPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                   href={`/cabinet/${encodedId}`}
-                                  className="break-anywhere text-base font-semibold text-gray-900 underline-offset-4 hover:underline"
+                                  className="block line-clamp-2 break-anywhere text-base font-semibold text-gray-900 underline-offset-4 hover:underline"
+                                  title={displayName}
                                 >
                                   {displayName}
                                 </Link>
@@ -687,7 +766,12 @@ export default function CabinetsPage() {
                                 )}
                               </div>
                               {row.note && (
-                                <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
+                                <p
+                                  className="line-clamp-2 break-anywhere text-sm text-gray-600"
+                                  title={row.note}
+                                >
+                                  {row.note}
+                                </p>
                               )}
                             </div>
                             <div className="flex flex-col gap-2 text-sm sm:w-auto sm:flex-row sm:flex-wrap">
@@ -734,17 +818,23 @@ export default function CabinetsPage() {
                           const encodedId = encodeURIComponent(row.id);
                           return (
                             <tr key={row.id} className="align-top">
-                              <td className="px-4 py-3">
+                              <td className="max-w-[240px] px-4 py-3">
                                 <Link
                                   href={`/cabinet/${encodedId}`}
-                                  className="break-anywhere font-medium text-gray-900 underline-offset-4 hover:underline"
+                                  className="block line-clamp-2 break-anywhere font-medium text-gray-900 underline-offset-4 hover:underline"
+                                  title={row.name || "未命名櫃子"}
                                 >
                                   {row.name || "未命名櫃子"}
                                 </Link>
                               </td>
-                              <td className="px-4 py-3 text-gray-600">
+                              <td className="max-w-[320px] px-4 py-3 text-gray-600">
                                 {row.note ? (
-                                  <span className="break-anywhere">{row.note}</span>
+                                  <span
+                                    className="line-clamp-2 break-anywhere"
+                                    title={row.note}
+                                  >
+                                    {row.note}
+                                  </span>
                                 ) : (
                                   <span className="text-gray-400">—</span>
                                 )}
@@ -800,31 +890,47 @@ export default function CabinetsPage() {
                   </div>
                 )}
                 {totalPages > 1 && (
-                  <div className="flex flex-col items-center gap-3 rounded-2xl border bg-white/70 p-4 text-sm shadow-sm sm:flex-row sm:justify-between">
+                  <div className="flex flex-col gap-3 rounded-2xl border bg-white/70 p-4 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-gray-600">
                       第 {currentPageSafe} / {totalPages} 頁，共 {sortedList.length} 筆
                     </span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                        disabled={currentPageSafe <= 1}
-                        className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        上一頁
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCurrentPage((prev) =>
-                            prev >= totalPages ? totalPages : prev + 1
-                          )
-                        }
-                        disabled={currentPageSafe >= totalPages}
-                        className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        下一頁
-                      </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 text-gray-700">
+                        <span>頁面</span>
+                        <select
+                          value={currentPageSafe}
+                          onChange={(event) => setCurrentPage(Number(event.target.value))}
+                          className="h-10 rounded-xl border bg-white px-3"
+                        >
+                          {pageNumbers.map((pageNumber) => (
+                            <option key={pageNumber} value={pageNumber}>
+                              {pageNumber}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                          disabled={currentPageSafe <= 1}
+                          className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+                          上一頁
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCurrentPage((prev) =>
+                              prev >= totalPages ? totalPages : prev + 1
+                            )
+                          }
+                          disabled={currentPageSafe >= totalPages}
+                          className={`${buttonClass({ variant: "secondary" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+                          下一頁
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -856,39 +962,94 @@ export default function CabinetsPage() {
                 {reorderError}
               </div>
             )}
-            <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-2xl border bg-gray-50 p-3">
+
+            <div className="max-h-[320px] space-y-3 overflow-y-auto rounded-2xl border bg-gray-50 p-3">
               {reorderList.length === 0 ? (
                 <p className="text-sm text-gray-500">目前沒有櫃子可調整。</p>
               ) : (
-                <ul className="space-y-2">
-                  {reorderList.map((cabinet) => {
-                    const isSelected = cabinet.id === selectedId;
-                    return (
-                      <li key={cabinet.id}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedId(cabinet.id)}
-                          className={`w-full overflow-hidden rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition ${
-                            isSelected
-                              ? "border-blue-400 bg-white"
-                              : "border-gray-200 bg-white/80 hover:border-blue-200"
-                          }`}
-                        >
-                          <span className="break-anywhere font-medium text-gray-900">
-                            {cabinet.name || "未命名櫃子"}
-                          </span>
-                          {cabinet.note && (
-                            <span className="break-anywhere mt-1 block text-xs text-gray-500">
-                              {cabinet.note}
+                <div className="space-y-3">
+                  <ul className="space-y-2">
+                    {reorderPageItems.map((cabinet) => {
+                      const isSelected = cabinet.id === selectedId;
+                      return (
+                        <li key={cabinet.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(cabinet.id)}
+                            className={`w-full overflow-hidden rounded-xl border px-4 py-3 text-left text-sm shadow-sm transition${
+                              isSelected
+                                ? "border-blue-400 bg-white"
+                                : "border-gray-200 bg-white/80 hover:border-blue-200"
+                            }`}
+                          >
+                            <span
+                              className="line-clamp-2 break-anywhere font-medium text-gray-900"
+                              title={cabinet.name || "未命名櫃子"}
+                            >
+                              {cabinet.name || "未命名櫃子"}
                             </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                            {cabinet.note && (
+                              <span
+                                className="line-clamp-2 break-anywhere mt-1 block text-xs text-gray-500"
+                                title={cabinet.note}
+                              >
+                                {cabinet.note}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {reorderTotalPages > 1 && (
+                    <div className="flex flex-col gap-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                      <span>
+                        第 {reorderCurrentPageSafe} / {reorderTotalPages} 頁，共 {reorderList.length} 筆
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-1 text-gray-700">
+                          <span>頁面</span>
+                          <select
+                            value={reorderCurrentPageSafe}
+                            onChange={(event) => setReorderPage(Number(event.target.value))}
+                            className="h-9 rounded-lg border bg-white px-2 text-sm"
+                          >
+                            {reorderPageNumbers.map((pageNumber) => (
+                              <option key={pageNumber} value={pageNumber}>
+                                {pageNumber}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setReorderPage((prev) => Math.max(1, prev - 1))}
+                            disabled={reorderCurrentPageSafe <= 1}
+                            className={`${buttonClass({ variant: "secondary", size: "sm" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            上一頁
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setReorderPage((prev) =>
+                                prev >= reorderTotalPages ? reorderTotalPages : prev + 1
+                              )
+                            }
+                            disabled={reorderCurrentPageSafe >= reorderTotalPages}
+                            className={`${buttonClass({ variant: "secondary", size: "sm" })} disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            下一頁
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
                 <button
