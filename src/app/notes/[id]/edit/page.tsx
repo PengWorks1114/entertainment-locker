@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
@@ -64,7 +64,7 @@ export default function EditNotePage({ params }: PageProps) {
       setLoading(false);
       return;
     }
-    async function loadNote() {
+    async function loadNote(firestore: Firestore, currentUser: User) {
       setLoading(true);
       setNotFound(false);
       try {
@@ -75,7 +75,7 @@ export default function EditNotePage({ params }: PageProps) {
           setLoading(false);
           return;
         }
-        const noteRef = doc(db, "note", noteId);
+        const noteRef = doc(firestore, "note", noteId);
         const snap = await getDoc(noteRef);
         if (!snap.exists()) {
           setFeedback({ type: "error", message: "找不到對應的筆記" });
@@ -88,7 +88,7 @@ export default function EditNotePage({ params }: PageProps) {
           return;
         }
         const data = snap.data();
-        if (!data || data.uid !== user.uid) {
+        if (!data || data.uid !== currentUser.uid) {
           setFeedback({ type: "error", message: "無法存取此筆記" });
           setNotFound(true);
           setTitle("");
@@ -116,7 +116,7 @@ export default function EditNotePage({ params }: PageProps) {
         setLoading(false);
       }
     }
-    loadNote();
+    loadNote(db, user);
   }, [authChecked, noteId, user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
