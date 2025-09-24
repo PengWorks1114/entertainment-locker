@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { deleteDoc, doc, onSnapshot, Timestamp } from "firebase/firestore";
 
@@ -10,7 +10,7 @@ import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
 type PageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 type Note = {
@@ -47,6 +47,7 @@ function formatDateTime(ms: number): string {
 }
 
 export default function NoteDetailPage({ params }: PageProps) {
+  const { id: noteId } = use(params);
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -86,7 +87,10 @@ export default function NoteDetailPage({ params }: PageProps) {
       setLoading(false);
       return;
     }
-    const noteRef = doc(db, "note", params.id);
+    if (!noteId) {
+      return;
+    }
+    const noteRef = doc(db, "note", noteId);
     const unsub = onSnapshot(
       noteRef,
       (snap) => {
@@ -127,7 +131,7 @@ export default function NoteDetailPage({ params }: PageProps) {
       }
     );
     return () => unsub();
-  }, [authChecked, params.id, user]);
+  }, [authChecked, noteId, user]);
 
   const metaInfo = useMemo(() => {
     if (!note) {

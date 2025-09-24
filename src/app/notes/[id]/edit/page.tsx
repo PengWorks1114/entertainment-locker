@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 
@@ -18,10 +18,11 @@ type Feedback = {
 };
 
 type PageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 export default function EditNotePage({ params }: PageProps) {
+  const { id: noteId } = use(params);
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -66,7 +67,13 @@ export default function EditNotePage({ params }: PageProps) {
       setLoading(true);
       setNotFound(false);
       try {
-        const noteRef = doc(db, "note", params.id);
+        if (!noteId) {
+          setFeedback({ type: "error", message: "找不到對應的筆記" });
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+        const noteRef = doc(db, "note", noteId);
         const snap = await getDoc(noteRef);
         if (!snap.exists()) {
           setFeedback({ type: "error", message: "找不到對應的筆記" });
@@ -104,7 +111,7 @@ export default function EditNotePage({ params }: PageProps) {
       }
     }
     loadNote();
-  }, [authChecked, params.id, user]);
+  }, [authChecked, noteId, user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,7 +151,11 @@ export default function EditNotePage({ params }: PageProps) {
     setSaving(true);
     setFeedback(null);
     try {
-      const noteRef = doc(db, "note", params.id);
+      if (!noteId) {
+        setFeedback({ type: "error", message: "找不到對應的筆記" });
+        return;
+      }
+      const noteRef = doc(db, "note", noteId);
       await updateDoc(noteRef, {
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
@@ -152,7 +163,7 @@ export default function EditNotePage({ params }: PageProps) {
         updatedAt: serverTimestamp(),
       });
       setFeedback({ type: "success", message: "已更新筆記" });
-      router.replace(`/notes/${params.id}`);
+      router.replace(`/notes/${noteId}`);
     } catch (err) {
       console.error("更新筆記時發生錯誤", err);
       setFeedback({ type: "error", message: "更新筆記時發生錯誤" });
@@ -224,7 +235,10 @@ export default function EditNotePage({ params }: PageProps) {
     <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
       <div className="mx-auto w-full max-w-2xl space-y-6">
         <header className="space-y-2">
-          <Link href={`/notes/${params.id}`} className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
+          <Link
+            href={noteId ? `/notes/${noteId}` : "/notes"}
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+          >
             ← 返回筆記詳情
           </Link>
           <h1 className="text-2xl font-semibold text-gray-900">編輯筆記</h1>
@@ -283,7 +297,7 @@ export default function EditNotePage({ params }: PageProps) {
             ) : null}
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <Link
-                href={`/notes/${params.id}`}
+                href={noteId ? `/notes/${noteId}` : "/notes"}
                 className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
               >
                 取消
