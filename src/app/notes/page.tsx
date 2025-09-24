@@ -8,6 +8,8 @@ import { collection, onSnapshot, query, Timestamp, where } from "firebase/firest
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
+
 type Note = {
   id: string;
   title: string;
@@ -15,6 +17,9 @@ type Note = {
   createdMs: number;
   updatedMs: number;
 };
+
+type SortOption = "recentUpdated" | "created" | "title";
+type SortDirection = "asc" | "desc";
 
 type Feedback = {
   type: "error" | "success";
@@ -45,6 +50,17 @@ export default function NotesPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortOption, setSortOption] = useState<SortOption>("recentUpdated");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[1]);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const directionButtonClass = (direction: SortDirection) =>
+    `${buttonClass({
+      variant: sortDirection === direction ? "primary" : "secondary",
+      size: "sm",
+    })} whitespace-nowrap px-3`;
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -106,7 +122,52 @@ export default function NotesPage() {
     return () => unsub();
   }, [user]);
 
+  const filteredNotes = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    if (!keyword) {
+      return notes;
+    }
+    return notes.filter((note) => {
+      const titleMatch = note.title.toLowerCase().includes(keyword);
+      const summaryMatch = (note.summary ?? "").toLowerCase().includes(keyword);
+      return titleMatch || summaryMatch;
+    });
+  }, [notes, searchTerm]);
+
+  const sortedNotes = useMemo(() => {
+    const base = [...filteredNotes];
+    const directionFactor = sortDirection === "asc" ? 1 : -1;
+    switch (sortOption) {
+      case "created":
+        base.sort((a, b) => (a.createdMs - b.createdMs) * directionFactor);
+        break;
+      case "title":
+        base.sort((a, b) =>
+          a.title.localeCompare(b.title, "zh-Hant", { sensitivity: "base" }) * directionFactor
+        );
+        break;
+      case "recentUpdated":
+      default:
+        base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
+        break;
+    }
+    return base;
+  }, [filteredNotes, sortDirection, sortOption]);
+
+  const totalNotes = sortedNotes.length;
+  const totalPages = Math.max(1, Math.ceil(totalNotes / pageSize));
+  const pageStartIndex = (currentPage - 1) * pageSize;
+  const paginatedNotes = sortedNotes.slice(pageStartIndex, pageStartIndex + pageSize);
   const hasNotes = notes.length > 0;
+  const hasFilteredNotes = totalNotes > 0;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, sortOption, sortDirection, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   const content = useMemo(() => {
     if (!hasNotes) {
@@ -117,16 +178,26 @@ export default function NotesPage() {
       );
     }
 
+    if (!hasFilteredNotes) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-10 text-center text-gray-500">
+          找不到符合搜尋或篩選條件的筆記。
+        </div>
+      );
+    }
+
     return (
       <ul className="divide-y rounded-2xl border border-gray-200 bg-white/70 shadow-sm">
-        {notes.map((note) => (
+        {paginatedNotes.map((note) => (
           <li key={note.id}>
             <Link
               href={`/notes/${note.id}`}
               className="flex flex-col gap-2 px-6 py-5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             >
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">{note.title || "(未命名筆記)"}</h2>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <h2 className="line-clamp-2 break-anywhere text-lg font-semibold text-gray-900">
+                  {note.title || "(未命名筆記)"}
+                </h2>
                 <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
                   <div className="flex gap-1">
                     <dt className="font-medium">建立：</dt>
@@ -139,14 +210,14 @@ export default function NotesPage() {
                 </dl>
               </div>
               {note.summary ? (
-                <p className="line-clamp-2 text-sm text-gray-600">{note.summary}</p>
+                <p className="line-clamp-2 break-anywhere text-sm text-gray-600">{note.summary}</p>
               ) : null}
             </Link>
           </li>
         ))}
       </ul>
     );
-  }, [hasNotes, notes]);
+  }, [hasFilteredNotes, hasNotes, paginatedNotes]);
 
   if (!authChecked) {
     return (
@@ -196,7 +267,99 @@ export default function NotesPage() {
             {feedback.message}
           </div>
         ) : null}
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
+            <p className="text-sm text-gray-500">找到目標筆記並調整列表顯示。</p>
+          </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <label className="flex flex-1 flex-col space-y-1">
+              <span className="text-sm text-gray-600">搜尋筆記</span>
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="輸入標題或備註關鍵字"
+                className="h-12 w-full rounded-xl border px-4 text-base"
+              />
+            </label>
+            <label className="flex flex-1 flex-col space-y-1">
+              <span className="text-sm text-gray-600">排序方式</span>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={sortOption}
+                  onChange={(event) => setSortOption(event.target.value as SortOption)}
+                  className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
+                >
+                  <option value="recentUpdated">最近更新</option>
+                  <option value="created">建立時間</option>
+                  <option value="title">標題</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSortDirection("asc")}
+                    className={directionButtonClass("asc")}
+                    aria-pressed={sortDirection === "asc"}
+                  >
+                    正序
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortDirection("desc")}
+                    className={directionButtonClass("desc")}
+                    aria-pressed={sortDirection === "desc"}
+                  >
+                    反序
+                  </button>
+                </div>
+              </div>
+            </label>
+            <label className="flex flex-col space-y-1">
+              <span className="text-sm text-gray-600">每頁顯示數量</span>
+              <select
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="h-12 rounded-xl border bg-white px-4 text-base"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
         {content}
+        {hasNotes && hasFilteredNotes ? (
+          <footer className="flex flex-col gap-3 rounded-2xl border bg-white/70 p-4 text-sm text-gray-600 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              顯示第 {totalNotes === 0 ? 0 : pageStartIndex + 1} -
+              {Math.min(pageStartIndex + paginatedNotes.length, totalNotes)} 筆，共 {totalNotes} 筆筆記
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+                disabled={currentPage === 1}
+              >
+                上一頁
+              </button>
+              <span className="font-medium text-gray-700">
+                第 {currentPage} / {totalPages} 頁
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+                disabled={currentPage >= totalPages}
+              >
+                下一頁
+              </button>
+            </div>
+          </footer>
+        ) : null}
       </div>
     </main>
   );
