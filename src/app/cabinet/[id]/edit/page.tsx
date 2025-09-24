@@ -4,7 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { deleteCabinetWithItems } from "@/lib/firestore-utils";
@@ -16,7 +26,17 @@ import {
   normalizeThumbTransform,
   prepareThumbTransform,
 } from "@/lib/image-utils";
-import type { ThumbTransform } from "@/lib/types";
+import type {
+  ItemLanguage,
+  ItemStatus,
+  ThumbTransform,
+  UpdateFrequency,
+} from "@/lib/types";
+import {
+  ITEM_LANGUAGE_VALUES,
+  ITEM_STATUS_VALUES,
+  UPDATE_FREQUENCY_VALUES,
+} from "@/lib/types";
 import { invalidateCabinetOptions } from "@/lib/cabinet-options";
 
 type CabinetEditPageProps = {
@@ -24,6 +44,114 @@ type CabinetEditPageProps = {
 };
 
 const MASTER_UNLOCK_CODE = "6472";
+const CSV_HEADERS = [
+  "titleZh",
+  "titleAlt",
+  "author",
+  "language",
+  "status",
+  "rating",
+  "tags",
+  "isFavorite",
+  "progressNote",
+  "insightNote",
+  "note",
+  "updateFrequency",
+] as const;
+
+type CsvHeader = (typeof CSV_HEADERS)[number];
+
+function escapeCsvField(value: string | number | boolean | null | undefined) {
+  const stringValue =
+    value === null || value === undefined ? "" : String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+}
+
+function buildCsvContent(rows: Array<Record<CsvHeader, string>>) {
+  const lines = [CSV_HEADERS.join(",")];
+  for (const row of rows) {
+    const line = CSV_HEADERS.map((header) =>
+      escapeCsvField(row[header] ?? "")
+    ).join(",");
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function parseCsv(content: string) {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  while (i < content.length) {
+    const char = content[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (content[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += char;
+      i += 1;
+      continue;
+    }
+    if (char === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+    if (char === ",") {
+      current.push(field);
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (char === "\n") {
+      current.push(field);
+      rows.push(current);
+      current = [];
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (char === "\r") {
+      i += 1;
+      continue;
+    }
+    field += char;
+    i += 1;
+  }
+  current.push(field);
+  rows.push(current);
+  return rows;
+}
+
+function normalizeCabinetTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const tagSet = new Set<string>();
+  input.forEach((value) => {
+    const tag = String(value ?? "").trim();
+    if (tag) {
+      tagSet.add(tag);
+    }
+  });
+  return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
+
+function buildSafeFileName(raw: string) {
+  return raw.replace(/[\\/:*?"<>|]/g, "_");
+}
 
 export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const { id: cabinetId } = use(params);
@@ -54,6 +182,10 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
   const [lockMode, setLockMode] = useState<"idle" | "locking" | "unlocking">(
     "idle"
   );
+  const [csvText, setCsvText] = useState("");
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvExporting, setCsvExporting] = useState(false);
+  const [csvImporting, setCsvImporting] = useState(false);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -87,6 +219,10 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setLockCodeConfirm("");
       setUnlockCode("");
       setLockMode("idle");
+      setCsvText("");
+      setCsvError(null);
+      setCsvExporting(false);
+      setCsvImporting(false);
       return;
     }
     let active = true;
@@ -119,6 +255,10 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           setLockCodeConfirm("");
           setUnlockCode("");
           setLockMode("idle");
+          setCsvText("");
+          setCsvError(null);
+          setCsvExporting(false);
+          setCsvImporting(false);
           return;
         }
         const data = snap.data();
@@ -198,6 +338,9 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         setLockCode("");
         setLockCodeConfirm("");
         setUnlockCode("");
+        setCsvError(null);
+        setCsvExporting(false);
+        setCsvImporting(false);
       });
     return () => {
       active = false;
@@ -293,6 +436,263 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setMessage("儲存櫃子資料時發生錯誤");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExportCsv() {
+    if (!user || !canEdit || csvExporting || csvImporting) {
+      return;
+    }
+    setCsvError(null);
+    setCsvExporting(true);
+    try {
+      const db = getFirebaseDb();
+      if (!db) {
+        setError("Firebase 尚未設定");
+        return;
+      }
+      const q = query(
+        collection(db, "item"),
+        where("uid", "==", user.uid),
+        where("cabinetId", "==", cabinetId)
+      );
+      const snap = await getDocs(q);
+      const rows = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const titleZh =
+          typeof data.titleZh === "string" && data.titleZh
+            ? data.titleZh
+            : "";
+        const titleAlt =
+          typeof data.titleAlt === "string" ? data.titleAlt.trim() : "";
+        const author =
+          typeof data.author === "string" ? data.author.trim() : "";
+        const language =
+          typeof data.language === "string" &&
+          ITEM_LANGUAGE_VALUES.includes(data.language as ItemLanguage)
+            ? (data.language as ItemLanguage)
+            : "";
+        const status =
+          typeof data.status === "string" &&
+          ITEM_STATUS_VALUES.includes(data.status as ItemStatus)
+            ? (data.status as ItemStatus)
+            : "planning";
+        const rating =
+          typeof data.rating === "number" && Number.isFinite(data.rating)
+            ? String(data.rating)
+            : "";
+        const tags = normalizeCabinetTags(data?.tags).join("|");
+        const isFavorite = Boolean(data.isFavorite) ? "true" : "false";
+        const progressNote =
+          typeof data.progressNote === "string" ? data.progressNote : "";
+        const insightNote =
+          typeof data.insightNote === "string" ? data.insightNote : "";
+        const note = typeof data.note === "string" ? data.note : "";
+        const updateFrequency =
+          typeof data.updateFrequency === "string" &&
+          UPDATE_FREQUENCY_VALUES.includes(
+            data.updateFrequency as UpdateFrequency
+          )
+            ? (data.updateFrequency as UpdateFrequency)
+            : "";
+        return {
+          titleZh,
+          titleAlt,
+          author,
+          language,
+          status,
+          rating,
+          tags,
+          isFavorite,
+          progressNote,
+          insightNote,
+          note,
+          updateFrequency,
+        } satisfies Record<CsvHeader, string>;
+      });
+      const csv = buildCsvContent(rows);
+      const blob = new Blob([`\ufeff${csv}`], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const trimmedName = name.trim();
+      const fileLabel = trimmedName
+        ? buildSafeFileName(trimmedName)
+        : `cabinet-${cabinetId}`;
+      link.href = url;
+      link.download = `${fileLabel || "cabinet"}-items.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setMessage("已匯出 CSV 資料");
+    } catch (err) {
+      console.error("匯出 CSV 失敗", err);
+      setCsvError("匯出 CSV 時發生錯誤");
+    } finally {
+      setCsvExporting(false);
+    }
+  }
+
+  async function handleImportCsv() {
+    if (!user || !canEdit || csvImporting || csvExporting) {
+      return;
+    }
+    const raw = csvText.trim();
+    if (!raw) {
+      setCsvError("請先貼上要匯入的 CSV 內容");
+      return;
+    }
+    let rows: string[][];
+    try {
+      rows = parseCsv(raw).filter((row) =>
+        row.some((cell) => cell.trim().length > 0)
+      );
+    } catch (err) {
+      console.error("解析 CSV 失敗", err);
+      setCsvError("CSV 格式有誤，請確認內容後再試一次");
+      return;
+    }
+    if (rows.length === 0) {
+      setCsvError("找不到可匯入的資料列");
+      return;
+    }
+    const headerRow = rows[0].map((value) => value.trim());
+    const headerIndex = new Map<CsvHeader, number>();
+    headerRow.forEach((cell, index) => {
+      if (CSV_HEADERS.includes(cell as CsvHeader)) {
+        headerIndex.set(cell as CsvHeader, index);
+      }
+    });
+    if (headerIndex.size !== CSV_HEADERS.length) {
+      setCsvError("CSV 欄位名稱不符合匯入格式");
+      return;
+    }
+
+    const db = getFirebaseDb();
+    if (!db) {
+      setError("Firebase 尚未設定");
+      return;
+    }
+
+    setCsvError(null);
+    setCsvImporting(true);
+    try {
+      let imported = 0;
+      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        const record: Record<CsvHeader, string> = {
+          titleZh: "",
+          titleAlt: "",
+          author: "",
+          language: "",
+          status: "",
+          rating: "",
+          tags: "",
+          isFavorite: "",
+          progressNote: "",
+          insightNote: "",
+          note: "",
+          updateFrequency: "",
+        };
+        CSV_HEADERS.forEach((header) => {
+          const index = headerIndex.get(header);
+          const value = index !== undefined ? row[index] ?? "" : "";
+          record[header] = value ?? "";
+        });
+        if (Object.values(record).every((value) => value.trim().length === 0)) {
+          continue;
+        }
+        const titleZh = record.titleZh.trim();
+        if (!titleZh) {
+          throw new Error(`第 ${rowIndex + 1} 行缺少標題，已停止匯入`);
+        }
+        const titleAlt = record.titleAlt.trim();
+        const author = record.author.trim();
+        const languageRaw = record.language.trim();
+        const language = ITEM_LANGUAGE_VALUES.includes(
+          languageRaw as ItemLanguage
+        )
+          ? languageRaw
+          : null;
+        const statusRaw = record.status.trim();
+        const status = ITEM_STATUS_VALUES.includes(
+          statusRaw as ItemStatus
+        )
+          ? statusRaw
+          : "planning";
+        const ratingRaw = record.rating.trim();
+        let rating: number | null = null;
+        if (ratingRaw) {
+          const parsed = Number.parseFloat(ratingRaw);
+          if (!Number.isFinite(parsed)) {
+            throw new Error(`第 ${rowIndex + 1} 行的評分格式不正確`);
+          }
+          rating = parsed;
+        }
+        const tags = record.tags
+          .split("|")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+        const isFavoriteRaw = record.isFavorite.trim().toLowerCase();
+        const isFavorite =
+          isFavoriteRaw === "true" ||
+          isFavoriteRaw === "1" ||
+          isFavoriteRaw === "yes" ||
+          isFavoriteRaw === "y" ||
+          isFavoriteRaw === "是";
+        const progressNote = record.progressNote.trim();
+        const insightNote = record.insightNote.trim();
+        const note = record.note.trim();
+        const updateFrequencyRaw = record.updateFrequency.trim();
+        const updateFrequency = UPDATE_FREQUENCY_VALUES.includes(
+          updateFrequencyRaw as UpdateFrequency
+        )
+          ? updateFrequencyRaw
+          : null;
+
+        await addDoc(collection(db, "item"), {
+          uid: user.uid,
+          cabinetId,
+          titleZh,
+          titleAlt: titleAlt || null,
+          author: author || null,
+          language,
+          status,
+          rating,
+          tags,
+          links: [],
+          thumbUrl: null,
+          thumbTransform: null,
+          isFavorite,
+          progressNote: progressNote || null,
+          insightNote: insightNote || null,
+          insightNotes: [],
+          note: note || null,
+          appearances: [],
+          updateFrequency,
+          nextUpdateAt: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        imported += 1;
+      }
+      if (imported === 0) {
+        setCsvError("沒有符合條件的資料可匯入");
+        return;
+      }
+      setCsvText("");
+      setMessage(`已匯入 ${imported} 筆資料`);
+    } catch (err) {
+      console.error("匯入 CSV 失敗", err);
+      if (err instanceof Error && err.message) {
+        setCsvError(err.message);
+      } else {
+        setCsvError("匯入 CSV 時發生錯誤");
+      }
+    } finally {
+      setCsvImporting(false);
     }
   }
 
@@ -573,6 +973,47 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
 
         {!loading && canEdit && (
           <>
+            <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-gray-900">CSV 匯入與匯出</h2>
+                <p className="text-sm text-gray-500">
+                  快速備份或大量匯入此櫃子的物件資料。
+                </p>
+              </div>
+              {csvError && (
+                <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {csvError}
+                </div>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  disabled={csvExporting || csvImporting}
+                  className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-black/90 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-32"
+                >
+                  {csvExporting ? "匯出中…" : "CSV 匯出"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportCsv}
+                  disabled={csvExporting || csvImporting}
+                  className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-70 sm:w-32"
+                >
+                  {csvImporting ? "匯入中…" : "CSV 匯入"}
+                </button>
+              </div>
+              <textarea
+                value={csvText}
+                onChange={(event) => setCsvText(event.target.value)}
+                placeholder="貼上或編輯要匯入的 CSV 內容，每列對應一個物件。"
+                className="min-h-[160px] w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none"
+                disabled={csvImporting}
+              />
+              <p className="text-xs text-gray-400">
+                欄位順序需為：{CSV_HEADERS.join("、")}。
+              </p>
+            </section>
             <section className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
