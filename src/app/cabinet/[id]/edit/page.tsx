@@ -12,6 +12,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -57,17 +58,32 @@ const CSV_HEADERS = [
   "insightNote",
   "note",
   "updateFrequency",
+  "nextUpdateAt",
+  "createdAt",
+  "updatedAt",
+  "links",
+  "thumbUrl",
+  "thumbTransformScale",
+  "thumbTransformOffsetX",
+  "thumbTransformOffsetY",
+  "appearances",
+  "insightNotes",
 ] as const;
 
 type CsvHeader = (typeof CSV_HEADERS)[number];
 
+function replaceCommaWithFullWidth(value: string) {
+  return value.replace(/,/g, "，");
+}
+
 function escapeCsvField(value: string | number | boolean | null | undefined) {
   const stringValue =
     value === null || value === undefined ? "" : String(value);
-  if (/[",\n]/.test(stringValue)) {
-    return `"${stringValue.replace(/"/g, '""')}"`;
+  const sanitized = replaceCommaWithFullWidth(stringValue);
+  if (/["\n]/.test(sanitized)) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
   }
-  return stringValue;
+  return sanitized;
 }
 
 function buildCsvContent(rows: Array<Record<CsvHeader, string>>) {
@@ -495,6 +511,146 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           )
             ? (data.updateFrequency as UpdateFrequency)
             : "";
+        const nextUpdateAt = serializeTimestampField(data?.nextUpdateAt);
+        const createdAt = serializeTimestampField(data?.createdAt);
+        const updatedAt = serializeTimestampField(data?.updatedAt);
+        const linksValue = serializeJsonField(
+          Array.isArray(data.links)
+            ? data.links
+                .map((link) => {
+                  if (!link || typeof link !== "object") {
+                    return null;
+                  }
+                  const label =
+                    typeof (link as Record<string, unknown>).label === "string"
+                      ? ((link as Record<string, unknown>).label as string)
+                      : "";
+                  const url =
+                    typeof (link as Record<string, unknown>).url === "string"
+                      ? ((link as Record<string, unknown>).url as string)
+                      : "";
+                  if (!label && !url) {
+                    return null;
+                  }
+                  const isPrimary = Boolean(
+                    (link as Record<string, unknown>).isPrimary
+                  );
+                  return {
+                    label,
+                    url,
+                    isPrimary,
+                  };
+                })
+                .filter(Boolean)
+            : []
+        );
+        const thumbUrl =
+          typeof data.thumbUrl === "string" ? data.thumbUrl.trim() : "";
+        const thumbTransform =
+          thumbUrl && data?.thumbTransform
+            ? normalizeThumbTransform(data.thumbTransform)
+            : null;
+        const thumbTransformScale = thumbTransform
+          ? String(thumbTransform.scale)
+          : "";
+        const thumbTransformOffsetX = thumbTransform
+          ? String(thumbTransform.offsetX)
+          : "";
+        const thumbTransformOffsetY = thumbTransform
+          ? String(thumbTransform.offsetY)
+          : "";
+        const appearancesValue = serializeJsonField(
+          Array.isArray(data.appearances)
+            ? data.appearances
+                .map((appearance) => {
+                  if (!appearance || typeof appearance !== "object") {
+                    return null;
+                  }
+                  const record = appearance as Record<string, unknown>;
+                  const nameZh =
+                    typeof record.nameZh === "string" ? record.nameZh : "";
+                  const nameOriginal =
+                    typeof record.nameOriginal === "string"
+                      ? record.nameOriginal
+                      : null;
+                  const labels =
+                    typeof record.labels === "string" ? record.labels : null;
+                  const appearanceThumbUrl =
+                    typeof record.thumbUrl === "string"
+                      ? record.thumbUrl
+                      : null;
+                  const appearanceThumbTransform =
+                    record.thumbTransform &&
+                    typeof record.thumbTransform === "object"
+                      ? normalizeThumbTransform(record.thumbTransform)
+                      : null;
+                  const noteValue =
+                    typeof record.note === "string" ? record.note : null;
+                  if (
+                    !nameZh &&
+                    !nameOriginal &&
+                    !labels &&
+                    !appearanceThumbUrl &&
+                    !appearanceThumbTransform &&
+                    !noteValue
+                  ) {
+                    return null;
+                  }
+                  return {
+                    nameZh,
+                    nameOriginal,
+                    labels,
+                    thumbUrl: appearanceThumbUrl,
+                    thumbTransform: appearanceThumbTransform,
+                    note: noteValue,
+                  };
+                })
+                .filter(Boolean)
+            : []
+        );
+        const insightNotesValue = serializeJsonField(
+          Array.isArray(data.insightNotes)
+            ? data.insightNotes
+                .map((entry) => {
+                  if (!entry || typeof entry !== "object") {
+                    return null;
+                  }
+                  const record = entry as Record<string, unknown>;
+                  const titleValue =
+                    typeof record.title === "string" ? record.title : null;
+                  const contentValue =
+                    typeof record.content === "string" ? record.content : null;
+                  const labelsValue =
+                    typeof record.labels === "string" ? record.labels : null;
+                  const noteThumbUrl =
+                    typeof record.thumbUrl === "string"
+                      ? record.thumbUrl
+                      : null;
+                  const noteThumbTransform =
+                    record.thumbTransform &&
+                    typeof record.thumbTransform === "object"
+                      ? normalizeThumbTransform(record.thumbTransform)
+                      : null;
+                  if (
+                    !titleValue &&
+                    !contentValue &&
+                    !labelsValue &&
+                    !noteThumbUrl &&
+                    !noteThumbTransform
+                  ) {
+                    return null;
+                  }
+                  return {
+                    title: titleValue,
+                    content: contentValue,
+                    labels: labelsValue,
+                    thumbUrl: noteThumbUrl,
+                    thumbTransform: noteThumbTransform,
+                  };
+                })
+                .filter(Boolean)
+            : []
+        );
         return {
           titleZh,
           titleAlt,
@@ -508,6 +664,16 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           insightNote,
           note,
           updateFrequency,
+          nextUpdateAt,
+          createdAt,
+          updatedAt,
+          links: linksValue,
+          thumbUrl,
+          thumbTransformScale,
+          thumbTransformOffsetX,
+          thumbTransformOffsetY,
+          appearances: appearancesValue,
+          insightNotes: insightNotesValue,
         } satisfies Record<CsvHeader, string>;
       });
       const csv = buildCsvContent(rows);
@@ -558,7 +724,7 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       setCsvError("找不到可匯入的資料列");
       return;
     }
-    const headerRow = rows[0].map((value) => value.trim());
+    const headerRow = rows[0].map((value) => restoreHalfWidthComma(value.trim()));
     const headerIndex = new Map<CsvHeader, number>();
     headerRow.forEach((cell, index) => {
       if (CSV_HEADERS.includes(cell as CsvHeader)) {
@@ -582,24 +748,14 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
       let imported = 0;
       for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
-        const record: Record<CsvHeader, string> = {
-          titleZh: "",
-          titleAlt: "",
-          author: "",
-          language: "",
-          status: "",
-          rating: "",
-          tags: "",
-          isFavorite: "",
-          progressNote: "",
-          insightNote: "",
-          note: "",
-          updateFrequency: "",
-        };
+        const record = {} as Record<CsvHeader, string>;
+        CSV_HEADERS.forEach((header) => {
+          record[header] = "";
+        });
         CSV_HEADERS.forEach((header) => {
           const index = headerIndex.get(header);
           const value = index !== undefined ? row[index] ?? "" : "";
-          record[header] = value ?? "";
+          record[header] = restoreHalfWidthComma(value ?? "");
         });
         if (Object.values(record).every((value) => value.trim().length === 0)) {
           continue;
@@ -651,6 +807,126 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
         )
           ? updateFrequencyRaw
           : null;
+        const nextUpdateAt = parseTimestampCell(record.nextUpdateAt);
+        const createdAt = parseTimestampCell(record.createdAt);
+        const updatedAt = parseTimestampCell(record.updatedAt);
+        const linksData = parseJsonArrayCell<Record<string, unknown>>(
+          record.links
+        )
+          .map((link) => {
+            const label =
+              typeof link.label === "string" ? link.label.trim() : "";
+            const url =
+              typeof link.url === "string" ? link.url.trim() : "";
+            if (!label && !url) {
+              return null;
+            }
+            const isPrimary = Boolean(link.isPrimary);
+            return { label, url, isPrimary };
+          })
+          .filter(
+            (link): link is { label: string; url: string; isPrimary: boolean } =>
+              Boolean(link)
+          );
+        const thumbUrl = record.thumbUrl.trim();
+        const thumbTransform = thumbUrl
+          ? parseThumbTransformCell(
+              record.thumbTransformScale,
+              record.thumbTransformOffsetX,
+              record.thumbTransformOffsetY
+            )
+          : null;
+        const appearances = parseJsonArrayCell<Record<string, unknown>>(
+          record.appearances
+        )
+          .map((entry) => {
+            const nameZh =
+              typeof entry.nameZh === "string" ? entry.nameZh.trim() : "";
+            const nameOriginal =
+              typeof entry.nameOriginal === "string"
+                ? entry.nameOriginal.trim()
+                : null;
+            const labels =
+              typeof entry.labels === "string" ? entry.labels.trim() : null;
+            const appearanceThumbUrl =
+              typeof entry.thumbUrl === "string"
+                ? entry.thumbUrl.trim()
+                : null;
+            const appearanceThumbTransform = parseThumbTransformObject(
+              entry.thumbTransform
+            );
+            const noteValue =
+              typeof entry.note === "string" ? entry.note.trim() : null;
+            if (
+              !nameZh &&
+              !nameOriginal &&
+              !labels &&
+              !appearanceThumbUrl &&
+              !appearanceThumbTransform &&
+              !noteValue
+            ) {
+              return null;
+            }
+            return {
+              nameZh,
+              nameOriginal,
+              labels,
+              thumbUrl: appearanceThumbUrl,
+              thumbTransform: appearanceThumbTransform,
+              note: noteValue,
+            };
+          })
+          .filter(
+            (entry): entry is {
+              nameZh: string;
+              nameOriginal: string | null;
+              labels: string | null;
+              thumbUrl: string | null;
+              thumbTransform: ThumbTransform | null;
+              note: string | null;
+            } => Boolean(entry)
+          );
+        const insightNotes = parseJsonArrayCell<Record<string, unknown>>(
+          record.insightNotes
+        )
+          .map((entry) => {
+            const titleValue =
+              typeof entry.title === "string" ? entry.title.trim() : null;
+            const contentValue =
+              typeof entry.content === "string" ? entry.content.trim() : null;
+            const labelsValue =
+              typeof entry.labels === "string" ? entry.labels.trim() : null;
+            const noteThumbUrl =
+              typeof entry.thumbUrl === "string" ? entry.thumbUrl.trim() : null;
+            const noteThumbTransform = parseThumbTransformObject(
+              entry.thumbTransform
+            );
+            if (
+              !titleValue &&
+              !contentValue &&
+              !labelsValue &&
+              !noteThumbUrl &&
+              !noteThumbTransform
+            ) {
+              return null;
+            }
+            return {
+              title: titleValue,
+              content: contentValue,
+              labels: labelsValue,
+              thumbUrl: noteThumbUrl,
+              thumbTransform: noteThumbTransform,
+            };
+          })
+          .filter(
+            (entry): entry is {
+              title: string | null;
+              content: string | null;
+              labels: string | null;
+              thumbUrl: string | null;
+              thumbTransform: ThumbTransform | null;
+            } => Boolean(entry)
+          );
 
         await addDoc(collection(db, "item"), {
           uid: user.uid,
@@ -661,20 +937,20 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
           language,
           status,
           rating,
-          tags,
-          links: [],
-          thumbUrl: null,
-          thumbTransform: null,
+          tags: normalizeCabinetTags(tags),
+          links: linksData,
+          thumbUrl: thumbUrl || null,
+          thumbTransform: thumbTransform,
           isFavorite,
           progressNote: progressNote || null,
           insightNote: insightNote || null,
-          insightNotes: [],
+          insightNotes,
           note: note || null,
-          appearances: [],
+          appearances,
           updateFrequency,
-          nextUpdateAt: null,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          nextUpdateAt,
+          createdAt: createdAt ?? serverTimestamp(),
+          updatedAt: updatedAt ?? serverTimestamp(),
         });
         imported += 1;
       }
@@ -1189,3 +1465,114 @@ export default function CabinetEditPage({ params }: CabinetEditPageProps) {
     </main>
   );
 }
+function restoreHalfWidthComma(value: string) {
+  return value.replace(/，/g, ",");
+}
+
+function parseJsonArrayCell<T>(raw: string): T[] {
+  const normalized = restoreHalfWidthComma(raw ?? "").trim();
+  if (!normalized) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(normalized);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseTimestampCell(value: string) {
+  const normalized = restoreHalfWidthComma(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return Timestamp.fromDate(date);
+}
+
+function parseThumbTransformCell(
+  scaleRaw: string,
+  offsetXRaw: string,
+  offsetYRaw: string
+) {
+  const scaleText = restoreHalfWidthComma(scaleRaw ?? "").trim();
+  const offsetXText = restoreHalfWidthComma(offsetXRaw ?? "").trim();
+  const offsetYText = restoreHalfWidthComma(offsetYRaw ?? "").trim();
+  if (!scaleText && !offsetXText && !offsetYText) {
+    return null;
+  }
+  const scale = Number(scaleText);
+  const offsetX = Number(offsetXText);
+  const offsetY = Number(offsetYText);
+  if (
+    !Number.isFinite(scale) ||
+    !Number.isFinite(offsetX) ||
+    !Number.isFinite(offsetY)
+  ) {
+    return null;
+  }
+  return clampThumbTransform({
+    scale,
+    offsetX,
+    offsetY,
+  });
+}
+
+function parseThumbTransformObject(input: unknown) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const record = input as Record<string, unknown>;
+  const scale = Number(record.scale);
+  const offsetX = Number(record.offsetX);
+  const offsetY = Number(record.offsetY);
+  if (
+    !Number.isFinite(scale) ||
+    !Number.isFinite(offsetX) ||
+    !Number.isFinite(offsetY)
+  ) {
+    return null;
+  }
+  return clampThumbTransform({
+    scale,
+    offsetX,
+    offsetY,
+  });
+}
+
+function serializeTimestampField(value: unknown) {
+  if (value instanceof Timestamp) {
+    return value.toDate().toISOString();
+  }
+  if (value && typeof value === "object" && "toDate" in value) {
+    try {
+      const date = (value as Timestamp).toDate();
+      return date.toISOString();
+    } catch {
+      return "";
+    }
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return "";
+}
+
+function serializeJsonField(value: unknown) {
+  if (!value) {
+    return "";
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
