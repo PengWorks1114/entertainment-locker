@@ -29,6 +29,7 @@ import ThumbLinkField from "./ThumbLinkField";
 import ThumbEditorDialog from "./ThumbEditorDialog";
 import CabinetTagQuickEditor from "./CabinetTagQuickEditor";
 import ProgressEditor from "./ProgressEditor";
+import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_LANGUAGE_OPTIONS,
@@ -779,13 +780,17 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       thumbTransform: entry.thumbTransform,
       note: entry.note.trim(),
     }));
-    const insightPayload = insightNotes.map((entry) => ({
-      title: entry.title.trim(),
-      content: entry.content.trim(),
-      labels: entry.labels.trim(),
-      thumbUrl: entry.thumbUrl.trim(),
-      thumbTransform: entry.thumbTransform,
-    }));
+    const insightPayload = insightNotes.map((entry) => {
+      const sanitizedContent = entry.content.trim();
+      const contentText = extractPlainTextFromHtml(sanitizedContent);
+      return {
+        title: entry.title.trim(),
+        content: contentText ? sanitizedContent : "",
+        labels: entry.labels.trim(),
+        thumbUrl: entry.thumbUrl.trim(),
+        thumbTransform: entry.thumbTransform,
+      };
+    });
 
     try {
       const parsedData: ItemFormData = parseItemForm({
@@ -2035,17 +2040,17 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                                 placeholder="例如：重點整理"
                               />
                             </label>
-                            <label className="space-y-1">
+                            <div className="space-y-1">
                               <span className="text-sm text-gray-600">內容 *</span>
-                              <textarea
+                              <RichTextEditor
                                 value={note.content}
-                                onChange={(event) =>
-                                  handleInsightChange(index, "content", event.target.value)
-                                }
-                                className="min-h-[160px] w-full rounded-xl border px-4 py-3 text-base"
+                                onChange={({ html, text }) => {
+                                  const nextContent = text.trim() ? html : "";
+                                  handleInsightChange(index, "content", nextContent);
+                                }}
                                 placeholder="輸入心得或筆記"
                               />
-                            </label>
+                            </div>
                             <label className="space-y-1">
                               <span className="text-sm text-gray-600">標籤（以逗號分隔）</span>
                               <input
