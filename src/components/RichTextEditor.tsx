@@ -12,6 +12,8 @@ type RichTextEditorProps = {
   value: string;
   onChange: (value: RichTextValue) => void;
   placeholder?: string;
+  autoFocus?: boolean;
+  disabled?: boolean;
 };
 
 const HEADING_OPTIONS: Array<{ label: string; value: "p" | "h1" | "h2" | "h3" }> = [
@@ -58,7 +60,13 @@ function normalizeHtml(html: string): string {
     .trim();
 }
 
-export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
+export function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+  autoFocus = false,
+  disabled = false,
+}: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const savedSelection = useRef<Range | null>(null);
   const [colorSelectValue, setColorSelectValue] = useState<string>("");
@@ -80,6 +88,35 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
     }
     editorRef.current.innerHTML = value || "";
   }, [hasFocus, value]);
+
+  useEffect(() => {
+    if (!autoFocus || disabled) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const element = editorRef.current;
+      if (!element) {
+        return;
+      }
+      element.focus();
+      const selection = window.getSelection();
+      if (!selection) {
+        return;
+      }
+      const range = window.document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      savedSelection.current = range.cloneRange();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [autoFocus, disabled]);
 
   function emitChange() {
     if (!editorRef.current) {
@@ -122,6 +159,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   }
 
   function focusEditor() {
+    if (disabled) {
+      return;
+    }
     if (typeof window === "undefined" || !editorRef.current) {
       return;
     }
@@ -137,6 +177,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   }
 
   function applyFormat(command: string, valueArg?: string) {
+    if (disabled) {
+      return;
+    }
     if (typeof window === "undefined") {
       return;
     }
@@ -150,6 +193,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   }
 
   function handleHeadingChange(event: ChangeEvent<HTMLSelectElement>) {
+    if (disabled) {
+      return;
+    }
     const headingValue = event.target.value as "" | "p" | "h1" | "h2" | "h3";
     if (!headingValue) {
       return;
@@ -161,6 +207,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   }
 
   function handleColorChange(event: ChangeEvent<HTMLSelectElement>) {
+    if (disabled) {
+      return;
+    }
     const colorValue = event.target.value;
     if (!colorValue) {
       return;
@@ -174,11 +223,17 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
   }
 
   function handleInput() {
+    if (disabled) {
+      return;
+    }
     emitChange();
     saveSelection();
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+    if (disabled) {
+      return;
+    }
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
     if (typeof window !== "undefined") {
@@ -196,6 +251,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           value={headingSelectValue}
           onChange={handleHeadingChange}
           aria-label="段落樣式"
+          disabled={disabled}
         >
           <option value="" disabled>
             樣式
@@ -211,6 +267,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           className="rich-text-button"
           onClick={() => applyFormat("bold")}
           aria-label="粗體"
+          disabled={disabled}
         >
           B
         </button>
@@ -219,6 +276,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           className="rich-text-button"
           onClick={() => applyFormat("underline")}
           aria-label="底線"
+          disabled={disabled}
         >
           <span className="rich-text-underline">U</span>
         </button>
@@ -227,6 +285,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           value={colorSelectValue}
           onChange={handleColorChange}
           aria-label="文字顏色"
+          disabled={disabled}
         >
           <option value="" disabled>
             文字顏色
@@ -242,6 +301,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           className="rich-text-button"
           onClick={() => applyFormat("removeFormat")}
           aria-label="清除格式"
+          disabled={disabled}
         >
           清除
         </button>
@@ -255,10 +315,11 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         <div
           ref={editorRef}
           className="rich-text-editable"
-          contentEditable
+          contentEditable={!disabled}
           role="textbox"
           aria-multiline="true"
           aria-label="筆記內容"
+          aria-disabled={disabled || undefined}
           onInput={handleInput}
           onBlur={() => {
             setHasFocus(false);
@@ -266,6 +327,9 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
             emitChange();
           }}
           onFocus={() => {
+            if (disabled) {
+              return;
+            }
             setHasFocus(true);
             setTimeout(() => {
               saveSelection();

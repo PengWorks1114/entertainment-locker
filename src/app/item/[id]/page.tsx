@@ -17,6 +17,10 @@ import {
   where,
 } from "firebase/firestore";
 import FavoriteToggleButton from "@/components/FavoriteToggleButton";
+import {
+  RichTextEditor,
+  extractPlainTextFromHtml,
+} from "@/components/RichTextEditor";
 import ThumbEditorDialog from "@/components/ThumbEditorDialog";
 import ThumbLinkField from "@/components/ThumbLinkField";
 import {
@@ -234,8 +238,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
-  const noteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const noteEditorWasOpenRef = useRef(false);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const titleZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -787,24 +789,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       setProgressEditorSaving(false);
     }
   };
-
-  useEffect(() => {
-    const isOpen = Boolean(noteEditor);
-    const justOpened = isOpen && !noteEditorWasOpenRef.current;
-    noteEditorWasOpenRef.current = isOpen;
-    if (!justOpened) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      const textarea = noteTextareaRef.current;
-      if (textarea) {
-        textarea.focus();
-        const length = textarea.value.length;
-        textarea.setSelectionRange(length, length);
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [noteEditor]);
 
   useEffect(() => {
     if (!titleEditorOpen) return;
@@ -1774,13 +1758,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       return;
     }
     const title = noteEditor.title.trim();
-    const content = noteEditor.content.trim();
+    const contentHtml = noteEditor.content.trim();
+    const contentText = extractPlainTextFromHtml(contentHtml);
+    const sanitizedContent = contentText ? contentHtml : "";
     const labels = formatAppearanceLabels(noteEditor.labels);
     const trimmedThumbUrl = noteEditor.thumbUrl.trim();
     const thumbTransform = trimmedThumbUrl
       ? clampThumbTransform(noteEditor.thumbTransform)
       : { ...DEFAULT_THUMB_TRANSFORM };
-    if (!title && !content) {
+    if (!title && !sanitizedContent) {
       setNoteError("請至少輸入標題或內容");
       return;
     }
@@ -1789,7 +1775,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         ? {
             ...entry,
             title,
-            content,
+            content: sanitizedContent,
             labels,
             thumbUrl: trimmedThumbUrl,
             thumbTransform,
@@ -2734,8 +2720,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <div className="space-y-3">
                 {insightEntries.map((entry, index) => {
                   const title = entry.title.trim();
-                  const content = entry.content.trim();
-                  const heading = title || `心得 / 筆記 ${index + 1}`;
+                  const contentHtml = entry.content.trim();
+                  const contentText = extractPlainTextFromHtml(contentHtml);
+                  const heading = title || contentText || `心得 / 筆記 ${index + 1}`;
                   const noteTransform = entry.thumbTransform;
                   const noteStyle = {
                     transform: `translate(${noteTransform.offsetX}%, ${noteTransform.offsetY}%) scale(${noteTransform.scale})`,
@@ -2815,10 +2802,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                           aria-hidden={!isExpanded}
                         >
                           <div className="text-xs text-gray-500">項目 {index + 1}</div>
-                          {content ? (
-                            <div className="whitespace-pre-wrap break-words text-sm text-gray-700">
-                              {content}
-                            </div>
+                          {contentText ? (
+                            <div
+                              className="rich-text-content text-sm text-gray-700"
+                              dangerouslySetInnerHTML={{ __html: contentHtml }}
+                            />
                           ) : (
                             <div className="text-sm text-gray-400">目前尚未填寫內容。</div>
                           )}
@@ -3480,8 +3468,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   {noteReorderList.map((entry, index) => {
                     const isSelected = index === noteReorderSelectedIndex;
                     const title = entry.title.trim();
-                    const content = entry.content.trim();
-                    const heading = title || content || `心得 / 筆記 ${index + 1}`;
+                    const contentHtml = entry.content.trim();
+                    const contentText = extractPlainTextFromHtml(contentHtml);
+                    const heading = title || contentText || `心得 / 筆記 ${index + 1}`;
                     return (
                       <li key={`${heading}-${index}`}>
                         <button
@@ -3744,21 +3733,21 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                   disabled={noteSaving || noteDeleting}
                 />
               </label>
-              <label className="block space-y-1">
+              <div className="space-y-1">
                 <span className="text-base">內容 *</span>
-                <textarea
-                  ref={noteTextareaRef}
+                <RichTextEditor
                   value={noteEditor.content}
-                  onChange={(event) =>
+                  onChange={({ html, text }) => {
+                    const nextHtml = text.trim() ? html : "";
                     setNoteEditor((prev) =>
-                      prev ? { ...prev, content: event.target.value } : prev
-                    )
-                  }
-                  className="h-48 w-full rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-900 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      prev ? { ...prev, content: nextHtml } : prev
+                    );
+                  }}
                   placeholder="輸入你的心得或筆記…"
+                  autoFocus
                   disabled={noteSaving || noteDeleting}
                 />
-              </label>
+              </div>
               <label className="block space-y-1">
                 <span className="text-base">標籤（以逗號分隔）</span>
                 <input

@@ -1982,15 +1982,12 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                     return (
                       <div
                         key={note.id}
-                        draggable
-                        onDragStart={() => handleInsightDragStart(index)}
                         onDragEnter={() => handleInsightDragEnter(index)}
                         onDragOver={(event) => {
                           if (draggingInsightId) {
                             event.preventDefault();
                           }
                         }}
-                        onDragEnd={handleInsightDragEnd}
                         className={`rounded-2xl border bg-white/80 p-4 shadow-sm transition ${
                           isDragging
                             ? "border-blue-300 bg-blue-50/60"
@@ -2002,6 +1999,19 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                             <div
                               className="flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm"
                               aria-hidden
+                              draggable
+                              onDragStart={(event) => {
+                                event.stopPropagation();
+                                if (event.dataTransfer) {
+                                  event.dataTransfer.effectAllowed = "move";
+                                  event.dataTransfer.setData(
+                                    "text/plain",
+                                    String(index)
+                                  );
+                                }
+                                handleInsightDragStart(index);
+                              }}
+                              onDragEnd={handleInsightDragEnd}
                             >
                               <span className="text-base leading-none">≡</span>
                             </div>
