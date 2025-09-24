@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function authed() { return request.auth != null; }
+
+    function isNonEmptyString(field, maxLen) {
+      return field is string && field.size() >= 1 && field.size() <= maxLen;
+    }
+
+    function isOptionalString(field, maxLen) {
+      return field == null || (field is string && field.size() <= maxLen);
+    }
+
+    function isTimestamp(value) {
+      return value is timestamp;
+    }
+
+    function isValidNoteData(data) {
+      return data.uid is string
+        && isNonEmptyString(data.title, 100)
+        && isNonEmptyString(data.content, 60000)
+        && ("description" in data ? isOptionalString(data.description, 300) : true)
+        && isTimestamp(data.createdAt)
+        && isTimestamp(data.updatedAt);
+    }
+
+    // 櫃子
+    match /cabinet/{id} {
+      allow read: if authed() && resource.data.uid == request.auth.uid;
+      allow create: if authed() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if authed() && resource.data.uid == request.auth.uid;
+    }
+
+    // 物件
+    match /item/{id} {
+      allow read: if authed() && resource.data.uid == request.auth.uid;
+      allow create: if authed() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if authed() && resource.data.uid == request.auth.uid;
+
+      // 進度（不需要在子文件存 uid，改查父 item 的 uid）
+      match /progress/{pid} {
+        allow read, create, update, delete:
+          if authed() &&
+             get(/databases/$(database)/documents/item/$(id)).data.uid == request.auth.uid;
+      }
+    }
+
+    // 垃圾桶
+    match /cabinetTrash/{itemId} {
+      allow read: if authed() && resource.data.uid == request.auth.uid;
+      allow create: if authed() && request.resource.data.uid == request.auth.uid;
+      allow update: if authed() &&
+                     resource.data.uid == request.auth.uid &&
+                     request.resource.data.uid == request.auth.uid;
+      allow delete: if authed() && resource.data.uid == request.auth.uid;
+    }
+
+    // 標籤
+    match /tag/{id} {
+      allow read: if authed() && resource.data.uid == request.auth.uid;
+      allow create: if authed() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if authed() && resource.data.uid == request.auth.uid;
+    }
+
+    // 筆記本
+    match /note/{id} {
+      allow read: if authed() && resource.data.uid == request.auth.uid;
+      allow create: if authed()
+                    && request.resource.data.uid == request.auth.uid
+                    && isValidNoteData(request.resource.data);
+      allow update: if authed()
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid
+                    && isValidNoteData(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if authed() && resource.data.uid == request.auth.uid;
+    }
+
+    // 使用者偏好
+    match /user/{uid} {
+      allow read, write: if authed() && request.auth.uid == uid;
+    }
+  }
+}
