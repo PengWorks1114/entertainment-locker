@@ -7,12 +7,10 @@ import {
 } from "firebase/firestore";
 
 import { normalizeNoteTags } from "@/lib/note";
-import { simpleMarkdownToHtml } from "@/lib/markdown";
 
 export const NOTE_TITLE_LIMIT = 100;
 export const NOTE_DESCRIPTION_LIMIT = 300;
 export const NOTE_CONTENT_LIMIT = 60000;
-export const NOTE_MARKDOWN_LIMIT = 60000;
 export const NOTE_MAX_TAGS = 500;
 export const NOTE_MAX_TAG_LENGTH = 100;
 export const NOTE_MAX_LINKED_TARGETS = 50;
@@ -42,7 +40,6 @@ export type NoteFormInput = {
   title: string;
   description: string;
   contentHtml: string;
-  markdownContent: string;
   plainTextContent: string;
   tags: string[];
   linkedCabinetIds: string[];
@@ -52,8 +49,7 @@ export type NoteFormInput = {
 export type SanitizedNoteSubmission = {
   title: string;
   description: string | null;
-  contentHtml: string | null;
-  markdownContent: string | null;
+  contentHtml: string;
   tags: string[];
   linkedCabinetIds: string[];
   linkedItemIds: string[];
@@ -78,46 +74,19 @@ export function validateNoteSubmission(input: NoteFormInput): ValidationResult {
   }
 
   const trimmedContentHtml = input.contentHtml.trim();
-  const trimmedMarkdown = input.markdownContent.trim();
   const trimmedPlainTextInput = input.plainTextContent.trim();
 
-  const hasMarkdown = trimmedMarkdown.length > 0;
-  const sanitizedMarkdown = hasMarkdown ? trimmedMarkdown : null;
+  const derivedPlainText =
+    trimmedPlainTextInput || extractPlainTextFromHtml(trimmedContentHtml);
 
-  let sanitizedHtml = trimmedContentHtml.length > 0 ? trimmedContentHtml : null;
-  let derivedPlainText =
-    sanitizedHtml !== null && trimmedPlainTextInput
-      ? trimmedPlainTextInput
-      : "";
-
-  if (!sanitizedHtml && hasMarkdown) {
-    const generatedHtml = simpleMarkdownToHtml(trimmedMarkdown).trim();
-    if (generatedHtml.length > 0) {
-      sanitizedHtml = generatedHtml;
-      derivedPlainText = extractPlainTextFromHtml(generatedHtml);
-    }
-  } else if (sanitizedHtml) {
-    derivedPlainText =
-      trimmedPlainTextInput || extractPlainTextFromHtml(sanitizedHtml);
+  if (!trimmedContentHtml || derivedPlainText.length === 0) {
+    return { ok: false, error: "請填寫筆記內容" };
   }
 
-  const hasRichTextContent = Boolean(sanitizedHtml && derivedPlainText.length > 0);
-
-  if (!hasRichTextContent && !hasMarkdown) {
-    return { ok: false, error: "請填寫筆記內容或 Markdown" };
-  }
-
-  if (sanitizedHtml && sanitizedHtml.length > NOTE_CONTENT_LIMIT) {
+  if (trimmedContentHtml.length > NOTE_CONTENT_LIMIT) {
     return {
       ok: false,
       error: `筆記內容長度不可超過 ${NOTE_CONTENT_LIMIT} 字`,
-    };
-  }
-
-  if (sanitizedMarkdown && sanitizedMarkdown.length > NOTE_MARKDOWN_LIMIT) {
-    return {
-      ok: false,
-      error: `Markdown 內容長度不可超過 ${NOTE_MARKDOWN_LIMIT} 字`,
     };
   }
 
@@ -159,8 +128,7 @@ export function validateNoteSubmission(input: NoteFormInput): ValidationResult {
     sanitized: {
       title: trimmedTitle,
       description: trimmedDescription ? trimmedDescription : null,
-      contentHtml: sanitizedHtml,
-      markdownContent: sanitizedMarkdown,
+      contentHtml: trimmedContentHtml,
       tags: sanitizedTags,
       linkedCabinetIds: sanitizedCabinetIds,
       linkedItemIds: sanitizedItemIds,
@@ -186,12 +154,7 @@ export function buildNoteCreatePayload(
   if (sanitized.description !== null) {
     payload.description = sanitized.description;
   }
-  if (sanitized.contentHtml) {
-    payload.content = sanitized.contentHtml;
-  }
-  if (sanitized.markdownContent) {
-    payload.contentMarkdown = sanitized.markdownContent;
-  }
+  payload.content = sanitized.contentHtml;
   return payload;
 }
 
@@ -217,17 +180,8 @@ export function buildNoteUpdatePayload(
     payload.description = deleteField();
   }
 
-  if (sanitized.contentHtml) {
-    payload.content = sanitized.contentHtml;
-  } else {
-    payload.content = deleteField();
-  }
-
-  if (sanitized.markdownContent) {
-    payload.contentMarkdown = sanitized.markdownContent;
-  } else {
-    payload.contentMarkdown = deleteField();
-  }
+  payload.content = sanitized.contentHtml;
+  payload.contentMarkdown = deleteField();
 
   if (options?.existingCreatedAt instanceof Timestamp) {
     payload.createdAt = options.existingCreatedAt;

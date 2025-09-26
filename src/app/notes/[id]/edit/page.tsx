@@ -18,7 +18,6 @@ import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import LinkTargetSelector from "@/components/LinkTargetSelector";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
 import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 import {
@@ -48,7 +47,6 @@ export default function EditNotePage({ params }: PageProps) {
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
-  const [markdownContent, setMarkdownContent] = useState("");
   const [selectedCabinetIds, setSelectedCabinetIds] = useState<string[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState("");
@@ -130,8 +128,6 @@ export default function EditNotePage({ params }: PageProps) {
       .slice(0, 20);
   }, [availableTagSuggestions, tagQuery]);
 
-  const markdownPreview = useMemo(() => markdownPreviewHtml(markdownContent), [markdownContent]);
-
   async function persistUserNoteTags(nextTags: string[]) {
     if (!user) {
       return;
@@ -193,12 +189,6 @@ export default function EditNotePage({ params }: PageProps) {
     }
   }
 
-  function handleSyncMarkdownToEditor() {
-    const html = simpleMarkdownToHtml(markdownContent);
-    setContentHtml(html);
-    setContentText(extractPlainTextFromHtml(html));
-  }
-
   useEffect(() => {
     if (!authChecked) {
       return;
@@ -234,7 +224,6 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
-          setMarkdownContent("");
           setSelectedCabinetIds([]);
           setSelectedItemIds([]);
           setTags([]);
@@ -253,7 +242,6 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
-          setMarkdownContent("");
           setSelectedCabinetIds([]);
           setSelectedItemIds([]);
           setTags([]);
@@ -265,11 +253,10 @@ export default function EditNotePage({ params }: PageProps) {
         }
         setTitle((data.title as string) ?? "");
         setDescription(typeof data.description === "string" ? data.description : "");
-        const noteContent = (data.content as string) ?? "";
-        setContentHtml(noteContent);
-        setContentText(extractPlainTextFromHtml(noteContent));
+        const rawContent = typeof data.content === "string" ? data.content : "";
+        setContentHtml(rawContent);
+        setContentText(extractPlainTextFromHtml(rawContent));
         setIsFavorite(Boolean(data.isFavorite));
-        setMarkdownContent(typeof data.contentMarkdown === "string" ? data.contentMarkdown : "");
         setSelectedCabinetIds(
           Array.isArray(data.linkedCabinetIds)
             ? data.linkedCabinetIds.filter((value): value is string => typeof value === "string")
@@ -296,7 +283,6 @@ export default function EditNotePage({ params }: PageProps) {
         setContentHtml("");
         setContentText("");
         setIsFavorite(false);
-        setMarkdownContent("");
         setSelectedCabinetIds([]);
         setSelectedItemIds([]);
         setTags([]);
@@ -332,7 +318,6 @@ export default function EditNotePage({ params }: PageProps) {
         title,
         description,
         contentHtml,
-        markdownContent,
         plainTextContent: contentText,
         tags,
         linkedCabinetIds: selectedCabinetIds,
@@ -569,34 +554,6 @@ export default function EditNotePage({ params }: PageProps) {
               />
               設為最愛
             </label>
-            <div className="space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm font-medium text-gray-700">Markdown 內容（選填）</span>
-                <button
-                  type="button"
-                  onClick={handleSyncMarkdownToEditor}
-                  className={buttonClass({ variant: "secondary", size: "sm" })}
-                >
-                  以 Markdown 更新富文本
-                </button>
-              </div>
-              <textarea
-                value={markdownContent}
-                onChange={(event) => setMarkdownContent(event.target.value)}
-                placeholder="輸入 Markdown 文字，將在下方顯示即時預覽"
-                className="min-h-[140px] w-full resize-y rounded-xl border px-4 py-3 text-base"
-              />
-              <div className="space-y-2 rounded-xl border border-gray-200 bg-white/70 p-4">
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>Markdown 預覽</span>
-                  <span>{markdownContent.trim().length} 字</span>
-                </div>
-                <div
-                  className="markdown-preview text-sm leading-relaxed text-gray-700"
-                  dangerouslySetInnerHTML={{ __html: markdownPreview }}
-                />
-              </div>
-            </div>
             <div className="space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
               <RichTextEditor

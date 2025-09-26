@@ -16,7 +16,6 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { markdownPreviewHtml } from "@/lib/markdown";
 import { buttonClass } from "@/lib/ui";
 import {
   buildFavoriteTogglePayload,
@@ -32,7 +31,6 @@ type Note = {
   title: string;
   description: string | null;
   content: string;
-  contentMarkdown: string | null;
   tags: string[];
   linkedCabinetIds: string[];
   linkedItemIds: string[];
@@ -94,7 +92,6 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [favoriting, setFavoriting] = useState(false);
   const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
   const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
-  const [viewMode, setViewMode] = useState<"rich" | "markdown">("rich");
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -220,10 +217,6 @@ export default function NoteDetailPage({ params }: PageProps) {
         const createdTimestamp = createdAt instanceof Timestamp ? createdAt : null;
         const createdMs = createdTimestamp ? createdTimestamp.toMillis() : 0;
         const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
-        const markdownContent =
-          typeof data.contentMarkdown === "string" && data.contentMarkdown.trim().length > 0
-            ? data.contentMarkdown
-            : null;
         const tags = Array.isArray(data.tags)
           ? data.tags.filter((value): value is string => typeof value === "string")
           : [];
@@ -241,7 +234,6 @@ export default function NoteDetailPage({ params }: PageProps) {
               ? data.description.trim()
               : null,
           content: (data.content as string) || "",
-          contentMarkdown: markdownContent,
           tags,
           linkedCabinetIds,
           linkedItemIds,
@@ -310,11 +302,6 @@ export default function NoteDetailPage({ params }: PageProps) {
       window.alert("因該物件所屬櫃子目前處於鎖定狀態，因此無法訪問該物件");
     }
   }, []);
-
-  const markdownPreview = useMemo(
-    () => markdownPreviewHtml(note?.contentMarkdown ?? ""),
-    [note?.contentMarkdown]
-  );
 
   const metaInfo = useMemo(() => {
     if (!note) {
@@ -611,47 +598,11 @@ export default function NoteDetailPage({ params }: PageProps) {
         <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-gray-900">筆記內容</h2>
-            <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-1 py-1 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode("rich")}
-                className={
-                  viewMode === "rich"
-                    ? "rounded-full bg-gray-900 px-3 py-1 font-medium text-white"
-                    : "rounded-full px-3 py-1 text-gray-600 hover:text-gray-800"
-                }
-              >
-                富文本
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("markdown")}
-                className={
-                  viewMode === "markdown"
-                    ? "rounded-full bg-gray-900 px-3 py-1 font-medium text-white"
-                    : "rounded-full px-3 py-1 text-gray-600 hover:text-gray-800"
-                }
-                disabled={!note.contentMarkdown}
-              >
-                Markdown
-              </button>
-            </div>
           </div>
-          {viewMode === "markdown" ? (
-            note.contentMarkdown ? (
-              <div
-                className="markdown-preview text-base leading-relaxed text-gray-700"
-                dangerouslySetInnerHTML={{ __html: markdownPreview }}
-              />
-            ) : (
-              <p className="text-sm text-gray-500">尚未提供 Markdown 內容，已顯示富文本版本。</p>
-            )
-          ) : (
-            <div
-              className="rich-text-content text-base leading-relaxed text-gray-700"
-              dangerouslySetInnerHTML={{ __html: note.content }}
-            />
-          )}
+          <div
+            className="rich-text-content text-base leading-relaxed text-gray-700"
+            dangerouslySetInnerHTML={{ __html: note.content }}
+          />
         </section>
         {feedback && feedback.type === "error" ? (
           <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

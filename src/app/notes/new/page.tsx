@@ -13,11 +13,10 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import LinkTargetSelector from "@/components/LinkTargetSelector";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
 import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 import {
@@ -45,7 +44,6 @@ export default function NewNotePage() {
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
-  const [markdownContent, setMarkdownContent] = useState("");
   const [selectedCabinetIds, setSelectedCabinetIds] = useState<string[]>(
     defaultCabinetId ? [defaultCabinetId] : []
   );
@@ -140,8 +138,6 @@ export default function NewNotePage() {
       .slice(0, 20);
   }, [availableTagSuggestions, tagQuery]);
 
-  const markdownPreview = useMemo(() => markdownPreviewHtml(markdownContent), [markdownContent]);
-
   async function persistUserNoteTags(nextTags: string[]) {
     if (!user) {
       return;
@@ -203,12 +199,6 @@ export default function NewNotePage() {
     }
   }
 
-  function handleSyncMarkdownToEditor() {
-    const html = simpleMarkdownToHtml(markdownContent);
-    setContentHtml(html);
-    setContentText(extractPlainTextFromHtml(html));
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) {
@@ -232,7 +222,6 @@ export default function NewNotePage() {
         title,
         description,
         contentHtml,
-        markdownContent,
         plainTextContent: contentText,
         tags,
         linkedCabinetIds: selectedCabinetIds,
@@ -251,7 +240,6 @@ export default function NewNotePage() {
       setDescription("");
       setContentHtml("");
       setContentText("");
-      setMarkdownContent("");
       setIsFavorite(false);
       setSelectedCabinetIds([]);
       setSelectedItemIds([]);
@@ -443,34 +431,6 @@ export default function NewNotePage() {
               />
               設為最愛
             </label>
-            <div className="space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm font-medium text-gray-700">Markdown 內容（選填）</span>
-                <button
-                  type="button"
-                  onClick={handleSyncMarkdownToEditor}
-                  className={buttonClass({ variant: "secondary", size: "sm" })}
-                >
-                  以 Markdown 更新富文本
-                </button>
-              </div>
-              <textarea
-                value={markdownContent}
-                onChange={(event) => setMarkdownContent(event.target.value)}
-                placeholder="輸入 Markdown 文字，將在下方顯示即時預覽"
-                className="min-h-[140px] w-full resize-y rounded-xl border px-4 py-3 text-base"
-              />
-              <div className="space-y-2 rounded-xl border border-gray-200 bg-white/70 p-4">
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>Markdown 預覽</span>
-                  <span>{markdownContent.trim().length} 字</span>
-                </div>
-                <div
-                  className="markdown-preview text-sm leading-relaxed text-gray-700"
-                  dangerouslySetInnerHTML={{ __html: markdownPreview }}
-                />
-              </div>
-            </div>
             <div className="space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
               <RichTextEditor
