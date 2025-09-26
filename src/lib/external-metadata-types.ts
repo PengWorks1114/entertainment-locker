@@ -1,6 +1,6 @@
 import type { ItemLanguage } from "./types";
 
-export type ExternalCreatorSource = "schema" | "meta" | "twitter" | "feed";
+export type ExternalCreatorSource = "schema" | "meta" | "twitter" | "feed" | "page";
 
 export type ExternalCreator = {
   name: string;
@@ -13,6 +13,22 @@ export type ExternalCreator = {
 export type ExternalEpisode = {
   raw: string;
   number: number | null;
+};
+
+export type ExternalMetadataFactType =
+  | "author"
+  | "publisher"
+  | "pages"
+  | "tag"
+  | "date"
+  | "title"
+  | "name"
+  | "other";
+
+export type ExternalMetadataFact = {
+  type: ExternalMetadataFactType;
+  label: string;
+  value: string;
 };
 
 export type ExternalItemMetadata = {
@@ -30,4 +46,6 @@ export type ExternalItemMetadata = {
   nextUpdateAt: string | null;
   publishedAt: string | null;
   updatedAt: string | null;
+  keywords: string[];
+  facts: ExternalMetadataFact[];
 };

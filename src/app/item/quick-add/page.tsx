@@ -141,6 +141,7 @@ export default function QuickAddItemPage() {
     thumbUrl: "",
     progressValue: "",
   });
+  const [languageTouched, setLanguageTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clipboardCheckedRef = useRef(false);
@@ -475,6 +476,9 @@ export default function QuickAddItemPage() {
   }, [form.sourceUrl, form.titleZh, hasCabinet, saving]);
 
   function handleInputChange<K extends keyof FormState>(key: K, value: string) {
+    if (key === "language") {
+      setLanguageTouched(true);
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -561,18 +565,15 @@ export default function QuickAddItemPage() {
         autoUpdates.author = externalMetadata.author;
       }
 
-      if (externalMetadata?.language) {
+      if (
+        externalMetadata?.language &&
+        languageTouched &&
+        (!resolvedLanguage || resolvedLanguage === "")
+      ) {
         const metadataLanguage = externalMetadata.language;
-        if (
-          !resolvedLanguage ||
-          resolvedLanguage === "" ||
-          resolvedLanguage === "zh" ||
-          resolvedLanguage === metadataLanguage
-        ) {
-          if (resolvedLanguage !== metadataLanguage) {
-            resolvedLanguage = metadataLanguage;
-            autoUpdates.language = metadataLanguage;
-          }
+        if (resolvedLanguage !== metadataLanguage) {
+          resolvedLanguage = metadataLanguage;
+          autoUpdates.language = metadataLanguage;
         }
       }
 
@@ -614,6 +615,19 @@ export default function QuickAddItemPage() {
         );
       }
 
+      if (externalMetadata?.facts?.length) {
+        const detailLines = externalMetadata.facts
+          .filter((fact) => fact.type !== "tag")
+          .map((fact) => `${fact.label}：${fact.value}`.trim())
+          .filter((line) => line.length > 0);
+        if (detailLines.length > 0) {
+          const mergedDetails = Array.from(new Set(detailLines)).join("\n");
+          generalNote = generalNote
+            ? `${generalNote}\n${mergedDetails}`
+            : mergedDetails;
+        }
+      }
+
       if (!nextUpdateTimestamp && externalMetadata?.nextUpdateAt) {
         const parsedNext = new Date(externalMetadata.nextUpdateAt);
         if (!Number.isNaN(parsedNext.getTime())) {
@@ -653,6 +667,22 @@ export default function QuickAddItemPage() {
               tagSourceSet.add(candidate);
             }
           });
+        }
+        if (externalMetadata?.keywords?.length) {
+          externalMetadata.keywords.forEach((keyword) => {
+            if (keyword) {
+              tagSourceSet.add(keyword);
+            }
+          });
+        }
+        if (externalMetadata?.facts?.length) {
+          externalMetadata.facts
+            .filter((fact) => fact.type === "tag")
+            .forEach((fact) => {
+              if (fact.value) {
+                tagSourceSet.add(fact.value);
+              }
+            });
         }
         const matchedTagMap = new Map<string, string>();
         tagSourceSet.forEach((source) => {

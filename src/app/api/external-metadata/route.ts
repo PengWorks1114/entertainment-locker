@@ -5,6 +5,8 @@ import {
   type ExternalCreatorSource,
   type ExternalEpisode,
   type ExternalItemMetadata,
+  type ExternalMetadataFact,
+  type ExternalMetadataFactType,
 } from "@/lib/external-metadata-types";
 import type { ItemLanguage } from "@/lib/types";
 
@@ -89,6 +91,95 @@ const UPDATED_META_KEYS = [
   "dateupdated",
 ];
 
+const BOOK_AUTHOR_META_KEYS = [
+  "book:author",
+  "books:author",
+  "book:authors",
+  "books:authors",
+  "dcterms:creator",
+  "dc.creator",
+  "dc:creator",
+  "dc.contributor",
+  "dcterms:contributor",
+];
+
+const BOOK_PUBLISHER_META_KEYS = [
+  "book:publisher",
+  "books:publisher",
+  "dcterms:publisher",
+  "dc.publisher",
+  "dc:publisher",
+];
+
+const BOOK_RELEASE_META_KEYS = [
+  "book:release_date",
+  "books:release_date",
+  "book:publication_date",
+  "books:publication_date",
+  "release_date",
+  "release-date",
+  "release date",
+  "published_time",
+  "publication_date",
+  "publication-date",
+];
+
+const BOOK_PAGE_META_KEYS = [
+  "book:page_count",
+  "books:page_count",
+  "pagecount",
+  "page_count",
+  "number_of_pages",
+  "number-of-pages",
+  "dcterms:extent",
+];
+
+type TextFactConfig = {
+  type: ExternalMetadataFactType;
+  labels: string[];
+};
+
+const TEXT_FACT_CONFIG: TextFactConfig[] = [
+  {
+    type: "author",
+    labels: ["作者", "作者名", "著者", "著", "Author", "Written by", "Writer"],
+  },
+  {
+    type: "publisher",
+    labels: ["出版社", "出版", "出版者", "発行", "Publisher", "Imprint"],
+  },
+  {
+    type: "pages",
+    labels: ["頁數", "页数", "ページ数", "ページ", "Pages", "Page Count"],
+  },
+  {
+    type: "tag",
+    labels: ["標籤", "标签", "タグ", "分類", "ジャンル", "Genre", "Category"],
+  },
+  {
+    type: "date",
+    labels: [
+      "發售日",
+      "發行日",
+      "発売日",
+      "出版日",
+      "公開日",
+      "更新日",
+      "Release Date",
+      "Published",
+      "Publication Date",
+    ],
+  },
+  {
+    type: "title",
+    labels: ["作品名", "原題", "タイトル", "書名", "Title", "Product Name"],
+  },
+  {
+    type: "name",
+    labels: ["本名", "名稱", "名称", "名前", "Name"],
+  },
+];
+
 const HTML_ENTITY_MAP: Record<string, string> = {
   amp: "&",
   lt: "<",
@@ -103,6 +194,7 @@ const CREATOR_SOURCE_WEIGHTS: Record<ExternalCreatorSource, number> = {
   meta: 0.8,
   twitter: 0.6,
   feed: 0.5,
+  page: 0.45,
 };
 
 type MetaTag = {
@@ -155,6 +247,8 @@ type SchemaSummary = {
   published: string | null;
   updated: string | null;
   nextUpdate: string | null;
+  keywords: string[];
+  facts: ExternalMetadataFact[];
 };
 
 function decodeHtmlEntities(input: string): string {
@@ -201,6 +295,14 @@ function cleanTextValue(input: string | null | undefined): string | null {
   const stripped = stripHtmlTags(decodeHtmlEntities(stripCdata(input)));
   const cleaned = normalizeWhitespace(stripped);
   return cleaned || null;
+}
+
+function splitKeywordString(input: string): string[] {
+  return input
+    .split(/[;；,，、|｜\/／]+/)
+    .map((entry) => cleanTextValue(entry) ?? "")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 function normalizeDateString(value: string | null | undefined): string | null {
@@ -274,6 +376,42 @@ function collectSiteNameTokens(sourceName: string | null, url: string): string[]
     // ignore URL parsing errors
   }
   return Array.from(tokens);
+}
+
+function extractMetaKeywords(metaTags: MetaTag[]): string[] {
+  const keywords: string[] = [];
+  metaTags.forEach((tag) => {
+    const rawKey = (tag.name ?? tag.property ?? "").trim();
+    if (!rawKey) {
+      return;
+    }
+    const lowered = rawKey.toLowerCase();
+    const shouldCollect =
+      lowered === "keywords" ||
+      lowered === "news_keywords" ||
+      lowered.endsWith(":tag") ||
+      lowered.includes("keyword") ||
+      lowered.includes("tag") ||
+      lowered.includes("genre") ||
+      lowered.includes("category") ||
+      rawKey.includes("タグ") ||
+      rawKey.includes("標籤") ||
+      rawKey.includes("分類") ||
+      rawKey.includes("ジャンル");
+    if (!shouldCollect) {
+      return;
+    }
+    const content = cleanTextValue(tag.content ?? null);
+    if (!content) {
+      return;
+    }
+    splitKeywordString(content).forEach((entry) => {
+      if (entry) {
+        keywords.push(entry);
+      }
+    });
+  });
+  return keywords;
 }
 
 function sanitizeTitleCandidate(
@@ -411,7 +549,39 @@ function matchesSiteToken(value: string, tokens: string[]): boolean {
   if (!lowered) {
     return false;
   }
-  return tokens.some((token) => token === lowered);
+  const compact = lowered.replace(/[^a-z0-9\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu, "");
+  return tokens.some((token) => {
+    const normalized = token.toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (normalized === lowered) {
+      return true;
+    }
+    if (normalized === compact && normalized.length >= 3) {
+      return true;
+    }
+    if (normalized.length >= 4 && lowered.includes(normalized)) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function extractHeadingTitle(fullHtml: string): string | null {
+  const sanitized = fullHtml
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+  const pattern = /<(h1|h2)[^>]*>([\s\S]*?)<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(sanitized))) {
+    const value = cleanTextValue(match[2] ?? "");
+    if (value && value.length >= 2 && !isLikelyNonTitle(value)) {
+      return value;
+    }
+  }
+  return null;
 }
 
 function isLikelyGenericImage(
@@ -494,6 +664,67 @@ function resolveUrl(base: string, value: string | null | undefined): string | nu
   } catch {
     return null;
   }
+}
+
+function extractInlineImages(
+  html: string,
+  pageUrl: string,
+  tokens: string[]
+): string[] {
+  const sanitized = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+  const pattern = /<img\b([^>]*?)>/gi;
+  const results: string[] = [];
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(sanitized))) {
+    const attrs = parseAttributes(match[1] ?? "");
+    const candidates: Array<string | undefined> = [
+      attrs.src,
+      attrs["data-src"],
+      attrs["data-original"],
+      attrs["data-lazy-src"],
+      attrs["data-zoom-src"],
+    ];
+    const srcset = attrs.srcset ?? attrs["data-srcset"];
+    if (srcset) {
+      const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
+      if (first) {
+        candidates.push(first);
+      }
+    }
+    let candidate: string | null = null;
+    for (const item of candidates) {
+      if (typeof item === "string" && item.trim()) {
+        candidate = item.trim();
+        break;
+      }
+    }
+    if (!candidate || candidate.startsWith("data:")) {
+      continue;
+    }
+    const resolved = resolveUrl(pageUrl, candidate) ?? candidate;
+    if (!resolved || seen.has(resolved)) {
+      continue;
+    }
+    seen.add(resolved);
+    const alt = attrs.alt ?? "";
+    if (alt && /logo|icon|placeholder|transparent|pixel/i.test(alt)) {
+      continue;
+    }
+    if (isLikelyGenericImage(resolved, pageUrl, tokens)) {
+      results.push(resolved);
+    } else {
+      results.unshift(resolved);
+    }
+    if (results.length >= 30) {
+      break;
+    }
+  }
+  return Array.from(new Set(results));
 }
 
 async function fetchWithTimeout(
@@ -614,6 +845,91 @@ function parseJsonLdBlocks(head: string): unknown[] {
     }
   }
   return blocks;
+}
+
+function extractTextFacts(html: string): ExternalMetadataFact[] {
+  const sanitized = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<p\b[^>]*>/gi, "\n")
+    .replace(/<\/p>/gi, "\n");
+  const text = decodeHtmlEntities(sanitized.replace(/<[^>]+>/g, "\n"));
+  const rawLines = text
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length > 0);
+  const lines = rawLines.slice(0, 800);
+  const facts: ExternalMetadataFact[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const lowered = line.toLowerCase();
+    let matched = false;
+    for (const config of TEXT_FACT_CONFIG) {
+      for (const label of config.labels) {
+        const labelLower = label.toLowerCase();
+        let value: string | null = null;
+        let consumedNextLine = false;
+        const directPattern = new RegExp(
+          `^${escapeRegExp(label)}\s*[：:>】\)]*\s*(.+)$`,
+          "i"
+        );
+        const directMatch = line.match(directPattern);
+        if (directMatch && directMatch[1]) {
+          value = directMatch[1].trim();
+        } else if (lowered === labelLower) {
+          const nextLine = lines[i + 1] ?? "";
+          if (nextLine) {
+            value = nextLine.trim();
+            consumedNextLine = true;
+          }
+        }
+        if (!value) {
+          continue;
+        }
+        value = value.replace(/^[：:]/, "").trim();
+        if (!value) {
+          continue;
+        }
+        if (value.length > 160) {
+          value = value.slice(0, 160).trim();
+        }
+        if (config.type === "tag") {
+          const items = splitKeywordString(value);
+          if (items.length === 0) {
+            continue;
+          }
+          items.forEach((item) => {
+            const key = `${config.type}:${label}:${item}`.toLowerCase();
+            if (!seen.has(key)) {
+              seen.add(key);
+              facts.push({ type: config.type, label, value: item });
+            }
+          });
+        } else {
+          const key = `${config.type}:${label}:${value}`.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            facts.push({ type: config.type, label, value });
+          }
+        }
+        if (consumedNextLine) {
+          i += 1;
+        }
+        matched = true;
+        break;
+      }
+      if (matched) {
+        break;
+      }
+    }
+  }
+
+  return facts;
 }
 
 function discoverFeedLinks(links: LinkTag[], baseUrl: string): FeedLink[] {
@@ -871,14 +1187,17 @@ function collectSchemaNodes(input: unknown, collector: Record<string, unknown>[]
   }
 }
 
-function normalizeSchemaCreators(value: unknown): SchemaCreator[] {
+function normalizeSchemaCreators(
+  value: unknown,
+  defaultRole = "author"
+): SchemaCreator[] {
   if (!value) {
     return [];
   }
   const entries: SchemaCreator[] = [];
   if (Array.isArray(value)) {
     value.forEach((entry) => {
-      entries.push(...normalizeSchemaCreators(entry));
+      entries.push(...normalizeSchemaCreators(entry, defaultRole));
     });
     return entries;
   }
@@ -891,7 +1210,7 @@ function normalizeSchemaCreators(value: unknown): SchemaCreator[] {
       {
         name,
         isOrganization: looksLikeOrganization(name),
-        role: "author",
+        role: defaultRole,
       },
     ];
   }
@@ -917,7 +1236,7 @@ function normalizeSchemaCreators(value: unknown): SchemaCreator[] {
       {
         name: nameValue,
         isOrganization: isOrganization || looksLikeOrganization(nameValue),
-        role: jobTitle,
+        role: jobTitle || defaultRole,
       },
     ];
   }
@@ -938,12 +1257,51 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
   let published: string | null = null;
   let updated: string | null = null;
   let nextUpdate: string | null = null;
+  const keywords: string[] = [];
+  const facts: ExternalMetadataFact[] = [];
+
+  const appendCreators = (value: unknown, role: string) => {
+    const entries = normalizeSchemaCreators(value, role);
+    if (entries.length > 0) {
+      creators.push(...entries);
+    }
+  };
+
+  const appendKeywords = (value: unknown) => {
+    if (!value) return;
+    if (typeof value === "string") {
+      keywords.push(...splitKeywordString(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry) => appendKeywords(entry));
+      return;
+    }
+    if (typeof value === "object") {
+      const record = value as { name?: unknown; value?: unknown };
+      if (typeof record.name === "string") {
+        keywords.push(...splitKeywordString(record.name));
+      } else if (typeof record.value === "string") {
+        keywords.push(...splitKeywordString(record.value));
+      }
+    }
+  };
+
+  const appendFact = (fact: ExternalMetadataFact) => {
+    if (!fact.value) {
+      return;
+    }
+    facts.push(fact);
+  };
 
   nodes.forEach((node) => {
     const titleCandidates: unknown[] = [];
     if (node.headline) titleCandidates.push(node.headline);
     if (node.name) titleCandidates.push(node.name);
     if (node.title) titleCandidates.push(node.title);
+    if ((node as { alternativeHeadline?: unknown }).alternativeHeadline) {
+      titleCandidates.push((node as { alternativeHeadline?: unknown }).alternativeHeadline);
+    }
     titleCandidates.forEach((candidate) => {
       if (typeof candidate === "string") {
         const value = candidate.trim();
@@ -995,12 +1353,29 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
         image = resolveUrl(baseUrl, urlValue) ?? urlValue;
       }
     }
-    if (node.author) {
-      creators.push(...normalizeSchemaCreators(node.author));
+
+    appendCreators(node.author, "author");
+    appendCreators(node.creator, "creator");
+    appendCreators((node as { illustrator?: unknown }).illustrator, "illustrator");
+    appendCreators((node as { editor?: unknown }).editor, "editor");
+    appendCreators((node as { translator?: unknown }).translator, "translator");
+    appendCreators((node as { contributor?: unknown }).contributor, "contributor");
+    appendCreators((node as { producer?: unknown }).producer, "producer");
+    appendCreators((node as { director?: unknown }).director, "director");
+    appendCreators((node as { musicBy?: unknown }).musicBy, "music");
+    appendCreators((node as { actor?: unknown }).actor, "actor");
+    appendCreators((node as { brand?: unknown }).brand, "brand");
+    appendCreators((node as { manufacturer?: unknown }).manufacturer, "manufacturer");
+    appendCreators((node as { productionCompany?: unknown }).productionCompany, "production");
+
+    if (node.publisher) {
+      const publisherEntries = normalizeSchemaCreators(node.publisher, "publisher");
+      creators.push(...publisherEntries);
+      publisherEntries.forEach((publisher) => {
+        siteNameSet.add(publisher.name);
+      });
     }
-    if (node.creator) {
-      creators.push(...normalizeSchemaCreators(node.creator));
-    }
+
     if (!description && typeof node.description === "string") {
       description = node.description.trim();
     }
@@ -1024,11 +1399,51 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
     if (!nextUpdate && typeof (node as { expires?: unknown }).expires === "string") {
       nextUpdate = ((node as { expires?: string }).expires ?? "").trim();
     }
-    if (node.publisher) {
-      normalizeSchemaCreators(node.publisher).forEach((publisher) => {
-        siteNameSet.add(publisher.name);
-      });
+
+    appendKeywords((node as { keywords?: unknown }).keywords);
+    appendKeywords((node as { genre?: unknown }).genre);
+    appendKeywords((node as { about?: unknown }).about);
+    appendKeywords((node as { tag?: unknown }).tag);
+    appendKeywords((node as { category?: unknown }).category);
+
+    if ((node as { numberOfPages?: unknown }).numberOfPages !== undefined) {
+      const pages = (node as { numberOfPages?: unknown }).numberOfPages;
+      if (typeof pages === "number" && Number.isFinite(pages)) {
+        appendFact({ type: "pages", label: "頁數", value: String(pages) });
+      } else if (typeof pages === "string") {
+        const cleaned = cleanTextValue(pages);
+        if (cleaned) {
+          appendFact({ type: "pages", label: "頁數", value: cleaned });
+        }
+      }
     }
+
+    if ((node as { award?: unknown }).award) {
+      const awardValue = (node as { award?: unknown }).award;
+      if (typeof awardValue === "string") {
+        appendFact({ type: "other", label: "獎項", value: awardValue.trim() });
+      } else if (Array.isArray(awardValue)) {
+        awardValue.forEach((entry) => {
+          if (typeof entry === "string") {
+            appendFact({ type: "other", label: "獎項", value: entry.trim() });
+          }
+        });
+      }
+    }
+
+    if ((node as { isbn?: unknown }).isbn) {
+      const isbnValue = (node as { isbn?: unknown }).isbn;
+      if (typeof isbnValue === "string") {
+        appendFact({ type: "other", label: "ISBN", value: isbnValue.trim() });
+      } else if (Array.isArray(isbnValue)) {
+        isbnValue.forEach((entry) => {
+          if (typeof entry === "string") {
+            appendFact({ type: "other", label: "ISBN", value: entry.trim() });
+          }
+        });
+      }
+    }
+
     if (node.isPartOf) {
       normalizeSchemaCreators(node.isPartOf).forEach((publisher) => {
         siteNameSet.add(publisher.name);
@@ -1048,6 +1463,8 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
     published,
     updated,
     nextUpdate,
+    keywords,
+    facts,
   };
 }
 
@@ -1263,6 +1680,35 @@ function buildMetadata(
 
   const siteTokens = collectSiteNameTokens(sourceName, url);
 
+  const textFacts = extractTextFacts(fullHtml);
+  const dateFacts = textFacts.filter((fact) => fact.type === "date");
+  const headingTitle = extractHeadingTitle(fullHtml);
+  const keywordSet = new Set<string>();
+  schema.keywords.forEach((keyword) => {
+    if (keyword) {
+      keywordSet.add(keyword);
+    }
+  });
+  extractMetaKeywords(metaTags).forEach((keyword) => keywordSet.add(keyword));
+  textFacts
+    .filter((fact) => fact.type === "tag")
+    .forEach((fact) => keywordSet.add(fact.value));
+
+  const factMap = new Map<string, ExternalMetadataFact>();
+  const appendFact = (fact: ExternalMetadataFact | null | undefined) => {
+    if (!fact || !fact.value) {
+      return;
+    }
+    const key = `${fact.type}:${fact.label}:${fact.value}`.toLowerCase();
+    if (!factMap.has(key)) {
+      factMap.set(key, fact);
+    }
+  };
+
+  schema.facts.forEach((fact) => appendFact(fact));
+  textFacts.forEach((fact) => appendFact(fact));
+  const extraPublishedDates: string[] = [];
+
   const ogTitle = metaTags
     .filter((tag) => (tag.property ?? "").toLowerCase() === "og:title")
     .map((tag) => cleanTextValue(tag.content ?? null))
@@ -1288,9 +1734,17 @@ function buildMetadata(
   if (htmlTitle) {
     titleCandidates.push({ value: htmlTitle, priority: 3 });
   }
+  if (headingTitle) {
+    titleCandidates.push({ value: headingTitle, priority: 3.2 });
+  }
   if (feed.data?.title) {
     titleCandidates.push({ value: feed.data.title, priority: 4 });
   }
+  textFacts
+    .filter((fact) => fact.type === "title" || fact.type === "name")
+    .forEach((fact) => {
+      titleCandidates.push({ value: fact.value, priority: 3.5 });
+    });
   titleCandidates.sort((a, b) => a.priority - b.priority);
   const processedTitles: { value: string; priority: number }[] = [];
   const fallbackTitles: { value: string; priority: number }[] = [];
@@ -1314,7 +1768,16 @@ function buildMetadata(
       }
     }
   });
-  const primaryTitle = selectPrimaryTitle(processedTitles, fallbackTitles, siteTokens);
+  let primaryTitle = selectPrimaryTitle(processedTitles, fallbackTitles, siteTokens);
+  if (primaryTitle && matchesSiteToken(primaryTitle, siteTokens)) {
+    const fallbackTitle = processedTitles
+      .concat(fallbackTitles)
+      .map((entry) => entry.value)
+      .find((value) => value && !matchesSiteToken(value, siteTokens));
+    if (fallbackTitle) {
+      primaryTitle = fallbackTitle;
+    }
+  }
 
   const alternateTitleCandidates: string[] = [];
   schema.alternateTitles.forEach((title) => {
@@ -1335,6 +1798,11 @@ function buildMetadata(
       }
     });
   }
+  textFacts
+    .filter((fact) => fact.type === "title" || fact.type === "name")
+    .forEach((fact) => {
+      alternateTitleCandidates.push(fact.value);
+    });
   const alternateTitleSet = new Set<string>();
   alternateTitleCandidates.forEach((title) => {
     const sanitized = sanitizeTitleCandidate(title, siteTokens);
@@ -1445,6 +1913,38 @@ function buildMetadata(
         CREATOR_SOURCE_WEIGHTS.meta
       );
     });
+  metaTags.forEach((tag) => {
+    const key = (tag.property ?? tag.name ?? "").toLowerCase();
+    if (!key || !tag.content) {
+      return;
+    }
+    if (BOOK_AUTHOR_META_KEYS.includes(key)) {
+      accumulateCreator(
+        creatorMap,
+        tag.content,
+        "meta",
+        CREATOR_SOURCE_WEIGHTS.meta
+      );
+    }
+    if (BOOK_PUBLISHER_META_KEYS.includes(key)) {
+      accumulateCreator(
+        creatorMap,
+        tag.content,
+        "meta",
+        CREATOR_SOURCE_WEIGHTS.meta,
+        { role: "publisher", isOrganization: true }
+      );
+    }
+    if (BOOK_PAGE_META_KEYS.includes(key)) {
+      const cleaned = cleanTextValue(tag.content ?? null);
+      if (cleaned) {
+        appendFact({ type: "pages", label: "頁數", value: cleaned });
+      }
+    }
+    if (BOOK_RELEASE_META_KEYS.includes(key) && tag.content) {
+      extraPublishedDates.push(tag.content);
+    }
+  });
   const twitterCreators = metaTags.filter(
     (tag) => (tag.name ?? "").toLowerCase() === "twitter:creator"
   );
@@ -1468,6 +1968,27 @@ function buildMetadata(
       CREATOR_SOURCE_WEIGHTS.feed
     );
   }
+  textFacts
+    .filter((fact) => fact.type === "author")
+    .forEach((fact) => {
+      accumulateCreator(
+        creatorMap,
+        fact.value,
+        "page",
+        CREATOR_SOURCE_WEIGHTS.page
+      );
+    });
+  textFacts
+    .filter((fact) => fact.type === "publisher")
+    .forEach((fact) => {
+      accumulateCreator(
+        creatorMap,
+        fact.value,
+        "page",
+        CREATOR_SOURCE_WEIGHTS.page,
+        { role: "publisher", isOrganization: true }
+      );
+    });
 
   const creators = Array.from(creatorMap.values())
     .map((entry) => entry.creator)
@@ -1502,6 +2023,11 @@ function buildMetadata(
       images.push(resolved);
     }
   }
+  extractInlineImages(fullHtml, url, siteTokens).forEach((candidate) => {
+    if (candidate) {
+      images.push(candidate);
+    }
+  });
   const image = selectBestImage(images, url, siteTokens);
 
   const episode =
@@ -1583,9 +2109,7 @@ function buildMetadata(
       publishedCandidates.push(tag.content ?? null);
     }
   });
-  const publishedAt = publishedCandidates
-    .map((value) => normalizeDateString(value))
-    .find((value) => Boolean(value)) ?? null;
+  extraPublishedDates.forEach((date) => publishedCandidates.push(date));
 
   const updatedCandidates: Array<string | null> = [];
   if (schema.updated) {
@@ -1600,9 +2124,30 @@ function buildMetadata(
       updatedCandidates.push(tag.content ?? null);
     }
   });
+
+  dateFacts.forEach((fact) => {
+    if (/更新/.test(fact.label) || /update/i.test(fact.label)) {
+      updatedCandidates.push(fact.value);
+    } else {
+      publishedCandidates.push(fact.value);
+    }
+  });
+
+  const publishedAt = publishedCandidates
+    .map((value) => normalizeDateString(value))
+    .find((value) => Boolean(value)) ?? null;
+
   const updatedAt = updatedCandidates
     .map((value) => normalizeDateString(value))
     .find((value) => Boolean(value)) ?? null;
+
+  factMap.forEach((fact) => {
+    if (fact.type === "tag") {
+      keywordSet.add(fact.value);
+    }
+  });
+  const keywords = Array.from(keywordSet);
+  const facts = Array.from(factMap.values());
 
   let originalTitle: string | null = null;
   if (primaryTitle) {
@@ -1647,6 +2192,8 @@ function buildMetadata(
     nextUpdateAt,
     publishedAt,
     updatedAt,
+    keywords,
+    facts,
   };
 }
 

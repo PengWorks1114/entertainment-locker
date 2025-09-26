@@ -1,4 +1,8 @@
-import type { ExternalItemMetadata } from "./external-metadata-types";
+import type {
+  ExternalItemMetadata,
+  ExternalMetadataFact,
+  ExternalMetadataFactType,
+} from "./external-metadata-types";
 
 function isLikelyHttpUrl(value: string): boolean {
   try {
@@ -113,6 +117,39 @@ function normalizeResponseData(input: unknown): ExternalItemMetadata | null {
       ? record.updatedAt.trim() || null
       : null;
 
+  const keywords = Array.isArray(record.keywords)
+    ? record.keywords
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    : [];
+
+  const facts = Array.isArray(record.facts)
+    ? record.facts
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          const fact = entry as {
+            type?: unknown;
+            label?: unknown;
+            value?: unknown;
+          };
+          const label =
+            typeof fact.label === "string" ? fact.label.trim() : null;
+          const value =
+            typeof fact.value === "string" ? fact.value.trim() : null;
+          const type =
+            typeof fact.type === "string"
+              ? (fact.type as ExternalMetadataFactType)
+              : "other";
+          if (!label || !value) {
+            return null;
+          }
+          return { type, label, value } satisfies ExternalMetadataFact;
+        })
+        .filter((entry): entry is ExternalMetadataFact => Boolean(entry))
+    : [];
+
   return {
     primaryTitle,
     originalTitle,
@@ -128,6 +165,8 @@ function normalizeResponseData(input: unknown): ExternalItemMetadata | null {
     nextUpdateAt,
     publishedAt,
     updatedAt,
+    keywords,
+    facts,
   };
 }
 
