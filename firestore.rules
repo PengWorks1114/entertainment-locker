@@ -25,7 +25,7 @@ service cloud.firestore {
         || (field is list
           && field.size() <= maxItems
           && field.size() == field.where(item,
-            item == null || (item is string && item.size() <= maxLen)
+            item is string && item.size() >= 1 && item.size() <= maxLen
           ).size());
     }
 

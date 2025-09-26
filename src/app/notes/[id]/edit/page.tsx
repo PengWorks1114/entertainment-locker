@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { Timestamp, doc, getDoc, setDoc, updateDoc, type Firestore } from "firebase/firestore";
+import {
+  Timestamp,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  type Firestore,
+} from "firebase/firestore";
 
 import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";

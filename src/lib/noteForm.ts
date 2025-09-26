@@ -152,8 +152,6 @@ export function buildNoteCreatePayload(
   };
   if (sanitized.description !== null) {
     payload.description = sanitized.description;
-  } else {
-    payload.description = null;
   }
   if (sanitized.contentHtml) {
     payload.content = sanitized.contentHtml;
