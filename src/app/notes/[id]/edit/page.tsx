@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import {
+  Timestamp,
   doc,
   getDoc,
   serverTimestamp,
@@ -23,6 +25,22 @@ import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
 const DESCRIPTION_LIMIT = 300;
+const MAX_CONTENT_LENGTH = 60000;
+const MAX_MARKDOWN_LENGTH = 60000;
+const MAX_TAG_LENGTH = 100;
+const MAX_TAGS = 500;
+const MAX_LINKED_TARGETS = 50;
+const MAX_ID_LENGTH = 100;
+
+function sanitizeIdList(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value): value is string => value.length > 0)
+    )
+  );
+}
 
 type Feedback = {
   type: "error" | "success";
@@ -59,6 +77,7 @@ export default function EditNotePage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [originalCreatedAt, setOriginalCreatedAt] = useState<Timestamp | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -234,6 +253,7 @@ export default function EditNotePage({ params }: PageProps) {
           setTags([]);
           setTagQuery("");
           setTagStatus({ message: null, error: null, saving: false });
+          setOriginalCreatedAt(null);
           setLoading(false);
           return;
         }
@@ -252,6 +272,7 @@ export default function EditNotePage({ params }: PageProps) {
           setTags([]);
           setTagQuery("");
           setTagStatus({ message: null, error: null, saving: false });
+          setOriginalCreatedAt(null);
           setLoading(false);
           return;
         }
@@ -274,6 +295,9 @@ export default function EditNotePage({ params }: PageProps) {
         );
         setTags(Array.isArray(data.tags) ? normalizeNoteTags(data.tags) : []);
         setTagStatus({ message: null, error: null, saving: false });
+        setOriginalCreatedAt(
+          data.createdAt instanceof Timestamp ? data.createdAt : null
+        );
         setFeedback(null);
         setNotFound(false);
       } catch (err) {
@@ -291,6 +315,7 @@ export default function EditNotePage({ params }: PageProps) {
         setTags([]);
         setTagQuery("");
         setTagStatus({ message: null, error: null, saving: false });
+        setOriginalCreatedAt(null);
       } finally {
         setLoading(false);
       }
@@ -329,6 +354,45 @@ export default function EditNotePage({ params }: PageProps) {
       return;
     }
 
+    const sanitizedTags = normalizeNoteTags(tags);
+    if (sanitizedTags.length > MAX_TAGS) {
+      setFeedback({ type: "error", message: `標籤數量不可超過 ${MAX_TAGS} 個` });
+      return;
+    }
+    if (sanitizedTags.some((tag) => tag.length > MAX_TAG_LENGTH)) {
+      setFeedback({ type: "error", message: `標籤長度不可超過 ${MAX_TAG_LENGTH} 字` });
+      return;
+    }
+
+    const sanitizedCabinetIds = sanitizeIdList(selectedCabinetIds);
+    if (sanitizedCabinetIds.length > MAX_LINKED_TARGETS) {
+      setFeedback({ type: "error", message: `連結的櫃子數量不可超過 ${MAX_LINKED_TARGETS} 個` });
+      return;
+    }
+    if (sanitizedCabinetIds.some((id) => id.length > MAX_ID_LENGTH)) {
+      setFeedback({ type: "error", message: "櫃子識別碼長度異常，請重新選擇" });
+      return;
+    }
+
+    const sanitizedItemIds = sanitizeIdList(selectedItemIds);
+    if (sanitizedItemIds.length > MAX_LINKED_TARGETS) {
+      setFeedback({ type: "error", message: `連結的作品數量不可超過 ${MAX_LINKED_TARGETS} 個` });
+      return;
+    }
+    if (sanitizedItemIds.some((id) => id.length > MAX_ID_LENGTH)) {
+      setFeedback({ type: "error", message: "作品識別碼長度異常，請重新選擇" });
+      return;
+    }
+
+    if (sanitizedContentHtml.length > MAX_CONTENT_LENGTH) {
+      setFeedback({ type: "error", message: `筆記內容長度不可超過 ${MAX_CONTENT_LENGTH} 字` });
+      return;
+    }
+    if (markdownValue.length > MAX_MARKDOWN_LENGTH) {
+      setFeedback({ type: "error", message: `Markdown 內容長度不可超過 ${MAX_MARKDOWN_LENGTH} 字` });
+      return;
+    }
+
     const db = getFirebaseDb();
     if (!db) {
       setFeedback({ type: "error", message: "Firebase 尚未設定" });
@@ -343,22 +407,31 @@ export default function EditNotePage({ params }: PageProps) {
         return;
       }
       const noteRef = doc(db, "note", noteId);
-      await updateDoc(noteRef, {
+      const payload: Record<string, unknown> = {
+        uid: user.uid,
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         contentMarkdown: markdownValue ? markdownValue : null,
-        tags,
-        linkedCabinetIds: selectedCabinetIds,
-        linkedItemIds: selectedItemIds,
+        tags: sanitizedTags,
+        linkedCabinetIds: sanitizedCabinetIds,
+        linkedItemIds: sanitizedItemIds,
         isFavorite,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (originalCreatedAt) {
+        payload.createdAt = originalCreatedAt;
+      }
+      await updateDoc(noteRef, payload);
       setFeedback({ type: "success", message: "已更新筆記" });
       router.replace(`/notes/${noteId}`);
     } catch (err) {
       console.error("更新筆記時發生錯誤", err);
-      setFeedback({ type: "error", message: "更新筆記時發生錯誤" });
+      let message = "更新筆記時發生錯誤";
+      if (err instanceof FirebaseError && err.code === "permission-denied") {
+        message = "沒有權限更新筆記，請確認登入狀態或 Firestore 規則設定。";
+      }
+      setFeedback({ type: "error", message });
     } finally {
       setSaving(false);
     }

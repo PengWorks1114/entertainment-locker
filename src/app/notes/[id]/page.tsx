@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import {
   collection,
   deleteDoc,
@@ -36,6 +37,7 @@ type Note = {
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+  createdAtTimestamp: Timestamp | null;
 };
 
 type CabinetOption = {
@@ -213,7 +215,8 @@ export default function NoteDetailPage({ params }: PageProps) {
         }
         const createdAt = data.createdAt;
         const updatedAt = data.updatedAt;
-        const createdMs = createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+        const createdTimestamp = createdAt instanceof Timestamp ? createdAt : null;
+        const createdMs = createdTimestamp ? createdTimestamp.toMillis() : 0;
         const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
         const markdownContent =
           typeof data.contentMarkdown === "string" && data.contentMarkdown.trim().length > 0
@@ -243,6 +246,7 @@ export default function NoteDetailPage({ params }: PageProps) {
           isFavorite: Boolean(data.isFavorite),
           createdMs,
           updatedMs,
+          createdAtTimestamp: createdTimestamp,
         });
         setFeedback(null);
         setLoading(false);
@@ -358,6 +362,10 @@ export default function NoteDetailPage({ params }: PageProps) {
     if (!note || favoriting) {
       return;
     }
+    if (!user) {
+      setFeedback({ type: "error", message: "請先登入" });
+      return;
+    }
     const db = getFirebaseDb();
     if (!db) {
       setFeedback({ type: "error", message: "Firebase 尚未設定" });
@@ -366,13 +374,22 @@ export default function NoteDetailPage({ params }: PageProps) {
     try {
       setFavoriting(true);
       setFeedback(null);
-      await updateDoc(doc(db, "note", note.id), {
+      const updates: Record<string, unknown> = {
+        uid: user.uid,
         isFavorite: !note.isFavorite,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (note.createdAtTimestamp instanceof Timestamp) {
+        updates.createdAt = note.createdAtTimestamp;
+      }
+      await updateDoc(doc(db, "note", note.id), updates);
     } catch (err) {
       console.error("更新最愛狀態時發生錯誤", err);
-      setFeedback({ type: "error", message: "更新最愛狀態時發生錯誤" });
+      let message = "更新最愛狀態時發生錯誤";
+      if (err instanceof FirebaseError && err.code === "permission-denied") {
+        message = "沒有權限更新筆記最愛狀態，請確認登入狀態或 Firestore 規則設定。";
+      }
+      setFeedback({ type: "error", message });
     } finally {
       setFavoriting(false);
     }

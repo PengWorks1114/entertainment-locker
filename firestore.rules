@@ -66,16 +66,22 @@ service cloud.firestore {
             || isOptionalBoundedStringList(data.linkedCabinetIds, 50, 1, 100))
         && (!("linkedItemIds" in data)
             || isOptionalBoundedStringList(data.linkedItemIds, 50, 1, 100))
-        && isTimestamp(data.createdAt)
-        && isTimestamp(data.updatedAt);
+        && (!("createdAt" in data) || isTimestamp(data.createdAt))
+        && (!("updatedAt" in data) || isTimestamp(data.updatedAt));
     }
 
     function isValidNoteCreate(data) {
-      return isValidNoteBase(data) && hasNoteContent(data);
+      return isValidNoteBase(data)
+        && ("createdAt" in data)
+        && ("updatedAt" in data)
+        && isTimestamp(data.createdAt)
+        && isTimestamp(data.updatedAt)
+        && hasNoteContent(data);
     }
 
     function isValidNoteUpdate(data) {
-      return isValidNoteBase(data) && (hasNoteContent(data) || hasExistingNoteContent());
+      return isValidNoteBase(data)
+        && (hasNoteContent(data) || hasExistingNoteContent());
     }
 
     // 櫃子
@@ -124,9 +130,11 @@ service cloud.firestore {
                     && isValidNoteCreate(request.resource.data);
       allow update: if authed()
                     && resource.data.uid == request.auth.uid
-                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == resource.data.uid
                     && isValidNoteUpdate(request.resource.data)
-                    && request.resource.data.createdAt == resource.data.createdAt;
+                    && (!("createdAt" in resource.data)
+                        || (("createdAt" in request.resource.data)
+                            && request.resource.data.createdAt == resource.data.createdAt));
       allow delete: if authed() && resource.data.uid == request.auth.uid;
     }
 

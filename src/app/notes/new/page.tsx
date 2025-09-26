@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import {
   addDoc,
   collection,
@@ -23,6 +24,22 @@ import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
 const DESCRIPTION_LIMIT = 300;
+const MAX_CONTENT_LENGTH = 60000;
+const MAX_MARKDOWN_LENGTH = 60000;
+const MAX_TAG_LENGTH = 100;
+const MAX_TAGS = 500;
+const MAX_LINKED_TARGETS = 50;
+const MAX_ID_LENGTH = 100;
+
+function sanitizeIdList(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value): value is string => value.length > 0)
+    )
+  );
+}
 
 type Feedback = {
   type: "error" | "success";
@@ -236,6 +253,45 @@ export default function NewNotePage() {
       return;
     }
 
+    const sanitizedTags = normalizeNoteTags(tags);
+    if (sanitizedTags.length > MAX_TAGS) {
+      setFeedback({ type: "error", message: `標籤數量不可超過 ${MAX_TAGS} 個` });
+      return;
+    }
+    if (sanitizedTags.some((tag) => tag.length > MAX_TAG_LENGTH)) {
+      setFeedback({ type: "error", message: `標籤長度不可超過 ${MAX_TAG_LENGTH} 字` });
+      return;
+    }
+
+    const sanitizedCabinetIds = sanitizeIdList(selectedCabinetIds);
+    if (sanitizedCabinetIds.length > MAX_LINKED_TARGETS) {
+      setFeedback({ type: "error", message: `連結的櫃子數量不可超過 ${MAX_LINKED_TARGETS} 個` });
+      return;
+    }
+    if (sanitizedCabinetIds.some((id) => id.length > MAX_ID_LENGTH)) {
+      setFeedback({ type: "error", message: "櫃子識別碼長度異常，請重新選擇" });
+      return;
+    }
+
+    const sanitizedItemIds = sanitizeIdList(selectedItemIds);
+    if (sanitizedItemIds.length > MAX_LINKED_TARGETS) {
+      setFeedback({ type: "error", message: `連結的作品數量不可超過 ${MAX_LINKED_TARGETS} 個` });
+      return;
+    }
+    if (sanitizedItemIds.some((id) => id.length > MAX_ID_LENGTH)) {
+      setFeedback({ type: "error", message: "作品識別碼長度異常，請重新選擇" });
+      return;
+    }
+
+    if (sanitizedContentHtml.length > MAX_CONTENT_LENGTH) {
+      setFeedback({ type: "error", message: `筆記內容長度不可超過 ${MAX_CONTENT_LENGTH} 字` });
+      return;
+    }
+    if (markdownValue.length > MAX_MARKDOWN_LENGTH) {
+      setFeedback({ type: "error", message: `Markdown 內容長度不可超過 ${MAX_MARKDOWN_LENGTH} 字` });
+      return;
+    }
+
     const db = getFirebaseDb();
     if (!db) {
       setFeedback({ type: "error", message: "Firebase 尚未設定" });
@@ -252,9 +308,9 @@ export default function NewNotePage() {
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         contentMarkdown: markdownValue ? markdownValue : null,
-        tags,
-        linkedCabinetIds: selectedCabinetIds,
-        linkedItemIds: selectedItemIds,
+        tags: sanitizedTags,
+        linkedCabinetIds: sanitizedCabinetIds,
+        linkedItemIds: sanitizedItemIds,
         isFavorite,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -274,7 +330,11 @@ export default function NewNotePage() {
       router.replace(`/notes/${docRef.id}`);
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
-      setFeedback({ type: "error", message: "新增筆記時發生錯誤" });
+      let message = "新增筆記時發生錯誤";
+      if (err instanceof FirebaseError && err.code === "permission-denied") {
+        message = "沒有權限新增筆記，請確認登入狀態或 Firestore 規則設定。";
+      }
+      setFeedback({ type: "error", message });
     } finally {
       setSaving(false);
     }
