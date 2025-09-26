@@ -207,6 +207,151 @@ function normalizeDateString(value: string | null | undefined): string | null {
   return parsed.toISOString();
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectSiteNameTokens(sourceName: string | null, url: string): string[] {
+  const tokens = new Set<string>();
+  const append = (value: string | null | undefined) => {
+    if (!value) return;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return;
+    tokens.add(normalized);
+    normalized
+      .replace(/[.]+/g, " ")
+      .split(/[\s|｜:/_-]+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 3)
+      .forEach((part) => tokens.add(part.toLowerCase()));
+  };
+  append(sourceName);
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    append(host);
+    append(host.replace(/^www\./, ""));
+    const parts = host.split(".");
+    if (parts.length >= 2) {
+      append(parts.slice(0, -1).join("."));
+      append(parts[parts.length - 2]);
+    }
+    parts
+      .filter((part) => part.length >= 3)
+      .forEach((part) => tokens.add(part.toLowerCase()));
+  } catch {
+    // ignore URL parsing errors
+  }
+  return Array.from(tokens);
+}
+
+function sanitizeTitleCandidate(
+  value: string,
+  tokens: string[]
+): string | null {
+  const cleaned = cleanTextValue(value);
+  if (!cleaned) {
+    return null;
+  }
+  let result = cleaned;
+  tokens.forEach((token) => {
+    if (!token) return;
+    const escaped = escapeRegExp(token);
+    const separator = "[\\s]*[:：\\-–—|｜]+[\\s]*";
+    result = result.replace(
+      new RegExp(`^${escaped}${separator}`, "i"),
+      ""
+    );
+    result = result.replace(
+      new RegExp(`${separator}${escaped}$`, "i"),
+      ""
+    );
+    result = result.replace(new RegExp(`\\(${escaped}\\)$`, "i"), "");
+    result = result.replace(new RegExp(`^${escaped}$`, "i"), "");
+  });
+  result = result.replace(/\s+/g, " ").trim();
+  return result || null;
+}
+
+function matchesSiteToken(value: string, tokens: string[]): boolean {
+  const lowered = value.trim().toLowerCase();
+  if (!lowered) {
+    return false;
+  }
+  return tokens.some((token) => token === lowered);
+}
+
+function isLikelyGenericImage(
+  candidate: string,
+  pageUrl: string,
+  tokens: string[]
+): boolean {
+  try {
+    const parsed = new URL(candidate, pageUrl);
+    const pathname = parsed.pathname.toLowerCase();
+    const filename = pathname.split("/").pop() ?? "";
+    const extensionMatch = filename.match(/\.([a-z0-9]+)(?:$|\?)/);
+    if (extensionMatch && !["jpg", "jpeg", "png", "webp", "gif", "bmp", "svg", "avif", "jfif"].includes(extensionMatch[1])) {
+      return true;
+    }
+    const genericKeywords = [
+      "logo",
+      "favicon",
+      "icon",
+      "sprite",
+      "placeholder",
+      "default",
+      "opengraph",
+      "og-image",
+      "twitter",
+      "share",
+      "social",
+      "apple-touch",
+    ];
+    if (genericKeywords.some((keyword) => pathname.includes(keyword))) {
+      return true;
+    }
+    if (
+      filename &&
+      tokens.some(
+        (token) => token.length >= 4 && filename.includes(token.replace(/[^a-z0-9]/g, ""))
+      )
+    ) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+function selectBestImage(
+  candidates: string[],
+  pageUrl: string,
+  tokens: string[]
+): string | null {
+  const strong: string[] = [];
+  const fallback: string[] = [];
+  const seen = new Set<string>();
+  candidates.forEach((candidate) => {
+    const value = cleanTextValue(candidate);
+    if (!value) {
+      return;
+    }
+    const normalized = resolveUrl(pageUrl, value) ?? value;
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    if (isLikelyGenericImage(normalized, pageUrl, tokens)) {
+      fallback.push(normalized);
+    } else {
+      strong.push(normalized);
+    }
+  });
+  return strong[0] ?? fallback[0] ?? null;
+}
+
 function resolveUrl(base: string, value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -902,14 +1047,79 @@ function buildMetadata(
   schema: SchemaSummary,
   feed: { data: FeedData | null; url: string | null }
 ): ExternalItemMetadata {
+  const siteNameCandidates: string[] = [];
+  schema.siteNames.forEach((entry) => {
+    const cleaned = cleanTextValue(entry);
+    if (cleaned) {
+      siteNameCandidates.push(cleaned);
+    }
+  });
+  const ogSiteName = metaTags
+    .filter((tag) => (tag.property ?? "").toLowerCase() === "og:site_name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (ogSiteName) {
+    siteNameCandidates.push(ogSiteName);
+  }
+  const applicationName = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "application-name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (applicationName) {
+    siteNameCandidates.push(applicationName);
+  }
+  const metaSiteName = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "site_name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (metaSiteName) {
+    siteNameCandidates.push(metaSiteName);
+  }
+  const twitterSite = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "twitter:site")
+    .map((tag) => {
+      if (!tag.content) return null;
+      const value = tag.content.trim().replace(/^@/, "");
+      return value ? cleanTextValue(value) : null;
+    })
+    .find((value) => Boolean(value));
+  if (twitterSite) {
+    siteNameCandidates.push(twitterSite);
+  }
+  if (feed.data?.siteName) {
+    const cleaned = cleanTextValue(feed.data.siteName);
+    if (cleaned) {
+      siteNameCandidates.push(cleaned);
+    }
+  }
+
+  let sourceName: string | null = null;
+  for (const candidate of siteNameCandidates) {
+    if (candidate) {
+      sourceName = candidate;
+      break;
+    }
+  }
+  if (!sourceName) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.replace(/^www\./, "");
+      sourceName = host || parsed.hostname || null;
+    } catch {
+      sourceName = null;
+    }
+  }
+
+  const siteTokens = collectSiteNameTokens(sourceName, url);
+
   const ogTitle = metaTags
     .filter((tag) => (tag.property ?? "").toLowerCase() === "og:title")
-    .map((tag) => (tag.content ?? "").trim())
-    .find((value) => value.length > 0);
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
   const twitterTitle = metaTags
     .filter((tag) => (tag.name ?? "").toLowerCase() === "twitter:title")
-    .map((tag) => (tag.content ?? "").trim())
-    .find((value) => value.length > 0);
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
   const htmlTitle = parseHtmlTitle(head);
   const titleCandidates: { value: string; priority: number }[] = [];
   schema.titles.forEach((title, index) => {
@@ -931,33 +1141,67 @@ function buildMetadata(
     titleCandidates.push({ value: feed.data.title, priority: 4 });
   }
   titleCandidates.sort((a, b) => a.priority - b.priority);
-  const primaryTitle = titleCandidates[0]?.value ?? null;
-
-  const alternateTitleSet = new Set<string>();
-  schema.alternateTitles.forEach((title) => {
-    const value = title.trim();
-    if (value) {
-      alternateTitleSet.add(value);
+  const processedTitles: { value: string; priority: number }[] = [];
+  const fallbackTitles: { value: string; priority: number }[] = [];
+  const seenTitleKeys = new Set<string>();
+  titleCandidates.forEach((candidate) => {
+    const sanitized = sanitizeTitleCandidate(candidate.value, siteTokens);
+    if (sanitized) {
+      const key = sanitized.toLowerCase();
+      if (!seenTitleKeys.has(key)) {
+        processedTitles.push({ value: sanitized, priority: candidate.priority });
+        seenTitleKeys.add(key);
+      }
+      return;
     }
+    const fallbackValue = cleanTextValue(candidate.value);
+    if (fallbackValue) {
+      const key = fallbackValue.toLowerCase();
+      if (!seenTitleKeys.has(key)) {
+        fallbackTitles.push({ value: fallbackValue, priority: candidate.priority });
+        seenTitleKeys.add(key);
+      }
+    }
+  });
+  let primaryTitle = processedTitles[0]?.value ?? null;
+  if (!primaryTitle) {
+    const preferredFallback = fallbackTitles.find(
+      (entry) => !matchesSiteToken(entry.value, siteTokens)
+    );
+    primaryTitle = preferredFallback?.value ?? fallbackTitles[0]?.value ?? null;
+  }
+
+  const alternateTitleCandidates: string[] = [];
+  schema.alternateTitles.forEach((title) => {
+    alternateTitleCandidates.push(title);
+  });
+  schema.titles.forEach((title) => {
+    alternateTitleCandidates.push(title);
   });
   if (feed.data?.alternateTitles) {
     feed.data.alternateTitles.forEach((title) => {
-      const value = title.trim();
-      if (value) {
-        alternateTitleSet.add(value);
-      }
+      alternateTitleCandidates.push(title);
     });
   }
   if (primaryTitle) {
     extractTitleAliases(primaryTitle).forEach((alias) => {
-      if (alias && alias !== primaryTitle) {
-        alternateTitleSet.add(alias);
+      if (alias) {
+        alternateTitleCandidates.push(alias);
       }
     });
   }
-  const alternateTitles = Array.from(alternateTitleSet).filter(
-    (title) => title !== primaryTitle
-  );
+  const alternateTitleSet = new Set<string>();
+  alternateTitleCandidates.forEach((title) => {
+    const sanitized = sanitizeTitleCandidate(title, siteTokens);
+    if (!sanitized) {
+      return;
+    }
+    if (primaryTitle && sanitized === primaryTitle) {
+      return;
+    }
+    alternateTitleSet.add(sanitized);
+  });
+  const alternateTitles = Array.from(alternateTitleSet);
 
   const languageCandidates: { value: ItemLanguage; priority: number }[] = [];
   const schemaLanguage = schema.language
@@ -1063,26 +1307,31 @@ function buildMetadata(
   const images: string[] = [];
   if (schema.image) {
     const resolved = resolveUrl(url, schema.image) ?? schema.image;
-    images.push(resolved);
+    if (resolved) {
+      images.push(resolved);
+    }
   }
   const ogImage = metaTags
     .filter((tag) => (tag.property ?? "").toLowerCase() === "og:image")
-    .map((tag) => (tag.content ?? "").trim())
-    .find((value) => value.length > 0);
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
   if (ogImage) {
     images.push(resolveUrl(url, ogImage) ?? ogImage);
   }
   const twitterImage = metaTags
     .filter((tag) => (tag.name ?? "").toLowerCase() === "twitter:image")
-    .map((tag) => (tag.content ?? "").trim())
-    .find((value) => value.length > 0);
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
   if (twitterImage) {
     images.push(resolveUrl(url, twitterImage) ?? twitterImage);
   }
   if (feed.data?.image) {
-    images.push(resolveUrl(feed.url ?? url, feed.data.image) ?? feed.data.image);
+    const resolved = resolveUrl(feed.url ?? url, feed.data.image) ?? feed.data.image;
+    if (resolved) {
+      images.push(resolved);
+    }
   }
-  const image = images.find((value) => Boolean(value)) ?? null;
+  const image = selectBestImage(images, url, siteTokens);
 
   const episode =
     schema.episode
@@ -1093,69 +1342,6 @@ function buildMetadata(
           number: Number.parseInt(feed.data.episode, 10) || null,
         }
       : extractEpisodeFromTitle(primaryTitle);
-
-  const siteNameCandidates: string[] = [];
-  schema.siteNames.forEach((entry) => {
-    const cleaned = cleanTextValue(entry);
-    if (cleaned) {
-      siteNameCandidates.push(cleaned);
-    }
-  });
-  const ogSiteName = metaTags
-    .filter((tag) => (tag.property ?? "").toLowerCase() === "og:site_name")
-    .map((tag) => cleanTextValue(tag.content ?? null))
-    .find((value) => Boolean(value));
-  if (ogSiteName) {
-    siteNameCandidates.push(ogSiteName);
-  }
-  const applicationName = metaTags
-    .filter((tag) => (tag.name ?? "").toLowerCase() === "application-name")
-    .map((tag) => cleanTextValue(tag.content ?? null))
-    .find((value) => Boolean(value));
-  if (applicationName) {
-    siteNameCandidates.push(applicationName);
-  }
-  const metaSiteName = metaTags
-    .filter((tag) => (tag.name ?? "").toLowerCase() === "site_name")
-    .map((tag) => cleanTextValue(tag.content ?? null))
-    .find((value) => Boolean(value));
-  if (metaSiteName) {
-    siteNameCandidates.push(metaSiteName);
-  }
-  const twitterSite = metaTags
-    .filter((tag) => (tag.name ?? "").toLowerCase() === "twitter:site")
-    .map((tag) => {
-      if (!tag.content) return null;
-      const value = tag.content.trim().replace(/^@/, "");
-      return value ? cleanTextValue(value) : null;
-    })
-    .find((value) => Boolean(value));
-  if (twitterSite) {
-    siteNameCandidates.push(twitterSite);
-  }
-  if (feed.data?.siteName) {
-    const cleaned = cleanTextValue(feed.data.siteName);
-    if (cleaned) {
-      siteNameCandidates.push(cleaned);
-    }
-  }
-
-  let sourceName: string | null = null;
-  for (const candidate of siteNameCandidates) {
-    if (candidate) {
-      sourceName = candidate;
-      break;
-    }
-  }
-  if (!sourceName) {
-    try {
-      const parsed = new URL(url);
-      const host = parsed.hostname.replace(/^www\./, "");
-      sourceName = host || parsed.hostname || null;
-    } catch {
-      sourceName = null;
-    }
-  }
 
   const descriptionCandidates: string[] = [];
   if (schema.description) {
