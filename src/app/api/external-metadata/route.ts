@@ -14,6 +14,49 @@ const USER_AGENT =
 
 const TITLE_ALIAS_PATTERN = /[\(（［\[]([^\)）］\]]+)[\)）］\]]/g;
 const TITLE_SLASH_SEPARATORS = /[\/|｜]/;
+const NEXT_UPDATE_META_KEYS = [
+  "next_update",
+  "nextupdate",
+  "next-release",
+  "nextrelease",
+  "next_air",
+  "nextair",
+  "next_episode",
+  "next-episode",
+  "next-chapter",
+  "nextchapter",
+  "next-issue",
+  "nextissue",
+  "next-publication",
+  "nextpublication",
+  "next-publish",
+  "nextpublish",
+];
+const PUBLISHED_META_KEYS = [
+  "article:published_time",
+  "og:published_time",
+  "publish-date",
+  "publish_date",
+  "datepublished",
+  "date_published",
+  "dc.date",
+  "dc:date",
+  "pubdate",
+  "datecreated",
+  "date-created",
+];
+const UPDATED_META_KEYS = [
+  "article:modified_time",
+  "og:updated_time",
+  "og:modified_time",
+  "last-modified",
+  "last_modified",
+  "datemodified",
+  "date_modified",
+  "updated_time",
+  "modified",
+  "dateupdated",
+];
 
 const HTML_ENTITY_MAP: Record<string, string> = {
   amp: "&",
@@ -56,6 +99,11 @@ type FeedData = {
   language: string | null;
   image: string | null;
   episode: string | null;
+  summary: string | null;
+  siteName: string | null;
+  published: string | null;
+  updated: string | null;
+  nextUpdate: string | null;
 };
 
 type SchemaCreator = {
@@ -71,6 +119,11 @@ type SchemaSummary = {
   image: string | null;
   creators: SchemaCreator[];
   episode: string | null;
+  description: string | null;
+  siteNames: string[];
+  published: string | null;
+  updated: string | null;
+  nextUpdate: string | null;
 };
 
 function decodeHtmlEntities(input: string): string {
@@ -100,6 +153,58 @@ function stripCdata(value: string): string {
     return trimmed.slice(9, -3).trim();
   }
   return trimmed;
+}
+
+function stripHtmlTags(value: string): string {
+  return value.replace(/<[^>]*>/g, " ");
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function cleanTextValue(input: string | null | undefined): string | null {
+  if (!input) {
+    return null;
+  }
+  const stripped = stripHtmlTags(decodeHtmlEntities(stripCdata(input)));
+  const cleaned = normalizeWhitespace(stripped);
+  return cleaned || null;
+}
+
+function normalizeDateString(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const numericOnly = trimmed.replace(/[^0-9]/g, "");
+  if (numericOnly.length === 8) {
+    const year = Number.parseInt(numericOnly.slice(0, 4), 10);
+    const month = Number.parseInt(numericOnly.slice(4, 6), 10);
+    const day = Number.parseInt(numericOnly.slice(6, 8), 10);
+    if (
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      Number.isFinite(day) &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      const iso = new Date(Date.UTC(year, month - 1, day));
+      if (!Number.isNaN(iso.getTime())) {
+        return iso.toISOString();
+      }
+    }
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
 }
 
 function resolveUrl(base: string, value: string | null | undefined): string | null {
@@ -266,6 +371,11 @@ function parseXmlFeed(content: string): FeedData | null {
     (feedLangMatch ? (feedLangMatch[2] ?? feedLangMatch[3] ?? "").trim() : "") ||
     null;
 
+  const channelTitleMatch = content.match(
+    /<(?:channel|feed)[^>]*>[\s\S]*?<title[^>]*>([\s\S]*?)<\/title>/i
+  );
+  const siteName = cleanTextValue(channelTitleMatch?.[1] ?? null);
+
   const itemMatch = content.match(/<item\b[\s\S]*?<\/item>/i);
   const entryMatch = content.match(/<entry\b[\s\S]*?<\/entry>/i);
   const target = itemMatch?.[0] ?? entryMatch?.[0] ?? "";
@@ -277,6 +387,11 @@ function parseXmlFeed(content: string): FeedData | null {
       language,
       image: null,
       episode: null,
+      summary: null,
+      siteName,
+      published: null,
+      updated: null,
+      nextUpdate: null,
     };
   }
 
@@ -289,6 +404,19 @@ function parseXmlFeed(content: string): FeedData | null {
   const episodeMatch =
     target.match(/<episode[^>]*>([\s\S]*?)<\/episode>/i) ||
     target.match(/<episodeNumber[^>]*>([\s\S]*?)<\/episodeNumber>/i);
+  const descriptionMatch =
+    target.match(/<description[^>]*>([\s\S]*?)<\/description>/i) ||
+    target.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i);
+  const contentMatch = target.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/i);
+  const publishedMatch =
+    target.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) ||
+    target.match(/<published[^>]*>([\s\S]*?)<\/published>/i);
+  const updatedMatch =
+    target.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i) ||
+    target.match(/<lastBuildDate[^>]*>([\s\S]*?)<\/lastBuildDate>/i);
+  const nextUpdateMatch =
+    target.match(/<nextUpdate[^>]*>([\s\S]*?)<\/nextUpdate>/i) ||
+    target.match(/<next_update[^>]*>([\s\S]*?)<\/next_update>/i);
 
   const title = titleMatch ? stripCdata(titleMatch[1] ?? "") : "";
   const creator = creatorMatch ? stripCdata(creatorMatch[1] ?? "") : "";
@@ -298,6 +426,11 @@ function parseXmlFeed(content: string): FeedData | null {
     ? mediaContentMatch[2] ?? mediaContentMatch[3] ?? ""
     : "";
   const episode = episodeMatch ? stripCdata(episodeMatch[1] ?? "") : "";
+  const description = descriptionMatch
+    ? descriptionMatch[1] ?? ""
+    : contentMatch
+    ? contentMatch[1] ?? ""
+    : "";
 
   return {
     title: decodeHtmlEntities(title).trim() || null,
@@ -306,6 +439,11 @@ function parseXmlFeed(content: string): FeedData | null {
     language: language || null,
     image: decodeHtmlEntities(image).trim() || null,
     episode: decodeHtmlEntities(episode).trim() || null,
+    summary: cleanTextValue(description),
+    siteName,
+    published: normalizeDateString(publishedMatch?.[1]),
+    updated: normalizeDateString(updatedMatch?.[1]),
+    nextUpdate: normalizeDateString(nextUpdateMatch?.[1]),
   };
 }
 
@@ -354,6 +492,32 @@ function parseJsonFeed(content: string): FeedData | null {
         : firstItem && typeof firstItem.number === "number"
         ? String(firstItem.number)
         : null;
+    const summary =
+      firstItem && typeof firstItem.summary === "string"
+        ? firstItem.summary
+        : firstItem && typeof firstItem.content_text === "string"
+        ? firstItem.content_text
+        : firstItem && typeof firstItem.content_html === "string"
+        ? firstItem.content_html
+        : null;
+    const published =
+      firstItem && typeof firstItem.date_published === "string"
+        ? firstItem.date_published
+        : typeof data?.date_published === "string"
+        ? data.date_published
+        : null;
+    const updated =
+      firstItem && typeof firstItem.date_modified === "string"
+        ? firstItem.date_modified
+        : typeof data?.date_modified === "string"
+        ? data.date_modified
+        : null;
+    const nextUpdate =
+      typeof data?.next_update === "string"
+        ? data.next_update
+        : typeof data?.nextUpdate === "string"
+        ? data.nextUpdate
+        : null;
     const author = authorField ?? authorsArray[0] ?? null;
 
     return {
@@ -363,6 +527,11 @@ function parseJsonFeed(content: string): FeedData | null {
       language,
       image,
       episode,
+      summary: cleanTextValue(summary),
+      siteName: cleanTextValue(title),
+      published: normalizeDateString(published),
+      updated: normalizeDateString(updated),
+      nextUpdate: normalizeDateString(nextUpdate),
     };
   } catch {
     return null;
@@ -486,6 +655,11 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
   let image: string | null = null;
   let episode: string | null = null;
   const creators: SchemaCreator[] = [];
+  const siteNameSet = new Set<string>();
+  let description: string | null = null;
+  let published: string | null = null;
+  let updated: string | null = null;
+  let nextUpdate: string | null = null;
 
   nodes.forEach((node) => {
     const titleCandidates: unknown[] = [];
@@ -549,6 +723,39 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
     if (node.creator) {
       creators.push(...normalizeSchemaCreators(node.creator));
     }
+    if (!description && typeof node.description === "string") {
+      description = node.description.trim();
+    }
+    if (!published && typeof node.datePublished === "string") {
+      published = node.datePublished.trim();
+    }
+    if (!updated && typeof node.dateModified === "string") {
+      updated = node.dateModified.trim();
+    }
+    if (!nextUpdate && typeof (node as { endDate?: unknown }).endDate === "string") {
+      nextUpdate = ((node as { endDate?: string }).endDate ?? "").trim();
+    }
+    if (
+      !nextUpdate &&
+      typeof (node as { availabilityEnds?: unknown }).availabilityEnds === "string"
+    ) {
+      nextUpdate = (
+        (node as { availabilityEnds?: string }).availabilityEnds ?? ""
+      ).trim();
+    }
+    if (!nextUpdate && typeof (node as { expires?: unknown }).expires === "string") {
+      nextUpdate = ((node as { expires?: string }).expires ?? "").trim();
+    }
+    if (node.publisher) {
+      normalizeSchemaCreators(node.publisher).forEach((publisher) => {
+        siteNameSet.add(publisher.name);
+      });
+    }
+    if (node.isPartOf) {
+      normalizeSchemaCreators(node.isPartOf).forEach((publisher) => {
+        siteNameSet.add(publisher.name);
+      });
+    }
   });
 
   return {
@@ -558,6 +765,11 @@ function extractSchemaSummary(blocks: unknown[], baseUrl: string): SchemaSummary
     image,
     creators,
     episode,
+    description,
+    siteNames: Array.from(siteNameSet),
+    published,
+    updated,
+    nextUpdate,
   };
 }
 
@@ -882,6 +1094,159 @@ function buildMetadata(
         }
       : extractEpisodeFromTitle(primaryTitle);
 
+  const siteNameCandidates: string[] = [];
+  schema.siteNames.forEach((entry) => {
+    const cleaned = cleanTextValue(entry);
+    if (cleaned) {
+      siteNameCandidates.push(cleaned);
+    }
+  });
+  const ogSiteName = metaTags
+    .filter((tag) => (tag.property ?? "").toLowerCase() === "og:site_name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (ogSiteName) {
+    siteNameCandidates.push(ogSiteName);
+  }
+  const applicationName = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "application-name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (applicationName) {
+    siteNameCandidates.push(applicationName);
+  }
+  const metaSiteName = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "site_name")
+    .map((tag) => cleanTextValue(tag.content ?? null))
+    .find((value) => Boolean(value));
+  if (metaSiteName) {
+    siteNameCandidates.push(metaSiteName);
+  }
+  const twitterSite = metaTags
+    .filter((tag) => (tag.name ?? "").toLowerCase() === "twitter:site")
+    .map((tag) => {
+      if (!tag.content) return null;
+      const value = tag.content.trim().replace(/^@/, "");
+      return value ? cleanTextValue(value) : null;
+    })
+    .find((value) => Boolean(value));
+  if (twitterSite) {
+    siteNameCandidates.push(twitterSite);
+  }
+  if (feed.data?.siteName) {
+    const cleaned = cleanTextValue(feed.data.siteName);
+    if (cleaned) {
+      siteNameCandidates.push(cleaned);
+    }
+  }
+
+  let sourceName: string | null = null;
+  for (const candidate of siteNameCandidates) {
+    if (candidate) {
+      sourceName = candidate;
+      break;
+    }
+  }
+  if (!sourceName) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.replace(/^www\./, "");
+      sourceName = host || parsed.hostname || null;
+    } catch {
+      sourceName = null;
+    }
+  }
+
+  const descriptionCandidates: string[] = [];
+  if (schema.description) {
+    const cleaned = cleanTextValue(schema.description);
+    if (cleaned) {
+      descriptionCandidates.push(cleaned);
+    }
+  }
+  metaTags.forEach((tag) => {
+    const key = (tag.name ?? tag.property ?? "").toLowerCase();
+    if (
+      key === "description" ||
+      key === "og:description" ||
+      key === "twitter:description" ||
+      key === "summary"
+    ) {
+      const cleaned = cleanTextValue(tag.content ?? null);
+      if (cleaned) {
+        descriptionCandidates.push(cleaned);
+      }
+    }
+  });
+  if (feed.data?.summary) {
+    const cleaned = cleanTextValue(feed.data.summary);
+    if (cleaned) {
+      descriptionCandidates.push(cleaned);
+    }
+  }
+  const descriptionSet = new Set(descriptionCandidates.filter(Boolean));
+  let description: string | null = null;
+  for (const entry of descriptionSet) {
+    if (entry) {
+      description = entry;
+      break;
+    }
+  }
+  if (description && description.length > 500) {
+    description = `${description.slice(0, 497)}...`;
+  }
+
+  const nextUpdateCandidates: Array<string | null> = [];
+  if (schema.nextUpdate) {
+    nextUpdateCandidates.push(schema.nextUpdate);
+  }
+  if (feed.data?.nextUpdate) {
+    nextUpdateCandidates.push(feed.data.nextUpdate);
+  }
+  metaTags.forEach((tag) => {
+    const key = (tag.name ?? tag.property ?? "").toLowerCase();
+    if (NEXT_UPDATE_META_KEYS.includes(key)) {
+      nextUpdateCandidates.push(tag.content ?? null);
+    }
+  });
+  const nextUpdateAt = nextUpdateCandidates
+    .map((value) => normalizeDateString(value))
+    .find((value) => Boolean(value)) ?? null;
+
+  const publishedCandidates: Array<string | null> = [];
+  if (schema.published) {
+    publishedCandidates.push(schema.published);
+  }
+  if (feed.data?.published) {
+    publishedCandidates.push(feed.data.published);
+  }
+  metaTags.forEach((tag) => {
+    const key = (tag.name ?? tag.property ?? "").toLowerCase();
+    if (PUBLISHED_META_KEYS.includes(key)) {
+      publishedCandidates.push(tag.content ?? null);
+    }
+  });
+  const publishedAt = publishedCandidates
+    .map((value) => normalizeDateString(value))
+    .find((value) => Boolean(value)) ?? null;
+
+  const updatedCandidates: Array<string | null> = [];
+  if (schema.updated) {
+    updatedCandidates.push(schema.updated);
+  }
+  if (feed.data?.updated) {
+    updatedCandidates.push(feed.data.updated);
+  }
+  metaTags.forEach((tag) => {
+    const key = (tag.name ?? tag.property ?? "").toLowerCase();
+    if (UPDATED_META_KEYS.includes(key)) {
+      updatedCandidates.push(tag.content ?? null);
+    }
+  });
+  const updatedAt = updatedCandidates
+    .map((value) => normalizeDateString(value))
+    .find((value) => Boolean(value)) ?? null;
+
   let originalTitle: string | null = null;
   if (primaryTitle) {
     const isPrimaryChinese = /\p{Script=Han}/u.test(primaryTitle);
@@ -906,6 +1271,11 @@ function buildMetadata(
     author,
     episode,
     feedUrl: feed.url,
+    sourceName,
+    description,
+    nextUpdateAt,
+    publishedAt,
+    updatedAt,
   };
 }
 

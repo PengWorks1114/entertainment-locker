@@ -13,6 +13,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
+  Timestamp,
   addDoc,
   collection,
   doc,
@@ -73,6 +74,54 @@ function isValidHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function detectTagsFromTitle(title: string, tags: string[]): string[] {
+  if (!title || tags.length === 0) {
+    return [];
+  }
+  const loweredTitle = title.toLowerCase();
+  const matched = tags.filter((tag) => {
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return loweredTitle.includes(normalized);
+  });
+  return matched;
+}
+
+function formatDateLabel(dateString: string | null): string | null {
+  if (!dateString) {
+    return null;
+  }
+  const parsed = new Date(dateString);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function createProgressNote(
+  publishedAt: string | null,
+  updatedAt: string | null
+): string | null {
+  const parts: string[] = [];
+  const publishedLabel = formatDateLabel(publishedAt);
+  const updatedLabel = formatDateLabel(updatedAt);
+  if (publishedLabel) {
+    parts.push(`發布：${publishedLabel}`);
+  }
+  if (updatedLabel && updatedLabel !== publishedLabel) {
+    parts.push(`更新：${updatedLabel}`);
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join(" / ");
 }
 
 export default function QuickAddItemPage() {
@@ -473,15 +522,7 @@ export default function QuickAddItemPage() {
       return;
     }
 
-    const allowedTags = new Set(cabinetTags);
-    const uniqueTags = Array.from(
-      new Set(
-        form.selectedTags
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-          .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
-      )
-    );
+    let workingSelectedTags = [...form.selectedTags];
 
     setSaving(true);
     setError(null);
@@ -493,6 +534,9 @@ export default function QuickAddItemPage() {
       }
 
       let resolvedThumbUrl = thumbUrlInput;
+      let generalNote: string | null = null;
+      let progressNoteValue: string | null = null;
+      let nextUpdateTimestamp: Timestamp | null = null;
 
       if (!titleZh && externalMetadata?.primaryTitle) {
         titleZh = externalMetadata.primaryTitle;
@@ -556,6 +600,27 @@ export default function QuickAddItemPage() {
         }
       }
 
+      if (!generalNote && externalMetadata?.description) {
+        const trimmedDescription = externalMetadata.description.trim();
+        if (trimmedDescription) {
+          generalNote = trimmedDescription;
+        }
+      }
+
+      if (!progressNoteValue) {
+        progressNoteValue = createProgressNote(
+          externalMetadata?.publishedAt ?? null,
+          externalMetadata?.updatedAt ?? null
+        );
+      }
+
+      if (!nextUpdateTimestamp && externalMetadata?.nextUpdateAt) {
+        const parsedNext = new Date(externalMetadata.nextUpdateAt);
+        if (!Number.isNaN(parsedNext.getTime())) {
+          nextUpdateTimestamp = Timestamp.fromDate(parsedNext);
+        }
+      }
+
       if (!titleZh) {
         const fallbackTitle = externalMetadata?.primaryTitle ?? QUICK_ADD_DEFAULT_TITLE;
         titleZh = fallbackTitle;
@@ -568,6 +633,38 @@ export default function QuickAddItemPage() {
           resolvedThumbUrl = autoThumb;
           autoUpdates.thumbUrl = autoThumb;
         }
+      }
+
+      if (titleZh && cabinetTags.length > 0) {
+        const autoTagMatches = detectTagsFromTitle(titleZh, cabinetTags);
+        if (autoTagMatches.length > 0) {
+          const existingLower = new Set(
+            workingSelectedTags.map((tag) => tag.toLowerCase())
+          );
+          const toAppend = autoTagMatches.filter(
+            (tag) => !existingLower.has(tag.toLowerCase())
+          );
+          if (toAppend.length > 0) {
+            workingSelectedTags = [...workingSelectedTags, ...toAppend];
+          }
+        }
+      }
+
+      const allowedTags = new Set(cabinetTags);
+      const uniqueTags = Array.from(
+        new Set(
+          workingSelectedTags
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+            .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
+        )
+      );
+
+      const selectionChanged =
+        uniqueTags.length !== form.selectedTags.length ||
+        uniqueTags.some((tag, index) => form.selectedTags[index] !== tag);
+      if (selectionChanged) {
+        autoUpdates.selectedTags = uniqueTags;
       }
 
       if (Object.keys(autoUpdates).length > 0) {
@@ -594,10 +691,26 @@ export default function QuickAddItemPage() {
         }
       }
 
+      const linkLabel = (() => {
+        if (!sourceUrl) {
+          return "來源";
+        }
+        if (externalMetadata?.sourceName?.trim()) {
+          return externalMetadata.sourceName.trim();
+        }
+        try {
+          const parsed = new URL(sourceUrl);
+          const host = parsed.hostname.replace(/^www\./, "");
+          return host || "來源";
+        } catch {
+          return "來源";
+        }
+      })();
+
       const links = sourceUrl
         ? [
             {
-              label: "來源",
+              label: linkLabel || "來源",
               url: sourceUrl,
               isPrimary: true,
             },
@@ -615,15 +728,15 @@ export default function QuickAddItemPage() {
         links,
         thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
-        progressNote: null,
+        progressNote: progressNoteValue || null,
         insightNotes: [],
         insightNote: null,
-        note: null,
+        note: generalNote || null,
         appearances: [],
         rating: null,
         status: "in-progress",
         updateFrequency: null,
-        nextUpdateAt: null,
+        nextUpdateAt: nextUpdateTimestamp,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -633,7 +746,7 @@ export default function QuickAddItemPage() {
         type: QUICK_ADD_PROGRESS_TYPE,
         value: parsedProgressValue,
         unit: QUICK_ADD_PROGRESS_UNIT,
-        note: null,
+        note: progressNoteValue,
         link: null,
         isPrimary: true,
         updatedAt: serverTimestamp(),

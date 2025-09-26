@@ -25,4 +25,9 @@ export type ExternalItemMetadata = {
   author: string | null;
   episode: ExternalEpisode | null;
   feedUrl: string | null;
+  sourceName: string | null;
+  description: string | null;
+  nextUpdateAt: string | null;
+  publishedAt: string | null;
+  updatedAt: string | null;
 };

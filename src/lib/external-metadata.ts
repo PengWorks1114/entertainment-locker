@@ -94,6 +94,24 @@ function normalizeResponseData(input: unknown): ExternalItemMetadata | null {
       : null;
   const feedUrl =
     typeof record.feedUrl === "string" ? record.feedUrl.trim() || null : null;
+  const sourceName =
+    typeof record.sourceName === "string" ? record.sourceName.trim() || null : null;
+  const description =
+    typeof record.description === "string"
+      ? record.description.trim() || null
+      : null;
+  const nextUpdateAt =
+    typeof record.nextUpdateAt === "string"
+      ? record.nextUpdateAt.trim() || null
+      : null;
+  const publishedAt =
+    typeof record.publishedAt === "string"
+      ? record.publishedAt.trim() || null
+      : null;
+  const updatedAt =
+    typeof record.updatedAt === "string"
+      ? record.updatedAt.trim() || null
+      : null;
 
   return {
     primaryTitle,
@@ -105,6 +123,11 @@ function normalizeResponseData(input: unknown): ExternalItemMetadata | null {
     author,
     episode,
     feedUrl,
+    sourceName,
+    description,
+    nextUpdateAt,
+    publishedAt,
+    updatedAt,
   };
 }
 
