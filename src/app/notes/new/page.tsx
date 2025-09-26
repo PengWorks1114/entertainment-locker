@@ -2,21 +2,25 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   addDoc,
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { markdownPreviewHtml, simpleMarkdownToHtml, splitTags } from "@/lib/markdown";
-import { NOTE_CATEGORY_OPTIONS, NOTE_TAG_LIMIT, type NoteCategory } from "@/lib/note";
+import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
+import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
@@ -43,7 +47,6 @@ export default function NewNotePage() {
   const searchParams = useSearchParams();
   const defaultCabinetId = searchParams.get("cabinetId");
   const defaultItemId = searchParams.get("itemId");
-  const defaultCategory = searchParams.get("category");
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [title, setTitle] = useState("");
@@ -52,11 +55,6 @@ export default function NewNotePage() {
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [markdownContent, setMarkdownContent] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<NoteCategory>(
-    defaultCategory && NOTE_CATEGORY_OPTIONS.some((item) => item.value === defaultCategory)
-      ? (defaultCategory as NoteCategory)
-      : "general"
-  );
   const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
   const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
   const [cabinetSearchTerm, setCabinetSearchTerm] = useState("");
@@ -67,8 +65,15 @@ export default function NewNotePage() {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>(
     defaultItemId ? [defaultItemId] : []
   );
-  const [tagInput, setTagInput] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [noteTags, setNoteTags] = useState<string[]>([]);
+  const [tagStatus, setTagStatus] = useState<{
+    message: string | null;
+    error: string | null;
+    saving: boolean;
+  }>({ message: null, error: null, saving: false });
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -90,11 +95,13 @@ export default function NewNotePage() {
     if (!user) {
       setCabinetOptions([]);
       setItemOptions([]);
+      setNoteTags([]);
       return;
     }
     const db = getFirebaseDb();
     if (!db) {
       setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      setNoteTags([]);
       return;
     }
 
@@ -155,6 +162,37 @@ export default function NewNotePage() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) {
+      setNoteTags([]);
+      return;
+    }
+    let active = true;
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteTags([]);
+      return;
+    }
+    getDoc(doc(db, "user", user.uid))
+      .then((snap) => {
+        if (!active) return;
+        if (!snap.exists()) {
+          setNoteTags([]);
+          return;
+        }
+        const data = snap.data();
+        setNoteTags(normalizeNoteTags(data?.noteTags));
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入筆記標籤時發生錯誤", err);
+        setNoteTags([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
     setSelectedCabinetIds((prev) =>
       prev.filter((id) => cabinetOptions.some((option) => option.id === id))
     );
@@ -180,6 +218,24 @@ export default function NewNotePage() {
     return itemOptions.filter((option) => option.title.toLowerCase().includes(keyword));
   }, [itemOptions, itemSearchTerm]);
 
+  const selectedTagSet = useMemo(() => new Set(tags), [tags]);
+
+  const availableTagSuggestions = useMemo(
+    () => noteTags.filter((tag) => !selectedTagSet.has(tag)),
+    [noteTags, selectedTagSet]
+  );
+
+  const filteredTagSuggestions = useMemo(() => {
+    const keyword = tagQuery.trim().toLowerCase();
+    const base = availableTagSuggestions;
+    if (!keyword) {
+      return base.slice(0, 20);
+    }
+    return base
+      .filter((tag) => tag.toLowerCase().includes(keyword))
+      .slice(0, 20);
+  }, [availableTagSuggestions, tagQuery]);
+
   const markdownPreview = useMemo(() => markdownPreviewHtml(markdownContent), [markdownContent]);
 
   function toggleCabinetSelection(id: string) {
@@ -194,26 +250,73 @@ export default function NewNotePage() {
     );
   }
 
-  function handleAddTags() {
-    const newTags = splitTags(tagInput);
-    if (newTags.length === 0) {
-      setTagInput("");
+  async function persistUserNoteTags(nextTags: string[]) {
+    if (!user) {
       return;
     }
-    setTags((prev) => {
-      const merged = [...prev];
-      for (const tag of newTags) {
-        if (!merged.includes(tag) && merged.length < NOTE_TAG_LIMIT) {
-          merged.push(tag);
-        }
-      }
-      return merged;
-    });
-    setTagInput("");
+    const db = getFirebaseDb();
+    if (!db) {
+      throw new Error("Firebase 尚未設定");
+    }
+    await setDoc(
+      doc(db, "user", user.uid),
+      { noteTags: nextTags, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
   }
 
-  function handleRemoveTag(tag: string) {
+  async function handleCommitTag(rawTag: string) {
+    const value = rawTag.trim();
+    if (!value) {
+      setTagStatus({ message: null, error: "請輸入標籤名稱", saving: false });
+      return;
+    }
+    if (tags.includes(value)) {
+      setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      setTagQuery("");
+      return;
+    }
+    if (tags.length >= NOTE_TAG_LIMIT) {
+      setTagStatus({
+        message: null,
+        error: `最多可選擇 ${NOTE_TAG_LIMIT} 個標籤`,
+        saving: false,
+      });
+      return;
+    }
+    if (!user) {
+      setTagStatus({ message: null, error: "請先登入", saving: false });
+      return;
+    }
+    setTagStatus({ message: null, error: null, saving: true });
+    setTags((prev) => [...prev, value]);
+    setTagQuery("");
+    try {
+      if (!noteTags.includes(value)) {
+        const nextTags = normalizeNoteTags([...noteTags, value]);
+        await persistUserNoteTags(nextTags);
+        setNoteTags(nextTags);
+        setTagStatus({ message: `已新增 #${value}`, error: null, saving: false });
+      } else {
+        setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      }
+    } catch (err) {
+      console.error("更新筆記標籤時發生錯誤", err);
+      setTags((prev) => prev.filter((tag) => tag !== value));
+      setTagStatus({ message: null, error: "更新標籤時發生錯誤", saving: false });
+    }
+  }
+
+  function handleRemoveSelectedTag(tag: string) {
     setTags((prev) => prev.filter((item) => item !== tag));
+    setTagStatus({ message: `已移除 #${tag}`, error: null, saving: false });
+  }
+
+  function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      void handleCommitTag(tagQuery);
+    }
   }
 
   function handleSyncMarkdownToEditor() {
@@ -269,7 +372,6 @@ export default function NewNotePage() {
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         contentMarkdown: markdownValue ? markdownValue : null,
-        category: selectedCategory || null,
         tags,
         linkedCabinetIds: selectedCabinetIds,
         linkedItemIds: selectedItemIds,
@@ -287,6 +389,8 @@ export default function NewNotePage() {
       setSelectedCabinetIds([]);
       setSelectedItemIds([]);
       setTags([]);
+      setTagQuery("");
+      setTagStatus({ message: null, error: null, saving: false });
       router.replace(`/notes/${docRef.id}`);
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
@@ -364,59 +468,89 @@ export default function NewNotePage() {
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
             </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-700">筆記類別</span>
-              <select
-                value={selectedCategory}
-                onChange={(event) =>
-                  setSelectedCategory(event.target.value as NoteCategory)
-                }
-                className="h-12 w-full rounded-xl border bg-white px-4 text-base"
-              >
-                {NOTE_CATEGORY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm font-medium text-gray-700">標籤</span>
-                <span className="text-xs text-gray-400">最多 {NOTE_TAG_LIMIT} 個，使用逗號或空白分隔</span>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  value={tagInput}
-                  onChange={(event) => setTagInput(event.target.value)}
-                  placeholder="輸入標籤後按新增"
-                  className="h-11 flex-1 rounded-xl border px-4 text-base"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddTags}
-                  className={`${buttonClass({ variant: "secondary", size: "sm" })} w-full sm:w-auto`}
-                >
-                  新增標籤
-                </button>
-              </div>
-              {tags.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="group inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-gray-200"
-                    >
-                      <span>#{tag}</span>
-                      <span className="text-xs text-gray-400 group-hover:text-gray-600">刪除</span>
-                    </button>
-                  ))}
+                <div className="space-y-1">
+                  <span className="text-sm font-medium text-gray-700">標籤</span>
+                  <span className="text-xs text-gray-400">最多 {NOTE_TAG_LIMIT} 個，可使用 Enter 或逗號快速新增。</span>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500">尚未新增標籤，可用來分類或搜尋。</p>
-              )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTagManagerOpen(true)}
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
+                  >
+                    筆記標籤管理
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-3 rounded-xl border border-gray-200 bg-white/50 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    value={tagQuery}
+                    onChange={(event) => {
+                      setTagQuery(event.target.value);
+                      setTagStatus({ message: null, error: null, saving: false });
+                    }}
+                    onKeyDown={handleTagKeyDown}
+                    placeholder="輸入標籤後按 Enter"
+                    className="h-11 flex-1 rounded-xl border px-4 text-base"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleCommitTag(tagQuery)}
+                    disabled={tagStatus.saving}
+                    className={`${buttonClass({ variant: "secondary", size: "sm" })} w-full sm:w-auto`}
+                  >
+                    新增標籤
+                  </button>
+                </div>
+                {tagStatus.error ? (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{tagStatus.error}</div>
+                ) : null}
+                {tagStatus.message ? (
+                  <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{tagStatus.message}</div>
+                ) : null}
+                {tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => handleRemoveSelectedTag(tag)}
+                        className="group inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-gray-200"
+                      >
+                        <span>#{tag}</span>
+                        <span className="text-xs text-gray-400 group-hover:text-gray-600">移除</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">尚未選取任何標籤。</p>
+                )}
+                <div className="space-y-2">
+                  <span className="text-xs font-medium text-gray-500">快速選取</span>
+                  {availableTagSuggestions.length === 0 ? (
+                    <p className="text-xs text-gray-400">尚無可用建議。</p>
+                  ) : filteredTagSuggestions.length === 0 ? (
+                    <p className="text-xs text-gray-400">找不到符合關鍵字的建議標籤。</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => void handleCommitTag(tag)}
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                          disabled={tagStatus.saving}
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <section className="space-y-4 rounded-xl border border-gray-200 bg-white/50 p-4">
               <header className="space-y-1">
@@ -573,6 +707,31 @@ export default function NewNotePage() {
             </div>
           </form>
         </section>
+        <NoteTagQuickEditor
+          open={tagManagerOpen}
+          onClose={() => setTagManagerOpen(false)}
+          userId={user.uid}
+          tags={noteTags}
+          onTagsChange={(nextTags) => {
+            setNoteTags(nextTags);
+            setTagStatus({ message: null, error: null, saving: false });
+          }}
+          onTagRenamed={(previousTag, nextTag) => {
+            setTags((current) =>
+              current.map((tag) => (tag === previousTag ? nextTag : tag))
+            );
+          }}
+          onTagDeleted={(target) => {
+            setTags((current) => current.filter((tag) => tag !== target));
+          }}
+          onStatus={(status) => {
+            setTagStatus({
+              message: status.message ?? null,
+              error: status.error ?? null,
+              saving: false,
+            });
+          }}
+        />
       </div>
     </main>
   );

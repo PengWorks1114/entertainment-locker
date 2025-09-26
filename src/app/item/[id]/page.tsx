@@ -36,7 +36,6 @@ import {
 } from "@/lib/insights";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
-import { NOTE_CATEGORY_OPTIONS, type NoteCategory } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_LANGUAGE_OPTIONS,
@@ -75,10 +74,6 @@ const updateFrequencyLabelMap = new Map(
 
 const progressTypeLabelMap = new Map(
   PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
-);
-
-const noteCategoryLabelMap = new Map(
-  NOTE_CATEGORY_OPTIONS.map((option) => [option.value, option.label])
 );
 
 const backButtonClass =
@@ -189,7 +184,6 @@ type LinkedNote = {
   id: string;
   title: string;
   summary: string | null;
-  category: NoteCategory;
   tags: string[];
   updatedMs: number;
   isFavorite: boolean;
@@ -768,11 +762,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
             const updatedAt = data?.updatedAt;
             const updatedMs =
               updatedAt instanceof Timestamp ? updatedAt.toMillis() : Date.now();
-            const categoryValue =
-              typeof data?.category === "string" &&
-              NOTE_CATEGORY_OPTIONS.some((option) => option.value === data.category)
-                ? (data.category as NoteCategory)
-                : "general";
             const tags = Array.isArray(data?.tags)
               ? data.tags.filter((value: unknown): value is string => typeof value === "string")
               : [];
@@ -783,7 +772,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                 typeof data?.description === "string" && data.description.trim().length > 0
                   ? data.description.trim()
                   : null,
-              category: categoryValue,
               tags,
               updatedMs,
               isFavorite: Boolean(data?.isFavorite),
@@ -2863,9 +2851,6 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
                         <p className="break-anywhere text-sm text-gray-600">{note.summary}</p>
                       ) : null}
                       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-600">
-                          {noteCategoryLabelMap.get(note.category) ?? "一般筆記"}
-                        </span>
                         <span>
                           更新：{formatDateTime(Timestamp.fromMillis(note.updatedMs))}
                         </span>

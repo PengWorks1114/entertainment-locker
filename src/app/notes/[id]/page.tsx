@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -18,7 +18,6 @@ import {
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { markdownPreviewHtml } from "@/lib/markdown";
-import { NOTE_CATEGORY_OPTIONS, type NoteCategory } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 type PageProps = {
@@ -31,7 +30,6 @@ type Note = {
   description: string | null;
   content: string;
   contentMarkdown: string | null;
-  category: NoteCategory;
   tags: string[];
   linkedCabinetIds: string[];
   linkedItemIds: string[];
@@ -43,12 +41,17 @@ type Note = {
 type CabinetOption = {
   id: string;
   name: string;
+  isLocked: boolean;
 };
 
 type ItemOption = {
   id: string;
   title: string;
   cabinetId: string | null;
+};
+
+type LinkedItemInfo = ItemOption & {
+  cabinetLocked: boolean;
 };
 
 type Feedback = {
@@ -129,6 +132,7 @@ export default function NoteDetailPage({ params }: PageProps) {
               return {
                 id: docSnap.id,
                 name: typeof data?.name === "string" ? data.name : "未命名櫃子",
+                isLocked: Boolean(data?.isLocked),
               } satisfies CabinetOption;
             })
             .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"))
@@ -215,11 +219,6 @@ export default function NoteDetailPage({ params }: PageProps) {
           typeof data.contentMarkdown === "string" && data.contentMarkdown.trim().length > 0
             ? data.contentMarkdown
             : null;
-        const categoryValue =
-          typeof data.category === "string" &&
-          NOTE_CATEGORY_OPTIONS.some((item) => item.value === data.category)
-            ? (data.category as NoteCategory)
-            : "general";
         const tags = Array.isArray(data.tags)
           ? data.tags.filter((value): value is string => typeof value === "string")
           : [];
@@ -238,7 +237,6 @@ export default function NoteDetailPage({ params }: PageProps) {
               : null,
           content: (data.content as string) || "",
           contentMarkdown: markdownContent,
-          category: categoryValue,
           tags,
           linkedCabinetIds,
           linkedItemIds,
@@ -257,14 +255,6 @@ export default function NoteDetailPage({ params }: PageProps) {
     return () => unsub();
   }, [authChecked, noteId, user]);
 
-  const categoryLabel = useMemo(() => {
-    if (!note) {
-      return "";
-    }
-    const found = NOTE_CATEGORY_OPTIONS.find((option) => option.value === note.category);
-    return found?.label ?? "一般筆記";
-  }, [note]);
-
   const linkedCabinets = useMemo(() => {
     if (!note) {
       return [] as CabinetOption[];
@@ -274,14 +264,46 @@ export default function NoteDetailPage({ params }: PageProps) {
       .filter((option): option is CabinetOption => Boolean(option));
   }, [cabinetOptions, note]);
 
+  const cabinetLockMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option.isLocked);
+    });
+    return map;
+  }, [cabinetOptions]);
+
+  const cabinetNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option.name);
+    });
+    return map;
+  }, [cabinetOptions]);
+
   const linkedItems = useMemo(() => {
     if (!note) {
-      return [] as ItemOption[];
+      return [] as LinkedItemInfo[];
     }
     return note.linkedItemIds
       .map((id) => itemOptions.find((option) => option.id === id))
-      .filter((option): option is ItemOption => Boolean(option));
-  }, [itemOptions, note]);
+      .filter((option): option is ItemOption => Boolean(option))
+      .map((option) => ({
+        ...option,
+        cabinetLocked: option.cabinetId ? cabinetLockMap.get(option.cabinetId) ?? false : false,
+      }));
+  }, [cabinetLockMap, itemOptions, note]);
+
+  const showCabinetLockedAlert = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.alert("因該櫃子目前處於鎖定狀態，因此無法訪問該櫃子");
+    }
+  }, []);
+
+  const showItemLockedAlert = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.alert("因該物件所屬櫃子目前處於鎖定狀態，因此無法訪問該物件");
+    }
+  }, []);
 
   const markdownPreview = useMemo(
     () => markdownPreviewHtml(note?.contentMarkdown ?? ""),
@@ -295,10 +317,6 @@ export default function NoteDetailPage({ params }: PageProps) {
     return (
       <dl className="grid gap-4 rounded-2xl border border-gray-200 bg-white/60 p-4 text-sm text-gray-600 sm:grid-cols-2">
         <div className="space-y-1">
-          <dt className="font-medium text-gray-700">筆記類別</dt>
-          <dd>{categoryLabel || "一般筆記"}</dd>
-        </div>
-        <div className="space-y-1">
           <dt className="font-medium text-gray-700">建立時間</dt>
           <dd>{formatDateTime(note.createdMs)}</dd>
         </div>
@@ -308,7 +326,7 @@ export default function NoteDetailPage({ params }: PageProps) {
         </div>
       </dl>
     );
-  }, [categoryLabel, note]);
+  }, [note]);
 
   async function handleDelete() {
     if (!note || deleting) {
@@ -436,16 +454,11 @@ export default function NoteDetailPage({ params }: PageProps) {
                 <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
                   {note.title || "(未命名筆記)"}
                 </h1>
-                <span className="inline-flex items-center gap-2">
-                  {note.isFavorite ? (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
-                      最愛
-                    </span>
-                  ) : null}
-                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700">
-                    {categoryLabel || "一般筆記"}
+                {note.isFavorite ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
+                    最愛
                   </span>
-                </span>
+                ) : null}
               </div>
               {note.description ? (
                 <p className="break-anywhere whitespace-pre-line text-sm text-gray-600">{note.description}</p>
@@ -517,12 +530,22 @@ export default function NoteDetailPage({ params }: PageProps) {
                 <ul className="flex flex-wrap gap-2">
                   {linkedCabinets.map((cabinet) => (
                     <li key={cabinet.id}>
-                      <Link
-                        href={`/cabinet/${cabinet.id}`}
-                        className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition hover:border-indigo-200 hover:bg-indigo-100"
-                      >
-                        {cabinet.name}
-                      </Link>
+                      {cabinet.isLocked ? (
+                        <button
+                          type="button"
+                          onClick={showCabinetLockedAlert}
+                          className="inline-flex items-center rounded-full border border-dashed border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-500"
+                        >
+                          🔒 {cabinet.name}
+                        </button>
+                      ) : (
+                        <Link
+                          href={`/cabinet/${cabinet.id}`}
+                          className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition hover:border-indigo-200 hover:bg-indigo-100"
+                        >
+                          {cabinet.name}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -536,19 +559,32 @@ export default function NoteDetailPage({ params }: PageProps) {
                 <ul className="flex flex-wrap gap-2">
                   {linkedItems.map((item) => {
                     const cabinetLabel = item.cabinetId
-                      ? cabinetOptions.find((cabinet) => cabinet.id === item.cabinetId)?.name
+                      ? cabinetNameMap.get(item.cabinetId) ?? null
                       : null;
                     return (
                       <li key={item.id}>
-                        <Link
-                          href={`/item/${item.id}`}
-                          className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 transition hover:border-sky-200 hover:bg-sky-100"
-                        >
-                          {item.title}
-                          {cabinetLabel ? (
-                            <span className="ml-1 text-[11px] text-sky-600">（{cabinetLabel}）</span>
-                          ) : null}
-                        </Link>
+                        {item.cabinetLocked ? (
+                          <button
+                            type="button"
+                            onClick={showItemLockedAlert}
+                            className="inline-flex items-center rounded-full border border-dashed border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-500"
+                          >
+                            🔒 {item.title}
+                            {cabinetLabel ? (
+                              <span className="ml-1 text-[11px] text-sky-500">（{cabinetLabel}）</span>
+                            ) : null}
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/item/${item.id}`}
+                            className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 transition hover:border-sky-200 hover:bg-sky-100"
+                          >
+                            {item.title}
+                            {cabinetLabel ? (
+                              <span className="ml-1 text-[11px] text-sky-600">（{cabinetLabel}）</span>
+                            ) : null}
+                          </Link>
+                        )}
                       </li>
                     );
                   })}

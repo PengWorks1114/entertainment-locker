@@ -1,10 +1,14 @@
-export const NOTE_CATEGORY_OPTIONS = [
-  { value: "general", label: "一般筆記" },
-  { value: "progress", label: "進度心得" },
-  { value: "insight", label: "觀後感" },
-  { value: "reference", label: "資料整理" },
-] as const;
-
-export type NoteCategory = (typeof NOTE_CATEGORY_OPTIONS)[number]["value"];
-
 export const NOTE_TAG_LIMIT = 20;
+
+export function normalizeNoteTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map((tag) => String(tag ?? "").trim())
+        .filter((tag): tag is string => tag.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
