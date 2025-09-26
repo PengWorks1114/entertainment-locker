@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, Timestamp, where } from "firebase/firestore";
 
@@ -66,6 +66,7 @@ function formatDateTime(ms: number): string {
 
 export default function NotesPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialCabinetId = searchParams.get("cabinetId");
   const initialItemId = searchParams.get("itemId");
   const initialTag = searchParams.get("tag");
@@ -483,12 +484,17 @@ export default function NotesPage() {
                           🔒 櫃：{name}
                         </button>
                       ) : (
-                        <Link
-                          href={`/cabinet/${cabinetId}`}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(`/cabinet/${cabinetId}`);
+                          }}
                           className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-600 transition hover:bg-indigo-100"
                         >
                           櫃：{name}
-                        </Link>
+                        </button>
                       )}
                     </span>
                   );
@@ -518,15 +524,20 @@ export default function NotesPage() {
                           ) : null}
                         </button>
                       ) : (
-                        <Link
-                          href={`/item/${option.id}`}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(`/item/${option.id}`);
+                          }}
                           className="inline-flex items-center rounded-full bg-sky-100 px-2 py-1 font-medium text-sky-600 transition hover:bg-sky-100/80"
                         >
                           作：{option.title}
                           {cabinetLabel ? (
                             <span className="ml-1 text-[11px] text-sky-600">（{cabinetLabel}）</span>
                           ) : null}
-                        </Link>
+                        </button>
                       )}
                     </span>
                   );
@@ -549,7 +560,17 @@ export default function NotesPage() {
         ))}
       </ul>
     );
-  }, [cabinetLockMap, cabinetNameMap, hasFilteredNotes, hasNotes, itemOptionMap, paginatedNotes, showCabinetLockedAlert, showItemLockedAlert]);
+  }, [
+    cabinetLockMap,
+    cabinetNameMap,
+    hasFilteredNotes,
+    hasNotes,
+    itemOptionMap,
+    paginatedNotes,
+    router,
+    showCabinetLockedAlert,
+    showItemLockedAlert,
+  ]);
 
   if (!authChecked) {
     return (

@@ -13,13 +13,15 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseDb } from "@/lib/firebase";
-import { normalizeNoteTags } from "@/lib/note";
+import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
 
 const inputClass =
   "h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none";
 
 const actionButtonClass =
   "inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm transition";
+
+const TAG_MAX_LENGTH = 50;
 
 type StatusState = { message?: string | null; error?: string | null };
 
@@ -178,16 +180,36 @@ export default function NoteTagQuickEditor({
     if (!value) {
       setError("請輸入標籤名稱");
       setMessage(null);
+      onStatus?.({ message: null, error: "請輸入標籤名稱" });
+      return;
+    }
+    if (value.length > TAG_MAX_LENGTH) {
+      const errorMessage = `標籤長度不可超過 ${TAG_MAX_LENGTH} 字`;
+      setError(errorMessage);
+      setMessage(null);
+      onStatus?.({ message: null, error: errorMessage });
+      return;
+    }
+    const normalizedValue = value.toLowerCase();
+    if (localTags.some((tag) => tag.toLowerCase() === normalizedValue)) {
+      const messageText = `已選取 #${value}`;
+      setError(null);
+      setMessage(messageText);
+      onStatus?.({ message: messageText, error: null });
+      setTagInput("");
+      return;
+    }
+    if (localTags.length >= NOTE_TAG_LIMIT) {
+      const errorMessage = `最多僅能維護 ${NOTE_TAG_LIMIT} 個筆記標籤`;
+      setError(errorMessage);
+      setMessage(null);
+      onStatus?.({ message: null, error: errorMessage });
       return;
     }
     if (!userId) {
       setError("請先登入");
       setMessage(null);
-      return;
-    }
-    if (localTags.includes(value)) {
-      setError("已有相同標籤");
-      setMessage(null);
+      onStatus?.({ message: null, error: "請先登入" });
       return;
     }
     setSaving(true);
@@ -220,16 +242,28 @@ export default function NoteTagQuickEditor({
     if (!nextValue) {
       setError("標籤不可為空");
       setMessage(null);
+      onStatus?.({ message: null, error: "標籤不可為空" });
+      return;
+    }
+    if (nextValue.length > TAG_MAX_LENGTH) {
+      const errorMessage = `標籤長度不可超過 ${TAG_MAX_LENGTH} 字`;
+      setError(errorMessage);
+      setMessage(null);
+      onStatus?.({ message: null, error: errorMessage });
       return;
     }
     if (!userId) {
       setError("請先登入");
       setMessage(null);
+      onStatus?.({ message: null, error: "請先登入" });
       return;
     }
-    if (nextValue !== target && localTags.includes(nextValue)) {
+    const normalizedTarget = target.toLowerCase();
+    const normalizedNext = nextValue.toLowerCase();
+    if (normalizedNext !== normalizedTarget && localTags.some((tag) => tag.toLowerCase() === normalizedNext)) {
       setError("已有相同標籤");
       setMessage(null);
+      onStatus?.({ message: null, error: "已有相同標籤" });
       return;
     }
     setSaving(true);
