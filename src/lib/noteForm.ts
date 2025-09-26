@@ -144,15 +144,21 @@ export function buildNoteCreatePayload(
   const payload: DocumentData = {
     uid,
     title: sanitized.title,
-    tags: sanitized.tags,
-    linkedCabinetIds: sanitized.linkedCabinetIds,
-    linkedItemIds: sanitized.linkedItemIds,
     isFavorite,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
   if (sanitized.description !== null) {
     payload.description = sanitized.description;
+  }
+  if (sanitized.tags.length > 0) {
+    payload.tags = sanitized.tags;
+  }
+  if (sanitized.linkedCabinetIds.length > 0) {
+    payload.linkedCabinetIds = sanitized.linkedCabinetIds;
+  }
+  if (sanitized.linkedItemIds.length > 0) {
+    payload.linkedItemIds = sanitized.linkedItemIds;
   }
   payload.content = sanitized.contentHtml;
   return payload;
@@ -167,9 +173,6 @@ export function buildNoteUpdatePayload(
   const payload: Record<string, unknown> = {
     uid,
     title: sanitized.title,
-    tags: sanitized.tags,
-    linkedCabinetIds: sanitized.linkedCabinetIds,
-    linkedItemIds: sanitized.linkedItemIds,
     isFavorite,
     updatedAt: serverTimestamp(),
   };
@@ -178,6 +181,24 @@ export function buildNoteUpdatePayload(
     payload.description = sanitized.description;
   } else {
     payload.description = deleteField();
+  }
+
+  if (sanitized.tags.length > 0) {
+    payload.tags = sanitized.tags;
+  } else {
+    payload.tags = deleteField();
+  }
+
+  if (sanitized.linkedCabinetIds.length > 0) {
+    payload.linkedCabinetIds = sanitized.linkedCabinetIds;
+  } else {
+    payload.linkedCabinetIds = deleteField();
+  }
+
+  if (sanitized.linkedItemIds.length > 0) {
+    payload.linkedItemIds = sanitized.linkedItemIds;
+  } else {
+    payload.linkedItemIds = deleteField();
   }
 
   payload.content = sanitized.contentHtml;

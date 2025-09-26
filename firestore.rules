@@ -15,56 +15,43 @@ service cloud.firestore {
       return field == null || isString(field, maxLen);
     }
 
-    function isStringList(list, minLen, maxLen) {
+    function isStringList(list, maxItems, minLen, maxLen) {
       return list is list
-        && list.size() == list.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size();
+        && list.size() <= maxItems
+        && list.size() == list.where(item,
+          item is string && item.size() >= minLen && item.size() <= maxLen
+        ).size();
     }
 
-    function isOptionalBoundedStringList(field, maxItems, maxLen) {
-      return field == null
-        || (field is list
-          && field.size() <= maxItems
-          && field.size() == field.where(item,
-            item is string && item.size() >= 1 && item.size() <= maxLen
-          ).size());
+    function isOptionalStringList(field, maxItems, minLen, maxLen) {
+      return field == null || isStringList(field, maxItems, minLen, maxLen);
     }
 
     function isTimestamp(value) {
       return value is timestamp || value == request.time;
     }
 
-    function isValidNoteBase(data) {
+    function hasNoteContent(data) {
+      return (
+          ("content" in data && isString(data.content, 60000) && data.content.size() > 0)
+        || ("contentMarkdown" in data && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
+      );
+    }
+
+    function isValidNoteData(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
-        && (!("content" in data) || isOptionalString(data.content, 60000))
+        && (!("content" in data) || isString(data.content, 60000))
+        && (!("contentMarkdown" in data) || isString(data.contentMarkdown, 60000))
+        && hasNoteContent(data)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
-        && (!("category" in data)
-            || data.category == null
-            || isString(data.category, 100))
-        && (!("tags" in data) || isOptionalBoundedStringList(data.tags, 500, 100))
-        && (!("linkedCabinetIds" in data)
-            || isOptionalBoundedStringList(data.linkedCabinetIds, 50, 100))
-        && (!("linkedItemIds" in data)
-            || isOptionalBoundedStringList(data.linkedItemIds, 50, 100));
-    }
-
-    function isValidNoteCreate(data) {
-      return isValidNoteBase(data)
-        && ("createdAt" in data)
-        && ("updatedAt" in data)
-        && isTimestamp(data.createdAt)
-        && isTimestamp(data.updatedAt)
-        && ("content" in data)
-        && isNonEmptyString(data.content, 60000);
-    }
-
-    function isValidNoteUpdate(data) {
-      return isValidNoteBase(data)
+        && ("category" in data ? (data.category == null || isString(data.category, 100)) : true)
+        && (!("tags" in data) || isStringList(data.tags, 500, 1, 100))
+        && (!("linkedCabinetIds" in data) || isStringList(data.linkedCabinetIds, 50, 1, 100))
+        && (!("linkedItemIds" in data) || isStringList(data.linkedItemIds, 50, 1, 100))
         && (!("createdAt" in data) || isTimestamp(data.createdAt))
-        && (!("updatedAt" in data) || isTimestamp(data.updatedAt))
-        && ("content" in data)
-        && isNonEmptyString(data.content, 60000);
+        && (!("updatedAt" in data) || isTimestamp(data.updatedAt));
     }
 
     // 櫃子
@@ -110,14 +97,14 @@ service cloud.firestore {
       allow read: if authed() && resource.data.uid == request.auth.uid;
       allow create: if authed()
                     && request.resource.data.uid == request.auth.uid
-                    && isValidNoteCreate(request.resource.data);
+                    && isValidNoteData(request.resource.data)
+                    && ("createdAt" in request.resource.data)
+                    && ("updatedAt" in request.resource.data);
       allow update: if authed()
                     && resource.data.uid == request.auth.uid
-                    && request.resource.data.uid == resource.data.uid
-                    && isValidNoteUpdate(request.resource.data)
-                    && (!("createdAt" in resource.data)
-                        || (("createdAt" in request.resource.data)
-                            && request.resource.data.createdAt == resource.data.createdAt));
+                    && request.resource.data.uid == request.auth.uid
+                    && isValidNoteData(request.resource.data)
+                    && ("createdAt" in resource.data ? ("createdAt" in request.resource.data && request.resource.data.createdAt == resource.data.createdAt) : true);
       allow delete: if authed() && resource.data.uid == request.auth.uid;
     }
 
