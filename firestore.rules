@@ -7,20 +7,47 @@ service cloud.firestore {
       return field is string && field.size() >= 1 && field.size() <= maxLen;
     }
 
+    function isString(field, maxLen) {
+      return field is string && field.size() <= maxLen;
+    }
+
     function isOptionalString(field, maxLen) {
-      return field == null || (field is string && field.size() <= maxLen);
+      return field == null || isString(field, maxLen);
     }
 
     function isTimestamp(value) {
       return value is timestamp;
     }
 
+    function hasNoteContent(data) {
+      return ("content" in data && isString(data.content, 60000))
+        && (
+          data.content.size() > 0 ||
+          (("contentMarkdown" in data) && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
+        );
+    }
+
     function isValidNoteData(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
-        && isNonEmptyString(data.content, 60000)
+        && ("content" in data && isString(data.content, 60000))
+        && (!("contentMarkdown" in data) || isString(data.contentMarkdown, 60000))
+        && hasNoteContent(data)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
+        && ("category" in data ? (data.category == null || data.category in ["general", "progress", "insight", "reference"]) : true)
+        && ("tags" in data ? data.tags is list
+             && data.tags.size() <= 20
+             && data.tags.size() == data.tags.where(tag => tag is string && tag.size() >= 1 && tag.size() <= 50).size()
+             : true)
+        && ("linkedCabinetIds" in data ? data.linkedCabinetIds is list
+             && data.linkedCabinetIds.size() <= 50
+             && data.linkedCabinetIds.size() == data.linkedCabinetIds.where(cabinetId => cabinetId is string && cabinetId.size() >= 1 && cabinetId.size() <= 100).size()
+             : true)
+        && ("linkedItemIds" in data ? data.linkedItemIds is list
+             && data.linkedItemIds.size() <= 50
+             && data.linkedItemIds.size() == data.linkedItemIds.where(itemId => itemId is string && itemId.size() >= 1 && itemId.size() <= 100).size()
+             : true)
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
     }
