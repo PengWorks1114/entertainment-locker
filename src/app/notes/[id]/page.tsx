@@ -4,9 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { deleteDoc, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { markdownPreviewHtml } from "@/lib/markdown";
+import { NOTE_CATEGORY_OPTIONS, type NoteCategory } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 type PageProps = {
@@ -18,9 +30,25 @@ type Note = {
   title: string;
   description: string | null;
   content: string;
+  contentMarkdown: string | null;
+  category: NoteCategory;
+  tags: string[];
+  linkedCabinetIds: string[];
+  linkedItemIds: string[];
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+};
+
+type CabinetOption = {
+  id: string;
+  name: string;
+};
+
+type ItemOption = {
+  id: string;
+  title: string;
+  cabinetId: string | null;
 };
 
 type Feedback = {
@@ -57,6 +85,9 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [favoriting, setFavoriting] = useState(false);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
+  const [viewMode, setViewMode] = useState<"rich" | "markdown">("rich");
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -73,6 +104,73 @@ export default function NoteDetailPage({ params }: PageProps) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetOptions([]);
+      setItemOptions([]);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    const cabinetQuery = query(collection(db, "cabinet"), where("uid", "==", user.uid));
+    const itemQuery = query(collection(db, "item"), where("uid", "==", user.uid));
+
+    const unsubCabinet = onSnapshot(
+      cabinetQuery,
+      (snapshot) => {
+        setCabinetOptions(
+          snapshot.docs
+            .map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                name: typeof data?.name === "string" ? data.name : "未命名櫃子",
+              } satisfies CabinetOption;
+            })
+            .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"))
+        );
+      },
+      () => {
+        setFeedback({ type: "error", message: "載入櫃子資訊時發生錯誤" });
+      }
+    );
+
+    const unsubItem = onSnapshot(
+      itemQuery,
+      (snapshot) => {
+        setItemOptions(
+          snapshot.docs
+            .map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                title:
+                  typeof data?.titleZh === "string" && data.titleZh.trim()
+                    ? (data.titleZh as string)
+                    : "未命名作品",
+                cabinetId:
+                  typeof data?.cabinetId === "string" && data.cabinetId.trim().length > 0
+                    ? (data.cabinetId as string)
+                    : null,
+              } satisfies ItemOption;
+            })
+            .sort((a, b) => a.title.localeCompare(b.title, "zh-Hant"))
+        );
+      },
+      () => {
+        setFeedback({ type: "error", message: "載入作品資訊時發生錯誤" });
+      }
+    );
+
+    return () => {
+      unsubCabinet();
+      unsubItem();
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!authChecked) {
@@ -113,6 +211,24 @@ export default function NoteDetailPage({ params }: PageProps) {
         const updatedAt = data.updatedAt;
         const createdMs = createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
         const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
+        const markdownContent =
+          typeof data.contentMarkdown === "string" && data.contentMarkdown.trim().length > 0
+            ? data.contentMarkdown
+            : null;
+        const categoryValue =
+          typeof data.category === "string" &&
+          NOTE_CATEGORY_OPTIONS.some((item) => item.value === data.category)
+            ? (data.category as NoteCategory)
+            : "general";
+        const tags = Array.isArray(data.tags)
+          ? data.tags.filter((value): value is string => typeof value === "string")
+          : [];
+        const linkedCabinetIds = Array.isArray(data.linkedCabinetIds)
+          ? data.linkedCabinetIds.filter((value): value is string => typeof value === "string")
+          : [];
+        const linkedItemIds = Array.isArray(data.linkedItemIds)
+          ? data.linkedItemIds.filter((value): value is string => typeof value === "string")
+          : [];
         setNote({
           id: snap.id,
           title: (data.title as string) || "",
@@ -121,6 +237,11 @@ export default function NoteDetailPage({ params }: PageProps) {
               ? data.description.trim()
               : null,
           content: (data.content as string) || "",
+          contentMarkdown: markdownContent,
+          category: categoryValue,
+          tags,
+          linkedCabinetIds,
+          linkedItemIds,
           isFavorite: Boolean(data.isFavorite),
           createdMs,
           updatedMs,
@@ -136,12 +257,47 @@ export default function NoteDetailPage({ params }: PageProps) {
     return () => unsub();
   }, [authChecked, noteId, user]);
 
+  const categoryLabel = useMemo(() => {
+    if (!note) {
+      return "";
+    }
+    const found = NOTE_CATEGORY_OPTIONS.find((option) => option.value === note.category);
+    return found?.label ?? "一般筆記";
+  }, [note]);
+
+  const linkedCabinets = useMemo(() => {
+    if (!note) {
+      return [] as CabinetOption[];
+    }
+    return note.linkedCabinetIds
+      .map((id) => cabinetOptions.find((option) => option.id === id))
+      .filter((option): option is CabinetOption => Boolean(option));
+  }, [cabinetOptions, note]);
+
+  const linkedItems = useMemo(() => {
+    if (!note) {
+      return [] as ItemOption[];
+    }
+    return note.linkedItemIds
+      .map((id) => itemOptions.find((option) => option.id === id))
+      .filter((option): option is ItemOption => Boolean(option));
+  }, [itemOptions, note]);
+
+  const markdownPreview = useMemo(
+    () => markdownPreviewHtml(note?.contentMarkdown ?? ""),
+    [note?.contentMarkdown]
+  );
+
   const metaInfo = useMemo(() => {
     if (!note) {
       return null;
     }
     return (
       <dl className="grid gap-4 rounded-2xl border border-gray-200 bg-white/60 p-4 text-sm text-gray-600 sm:grid-cols-2">
+        <div className="space-y-1">
+          <dt className="font-medium text-gray-700">筆記類別</dt>
+          <dd>{categoryLabel || "一般筆記"}</dd>
+        </div>
         <div className="space-y-1">
           <dt className="font-medium text-gray-700">建立時間</dt>
           <dd>{formatDateTime(note.createdMs)}</dd>
@@ -152,7 +308,7 @@ export default function NoteDetailPage({ params }: PageProps) {
         </div>
       </dl>
     );
-  }, [note]);
+  }, [categoryLabel, note]);
 
   async function handleDelete() {
     if (!note || deleting) {
@@ -280,14 +436,31 @@ export default function NoteDetailPage({ params }: PageProps) {
                 <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
                   {note.title || "(未命名筆記)"}
                 </h1>
-                {note.isFavorite ? (
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
-                    最愛
+                <span className="inline-flex items-center gap-2">
+                  {note.isFavorite ? (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
+                      最愛
+                    </span>
+                  ) : null}
+                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700">
+                    {categoryLabel || "一般筆記"}
                   </span>
-                ) : null}
+                </span>
               </div>
               {note.description ? (
                 <p className="break-anywhere whitespace-pre-line text-sm text-gray-600">{note.description}</p>
+              ) : null}
+              {note.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {note.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
               ) : null}
             </div>
             <div className="flex flex-wrap gap-3 sm:flex-none">
@@ -318,12 +491,118 @@ export default function NoteDetailPage({ params }: PageProps) {
           </div>
         </header>
         {metaInfo}
+        <section className="space-y-4 rounded-2xl border border-gray-200 bg-white/60 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900">整理資訊</h2>
+          <div className="space-y-4 text-sm text-gray-700">
+            <div className="space-y-2">
+              <h3 className="font-medium text-gray-800">標籤</h3>
+              {note.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {note.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">尚未新增標籤。</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-medium text-gray-800">櫃子</h3>
+              {linkedCabinets.length > 0 ? (
+                <ul className="flex flex-wrap gap-2">
+                  {linkedCabinets.map((cabinet) => (
+                    <li key={cabinet.id}>
+                      <Link
+                        href={`/cabinet/${cabinet.id}`}
+                        className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition hover:border-indigo-200 hover:bg-indigo-100"
+                      >
+                        {cabinet.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-gray-500">尚未連結任何櫃子。</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-medium text-gray-800">作品</h3>
+              {linkedItems.length > 0 ? (
+                <ul className="flex flex-wrap gap-2">
+                  {linkedItems.map((item) => {
+                    const cabinetLabel = item.cabinetId
+                      ? cabinetOptions.find((cabinet) => cabinet.id === item.cabinetId)?.name
+                      : null;
+                    return (
+                      <li key={item.id}>
+                        <Link
+                          href={`/item/${item.id}`}
+                          className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 transition hover:border-sky-200 hover:bg-sky-100"
+                        >
+                          {item.title}
+                          {cabinetLabel ? (
+                            <span className="ml-1 text-[11px] text-sky-600">（{cabinetLabel}）</span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-xs text-gray-500">尚未連結任何作品。</p>
+              )}
+            </div>
+          </div>
+        </section>
         <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">筆記內容</h2>
-          <div
-            className="rich-text-content text-base leading-relaxed text-gray-700"
-            dangerouslySetInnerHTML={{ __html: note.content }}
-          />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">筆記內容</h2>
+            <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-1 py-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode("rich")}
+                className={
+                  viewMode === "rich"
+                    ? "rounded-full bg-gray-900 px-3 py-1 font-medium text-white"
+                    : "rounded-full px-3 py-1 text-gray-600 hover:text-gray-800"
+                }
+              >
+                富文本
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("markdown")}
+                className={
+                  viewMode === "markdown"
+                    ? "rounded-full bg-gray-900 px-3 py-1 font-medium text-white"
+                    : "rounded-full px-3 py-1 text-gray-600 hover:text-gray-800"
+                }
+                disabled={!note.contentMarkdown}
+              >
+                Markdown
+              </button>
+            </div>
+          </div>
+          {viewMode === "markdown" ? (
+            note.contentMarkdown ? (
+              <div
+                className="markdown-preview text-base leading-relaxed text-gray-700"
+                dangerouslySetInnerHTML={{ __html: markdownPreview }}
+              />
+            ) : (
+              <p className="text-sm text-gray-500">尚未提供 Markdown 內容，已顯示富文本版本。</p>
+            )
+          ) : (
+            <div
+              className="rich-text-content text-base leading-relaxed text-gray-700"
+              dangerouslySetInnerHTML={{ __html: note.content }}
+            />
+          )}
         </section>
         {feedback && feedback.type === "error" ? (
           <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

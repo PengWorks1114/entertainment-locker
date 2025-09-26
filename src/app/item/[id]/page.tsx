@@ -5,6 +5,7 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
+  arrayRemove,
   collection,
   doc,
   getDoc,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/insights";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { calculateNextUpdateDate } from "@/lib/item-utils";
+import { NOTE_CATEGORY_OPTIONS, type NoteCategory } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 import {
   ITEM_LANGUAGE_OPTIONS,
@@ -73,6 +75,10 @@ const updateFrequencyLabelMap = new Map(
 
 const progressTypeLabelMap = new Map(
   PROGRESS_TYPE_OPTIONS.map((option) => [option.value, option.label])
+);
+
+const noteCategoryLabelMap = new Map(
+  NOTE_CATEGORY_OPTIONS.map((option) => [option.value, option.label])
 );
 
 const backButtonClass =
@@ -179,6 +185,16 @@ type NoteFeedback = {
   message: string;
 };
 
+type LinkedNote = {
+  id: string;
+  title: string;
+  summary: string | null;
+  category: NoteCategory;
+  tags: string[];
+  updatedMs: number;
+  isFavorite: boolean;
+};
+
 type ProgressDraftState = {
   platform: string;
   type: ProgressType;
@@ -238,6 +254,11 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
+  const [linkedNotes, setLinkedNotes] = useState<LinkedNote[]>([]);
+  const [linkedNotesLoading, setLinkedNotesLoading] = useState(true);
+  const [linkedNotesError, setLinkedNotesError] = useState<string | null>(null);
+  const [linkedNotesFeedback, setLinkedNotesFeedback] = useState<NoteFeedback | null>(null);
+  const [unlinkingNoteId, setUnlinkingNoteId] = useState<string | null>(null);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const titleZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -671,6 +692,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   }, [noteFeedback]);
 
   useEffect(() => {
+    if (!linkedNotesFeedback) return;
+    const timer = setTimeout(() => setLinkedNotesFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [linkedNotesFeedback]);
+
+  useEffect(() => {
     if (!appearanceFeedback) return;
     const timer = setTimeout(() => setAppearanceFeedback(null), 3000);
     return () => clearTimeout(timer);
@@ -705,6 +732,76 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const timer = setTimeout(() => setGeneralNoteFeedback(null), 3000);
     return () => clearTimeout(timer);
   }, [generalNoteFeedback]);
+
+  useEffect(() => {
+    if (!authChecked) {
+      return;
+    }
+    if (!itemId) {
+      setLinkedNotes([]);
+      setLinkedNotesLoading(false);
+      return;
+    }
+    if (!user) {
+      setLinkedNotes([]);
+      setLinkedNotesLoading(false);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setLinkedNotesError("Firebase 尚未設定");
+      setLinkedNotesLoading(false);
+      return;
+    }
+    setLinkedNotesLoading(true);
+    const notesQuery = query(
+      collection(db, "note"),
+      where("uid", "==", user.uid),
+      where("linkedItemIds", "array-contains", itemId)
+    );
+    const unsubscribe = onSnapshot(
+      notesQuery,
+      (snapshot) => {
+        const rows: LinkedNote[] = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const updatedAt = data?.updatedAt;
+            const updatedMs =
+              updatedAt instanceof Timestamp ? updatedAt.toMillis() : Date.now();
+            const categoryValue =
+              typeof data?.category === "string" &&
+              NOTE_CATEGORY_OPTIONS.some((option) => option.value === data.category)
+                ? (data.category as NoteCategory)
+                : "general";
+            const tags = Array.isArray(data?.tags)
+              ? data.tags.filter((value: unknown): value is string => typeof value === "string")
+              : [];
+            return {
+              id: docSnap.id,
+              title: (data?.title as string) || "",
+              summary:
+                typeof data?.description === "string" && data.description.trim().length > 0
+                  ? data.description.trim()
+                  : null,
+              category: categoryValue,
+              tags,
+              updatedMs,
+              isFavorite: Boolean(data?.isFavorite),
+            } satisfies LinkedNote;
+          })
+          .sort((a, b) => b.updatedMs - a.updatedMs);
+        setLinkedNotes(rows);
+        setLinkedNotesError(null);
+        setLinkedNotesLoading(false);
+      },
+      (err) => {
+        console.error("載入連結筆記時發生錯誤", err);
+        setLinkedNotesError("載入連結筆記時發生錯誤");
+        setLinkedNotesLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [authChecked, itemId, user]);
 
   const openProgressEditor = () => {
     if (!primary) {
@@ -1435,6 +1532,36 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       });
     } finally {
       setNoteAddPending(false);
+    }
+  }
+
+  async function handleUnlinkNote(noteId: string) {
+    if (!itemId) {
+      setLinkedNotesFeedback({ type: "error", message: "找不到物件資料" });
+      return;
+    }
+    if (!user) {
+      setLinkedNotesFeedback({ type: "error", message: "請先登入" });
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setLinkedNotesFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    setUnlinkingNoteId(noteId);
+    setLinkedNotesFeedback(null);
+    try {
+      await updateDoc(doc(db, "note", noteId), {
+        linkedItemIds: arrayRemove(itemId),
+        updatedAt: serverTimestamp(),
+      });
+      setLinkedNotesFeedback({ type: "success", message: "已解除連結" });
+    } catch (err) {
+      console.error("解除筆記連結時發生錯誤", err);
+      setLinkedNotesFeedback({ type: "error", message: "解除筆記連結時發生錯誤" });
+    } finally {
+      setUnlinkingNoteId(null);
     }
   }
 
@@ -2667,6 +2794,120 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
             )
           ) : null}
+        </section>
+
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold text-gray-900">已連結筆記</h2>
+              <p className="text-sm text-gray-500">快速檢視與此作品關聯的筆記記錄。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:flex-none">
+              <Link
+                href={`/notes?itemId=${itemId}`}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+              >
+                查看筆記庫
+              </Link>
+              <Link
+                href={`/notes/new?itemId=${itemId}&category=insight`}
+                className={buttonClass({ variant: "primary", size: "sm" })}
+              >
+                新增並連結
+              </Link>
+            </div>
+          </div>
+          {linkedNotesFeedback ? (
+            <div
+              className={`rounded-xl px-3 py-2 text-sm ${
+                linkedNotesFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700"
+              }`}
+            >
+              {linkedNotesFeedback.message}
+            </div>
+          ) : null}
+          {linkedNotesError ? (
+            <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+              {linkedNotesError}
+            </div>
+          ) : null}
+          {linkedNotesLoading ? (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-white/70 p-6 text-center text-sm text-gray-500">
+              正在載入連結的筆記…
+            </div>
+          ) : linkedNotes.length > 0 ? (
+            <ul className="space-y-3">
+              {linkedNotes.map((note) => (
+                <li
+                  key={note.id}
+                  className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {note.isFavorite ? (
+                          <span className="text-amber-500" aria-hidden="true">
+                            ★
+                          </span>
+                        ) : null}
+                        <Link
+                          href={`/notes/${note.id}`}
+                          className="break-anywhere text-base font-semibold text-gray-900 hover:text-gray-700"
+                        >
+                          {note.title || "(未命名筆記)"}
+                        </Link>
+                      </div>
+                      {note.summary ? (
+                        <p className="break-anywhere text-sm text-gray-600">{note.summary}</p>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-600">
+                          {noteCategoryLabelMap.get(note.category) ?? "一般筆記"}
+                        </span>
+                        <span>
+                          更新：{formatDateTime(Timestamp.fromMillis(note.updatedMs))}
+                        </span>
+                      </div>
+                      {note.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {note.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2 sm:flex-none">
+                      <Link
+                        href={`/notes/${note.id}`}
+                        className={buttonClass({ variant: "secondary", size: "sm" })}
+                      >
+                        開啟筆記
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => handleUnlinkNote(note.id)}
+                        className={buttonClass({ variant: "outlineDanger", size: "sm" })}
+                        disabled={unlinkingNoteId === note.id}
+                      >
+                        {unlinkingNoteId === note.id ? "處理中…" : "解除連結"}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-white/70 p-6 text-center text-sm text-gray-500">
+              尚未連結任何筆記，透過上方按鈕新增或挑選。
+            </div>
+          )}
         </section>
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
