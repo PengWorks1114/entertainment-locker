@@ -22,10 +22,9 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import {
-  fetchOpenGraphImage,
-  fetchOpenGraphMetadata,
-} from "@/lib/opengraph";
+import { fetchOpenGraphImage } from "@/lib/opengraph";
+import { fetchExternalItemData } from "@/lib/external-metadata";
+import type { ExternalItemMetadata } from "@/lib/external-metadata-types";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType, ItemLanguage } from "@/lib/types";
 import { ITEM_LANGUAGE_OPTIONS, ITEM_LANGUAGE_VALUES } from "@/lib/types";
@@ -466,10 +465,10 @@ export default function QuickAddItemPage() {
     }
 
     let titleZh = form.titleZh.trim();
-    const titleAlt = form.titleAlt.trim();
-    const author = form.author.trim();
-    const languageValue = form.language;
-    if (languageValue && !ITEM_LANGUAGE_VALUES.includes(languageValue)) {
+    let titleAlt = form.titleAlt.trim();
+    let author = form.author.trim();
+    let resolvedLanguage = form.language;
+    if (resolvedLanguage && !ITEM_LANGUAGE_VALUES.includes(resolvedLanguage)) {
       setError("請選擇有效的語言");
       return;
     }
@@ -487,17 +486,92 @@ export default function QuickAddItemPage() {
     setSaving(true);
     setError(null);
     try {
-      if (!titleZh) {
-        if (sourceUrl) {
-          const metadata = await fetchOpenGraphMetadata(sourceUrl);
-          const fetchedTitle = metadata?.title?.trim();
-          const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
-          titleZh = resolvedTitle;
-          setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
-        } else {
-          titleZh = QUICK_ADD_DEFAULT_TITLE;
-          setForm((prev) => ({ ...prev, titleZh: QUICK_ADD_DEFAULT_TITLE }));
+      const autoUpdates: Partial<FormState> = {};
+      let externalMetadata: ExternalItemMetadata | null = null;
+      if (sourceUrl) {
+        externalMetadata = await fetchExternalItemData(sourceUrl);
+      }
+
+      let resolvedThumbUrl = thumbUrlInput;
+
+      if (!titleZh && externalMetadata?.primaryTitle) {
+        titleZh = externalMetadata.primaryTitle;
+        autoUpdates.titleZh = externalMetadata.primaryTitle;
+      }
+
+      if (!titleAlt && externalMetadata?.originalTitle) {
+        titleAlt = externalMetadata.originalTitle;
+        autoUpdates.titleAlt = externalMetadata.originalTitle;
+      } else if (!titleAlt && externalMetadata?.alternateTitles?.length) {
+        const altCandidate =
+          externalMetadata.alternateTitles.find((entry) => entry !== titleZh) ??
+          externalMetadata.alternateTitles[0];
+        if (altCandidate) {
+          titleAlt = altCandidate;
+          autoUpdates.titleAlt = altCandidate;
         }
+      }
+
+      if (!author && externalMetadata?.author) {
+        author = externalMetadata.author;
+        autoUpdates.author = externalMetadata.author;
+      }
+
+      if (externalMetadata?.language) {
+        const metadataLanguage = externalMetadata.language;
+        if (
+          !resolvedLanguage ||
+          resolvedLanguage === "" ||
+          resolvedLanguage === "zh" ||
+          resolvedLanguage === metadataLanguage
+        ) {
+          if (resolvedLanguage !== metadataLanguage) {
+            resolvedLanguage = metadataLanguage;
+            autoUpdates.language = metadataLanguage;
+          }
+        }
+      }
+
+      if (!progressValueInput && externalMetadata?.episode) {
+        const { number, raw } = externalMetadata.episode;
+        if (typeof number === "number" && Number.isFinite(number)) {
+          parsedProgressValue = number;
+          autoUpdates.progressValue = String(number);
+        } else if (typeof raw === "string") {
+          const numericMatch = raw.match(/(\d{1,4})/);
+          if (numericMatch) {
+            const numeric = Number.parseInt(numericMatch[1] ?? "", 10);
+            if (Number.isFinite(numeric)) {
+              parsedProgressValue = numeric;
+              autoUpdates.progressValue = String(numeric);
+            }
+          }
+        }
+      }
+
+      if (!resolvedThumbUrl && externalMetadata?.image) {
+        resolvedThumbUrl = externalMetadata.image;
+        if (resolvedThumbUrl) {
+          autoUpdates.thumbUrl = resolvedThumbUrl;
+        }
+      }
+
+      if (!titleZh) {
+        const fallbackTitle = externalMetadata?.primaryTitle ?? QUICK_ADD_DEFAULT_TITLE;
+        titleZh = fallbackTitle;
+        autoUpdates.titleZh = fallbackTitle;
+      }
+
+      if (!resolvedThumbUrl && sourceUrl) {
+        const autoThumb = await fetchOpenGraphImage(sourceUrl);
+        if (autoThumb) {
+          resolvedThumbUrl = autoThumb;
+          autoUpdates.thumbUrl = autoThumb;
+        }
+      }
+
+      if (Object.keys(autoUpdates).length > 0) {
+        setForm((prev) => ({ ...prev, ...autoUpdates }));
       }
 
       const db = getFirebaseDb();
@@ -530,21 +604,13 @@ export default function QuickAddItemPage() {
           ]
         : [];
 
-      let resolvedThumbUrl = thumbUrlInput;
-      if (!resolvedThumbUrl && sourceUrl) {
-        const autoThumb = await fetchOpenGraphImage(sourceUrl);
-        if (autoThumb) {
-          resolvedThumbUrl = autoThumb;
-        }
-      }
-
       const docRef = await addDoc(collection(db, "item"), {
         uid: user.uid,
         cabinetId,
         titleZh,
         titleAlt: titleAlt || null,
         author: author || null,
-        language: languageValue || null,
+        language: resolvedLanguage || null,
         tags: uniqueTags,
         links,
         thumbUrl: resolvedThumbUrl || null,
