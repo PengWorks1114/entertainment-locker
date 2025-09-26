@@ -69,7 +69,14 @@ import {
   type InsightEntry,
 } from "@/lib/insights";
 
-type LinkState = { label: string; url: string; isPrimary: boolean };
+type LinkState = {
+  label: string;
+  url: string;
+  isPrimary: boolean;
+  title: string;
+  description: string;
+  siteName: string;
+};
 
 type AppearanceState = {
   id: string;
@@ -476,11 +483,21 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                     label?: unknown;
                     url?: unknown;
                     isPrimary?: unknown;
+                    title?: unknown;
+                    description?: unknown;
+                    siteName?: unknown;
                   };
                   return {
                     label: typeof record?.label === "string" ? record.label : "",
                     url: typeof record?.url === "string" ? record.url : "",
                     isPrimary: Boolean(record?.isPrimary),
+                    title: typeof record?.title === "string" ? record.title : "",
+                    description:
+                      typeof record?.description === "string"
+                        ? record.description
+                        : "",
+                    siteName:
+                      typeof record?.siteName === "string" ? record.siteName : "",
                   };
                 })
               )
@@ -732,6 +749,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
       label: link.label.trim(),
       url: link.url.trim(),
       isPrimary: link.isPrimary,
+      title: link.title.trim() || null,
+      description: link.description.trim() || null,
+      siteName: link.siteName.trim() || null,
     }));
 
     const hasHalfFilled = normalizedLinks.some(
@@ -934,6 +954,9 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
             label: link.label,
             url: link.url,
             isPrimary: Boolean(link.isPrimary),
+            title: link.title ?? "",
+            description: link.description ?? "",
+            siteName: link.siteName ?? "",
           }))
         )
       );
@@ -1599,7 +1622,14 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
                     setLinks((prev) =>
                       normalizePrimaryLinks([
                         ...prev,
-                        { label: "", url: "", isPrimary: prev.length === 0 },
+                        {
+                          label: "",
+                          url: "",
+                          isPrimary: prev.length === 0,
+                          title: "",
+                          description: "",
+                          siteName: "",
+                        },
                       ])
                     );
                   }}

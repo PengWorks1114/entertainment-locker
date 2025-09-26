@@ -234,7 +234,22 @@ export function parseItemForm(input: ItemFormInput): ItemFormData {
       if (isPrimary) {
         hasPrimary = true;
       }
-      return { label, url, isPrimary };
+      const linkTitle =
+        typeof link.title === "string" ? link.title.trim() || null : null;
+      const linkDescription =
+        typeof link.description === "string"
+          ? link.description.trim() || null
+          : null;
+      const linkSiteName =
+        typeof link.siteName === "string" ? link.siteName.trim() || null : null;
+      return {
+        label,
+        url,
+        isPrimary,
+        title: linkTitle,
+        description: linkDescription,
+        siteName: linkSiteName,
+      };
     });
     if (!hasPrimary && links.length > 0) {
       links[0] = { ...links[0], isPrimary: true };

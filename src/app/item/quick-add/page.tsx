@@ -22,10 +22,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import {
-  fetchOpenGraphImage,
-  fetchOpenGraphMetadata,
-} from "@/lib/opengraph";
+import { fetchOpenGraphMetadata } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType, ItemLanguage } from "@/lib/types";
 import { ITEM_LANGUAGE_OPTIONS, ITEM_LANGUAGE_VALUES } from "@/lib/types";
@@ -47,6 +44,48 @@ function normalizeCabinetTags(input: unknown): string[] {
         .filter((tag): tag is string => tag.length > 0)
     )
   ).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
+
+const CJK_REGEX = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u;
+
+type ResolvedLinkMetadata = {
+  title: string | null;
+  description: string | null;
+  siteName: string | null;
+  image: string | null;
+};
+
+function containsCjk(text: string): boolean {
+  return CJK_REGEX.test(text);
+}
+
+function extractAutoTagsFromTitles(
+  titles: string[],
+  availableTags: string[],
+  shouldSkip: boolean
+): string[] {
+  if (shouldSkip) {
+    return [];
+  }
+  const normalizedTitles = titles
+    .map((title) => title.trim())
+    .filter(Boolean)
+    .map((title) => title.toLowerCase());
+  if (normalizedTitles.length === 0) {
+    return [];
+  }
+  const seen = new Set<string>();
+  for (const tag of availableTags) {
+    const normalizedTag = tag.trim();
+    if (!normalizedTag) {
+      continue;
+    }
+    const lowerTag = normalizedTag.toLowerCase();
+    if (normalizedTitles.some((title) => title.includes(lowerTag))) {
+      seen.add(normalizedTag);
+    }
+  }
+  return Array.from(seen);
 }
 
 type FormState = {
@@ -466,7 +505,7 @@ export default function QuickAddItemPage() {
     }
 
     let titleZh = form.titleZh.trim();
-    const titleAlt = form.titleAlt.trim();
+    let titleAlt = form.titleAlt.trim();
     const author = form.author.trim();
     const languageValue = form.language;
     if (languageValue && !ITEM_LANGUAGE_VALUES.includes(languageValue)) {
@@ -487,22 +526,44 @@ export default function QuickAddItemPage() {
     setSaving(true);
     setError(null);
     try {
-      if (!titleZh) {
-        if (sourceUrl) {
-          const metadata = await fetchOpenGraphMetadata(sourceUrl);
-          const fetchedTitle = metadata?.title?.trim();
-          const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
-          titleZh = resolvedTitle;
-          setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
-        } else {
-          titleZh = QUICK_ADD_DEFAULT_TITLE;
-          setForm((prev) => ({ ...prev, titleZh: QUICK_ADD_DEFAULT_TITLE }));
-        }
-      }
-
       const db = getFirebaseDb();
       if (!db) {
         throw new Error("Firebase 尚未設定");
+      }
+
+      let metadataSnapshot: ResolvedLinkMetadata | null = null;
+      if (sourceUrl) {
+        const metadata = await fetchOpenGraphMetadata(sourceUrl);
+        metadataSnapshot = {
+          title: metadata?.title?.trim() || null,
+          description: metadata?.description?.trim() || null,
+          siteName: metadata?.siteName?.trim() || null,
+          image: metadata?.image?.trim() || null,
+        };
+      }
+
+      if (!titleZh) {
+        const fetchedTitle = metadataSnapshot?.title ?? null;
+        const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
+        titleZh = resolvedTitle;
+        setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
+        if (fetchedTitle && !containsCjk(fetchedTitle) && !titleAlt) {
+          titleAlt = fetchedTitle;
+          setForm((prev) => ({ ...prev, titleAlt: fetchedTitle }));
+        }
+      } else if (
+        metadataSnapshot?.title &&
+        !containsCjk(metadataSnapshot.title) &&
+        !titleAlt
+      ) {
+        const foreignTitle = metadataSnapshot.title;
+        titleAlt = foreignTitle;
+        setForm((prev) => ({ ...prev, titleAlt: foreignTitle }));
+      }
+
+      let resolvedThumbUrl = thumbUrlInput;
+      if (!resolvedThumbUrl && metadataSnapshot?.image) {
+        resolvedThumbUrl = metadataSnapshot.image;
       }
 
       if (sourceUrl) {
@@ -523,20 +584,24 @@ export default function QuickAddItemPage() {
       const links = sourceUrl
         ? [
             {
-              label: "來源",
+              label: metadataSnapshot?.siteName ?? "來源",
               url: sourceUrl,
               isPrimary: true,
+              title: metadataSnapshot?.title ?? null,
+              description: metadataSnapshot?.description ?? null,
+              siteName: metadataSnapshot?.siteName ?? null,
             },
           ]
         : [];
 
-      let resolvedThumbUrl = thumbUrlInput;
-      if (!resolvedThumbUrl && sourceUrl) {
-        const autoThumb = await fetchOpenGraphImage(sourceUrl);
-        if (autoThumb) {
-          resolvedThumbUrl = autoThumb;
-        }
-      }
+      const autoTags = extractAutoTagsFromTitles(
+        [titleZh, titleAlt],
+        cabinetTags,
+        form.selectedTags.length > 0
+      );
+      const resolvedTags = Array.from(
+        new Set([...uniqueTags, ...autoTags])
+      );
 
       const docRef = await addDoc(collection(db, "item"), {
         uid: user.uid,
@@ -545,7 +610,7 @@ export default function QuickAddItemPage() {
         titleAlt: titleAlt || null,
         author: author || null,
         language: languageValue || null,
-        tags: uniqueTags,
+        tags: resolvedTags,
         links,
         thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
