@@ -7,22 +7,75 @@ service cloud.firestore {
       return field is string && field.size() >= 1 && field.size() <= maxLen;
     }
 
+    function isString(field, maxLen) {
+      return field is string && field.size() <= maxLen;
+    }
+
     function isOptionalString(field, maxLen) {
-      return field == null || (field is string && field.size() <= maxLen);
+      return field == null || isString(field, maxLen);
+    }
+
+    function isStringList(list, minLen, maxLen) {
+      return list is list
+        && list.size() == list.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size();
+    }
+
+    function isOptionalBoundedStringList(field, maxItems, minLen, maxLen) {
+      return field == null
+        || (field is list
+          && field.size() <= maxItems
+          && field.size() == field.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size());
     }
 
     function isTimestamp(value) {
-      return value is timestamp;
+      return value is timestamp || value == request.time;
     }
 
-    function isValidNoteData(data) {
+    function hasNoteContent(data) {
+      return (
+          ("content" in data && isString(data.content, 60000) && data.content.size() > 0)
+        || ("contentMarkdown" in data && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
+      );
+    }
+
+    function hasExistingNoteContent() {
+      return resource != null
+        && resource.data != null
+        && (
+          hasNoteContent(resource.data)
+          || (("content" in resource.data) && resource.data.content is string)
+          || (("contentMarkdown" in resource.data) && resource.data.contentMarkdown is string)
+        );
+    }
+
+    function isValidNoteBase(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
-        && isNonEmptyString(data.content, 60000)
+        && (!("content" in data) || isString(data.content, 60000))
+        && (!("contentMarkdown" in data) || isString(data.contentMarkdown, 60000))
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
+        && (
+          "category" in data
+            ? (data.category == null
+                || data.category in ["general", "progress", "insight", "reference"])
+            : true
+        )
+        && (!("tags" in data) || isOptionalBoundedStringList(data.tags, 500, 1, 100))
+        && (!("linkedCabinetIds" in data)
+            || isOptionalBoundedStringList(data.linkedCabinetIds, 50, 1, 100))
+        && (!("linkedItemIds" in data)
+            || isOptionalBoundedStringList(data.linkedItemIds, 50, 1, 100))
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
+    }
+
+    function isValidNoteCreate(data) {
+      return isValidNoteBase(data) && hasNoteContent(data);
+    }
+
+    function isValidNoteUpdate(data) {
+      return isValidNoteBase(data) && (hasNoteContent(data) || hasExistingNoteContent());
     }
 
     // 櫃子
@@ -68,11 +121,11 @@ service cloud.firestore {
       allow read: if authed() && resource.data.uid == request.auth.uid;
       allow create: if authed()
                     && request.resource.data.uid == request.auth.uid
-                    && isValidNoteData(request.resource.data);
+                    && isValidNoteCreate(request.resource.data);
       allow update: if authed()
                     && resource.data.uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid
-                    && isValidNoteData(request.resource.data)
+                    && isValidNoteUpdate(request.resource.data)
                     && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if authed() && resource.data.uid == request.auth.uid;
     }

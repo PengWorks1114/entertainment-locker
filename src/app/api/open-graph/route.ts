@@ -24,6 +24,14 @@ const META_TITLE_PRIORITY = [
   "title",
 ];
 
+const META_DESCRIPTION_PRIORITY = [
+  "og:description",
+  "twitter:description",
+  "description",
+];
+
+const META_SITE_NAME_KEYS = ["og:site_name", "og:site-name", "og:site"];
+
 function extractAttribute(tag: string, attribute: string): string | null {
   const regex = new RegExp(
     `${attribute}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\"'\s>]+))`,
@@ -135,6 +143,32 @@ function pickMetaTitle(
   return null;
 }
 
+function pickMetaDescription(metaTags: Map<string, string>): string | null {
+  for (const key of META_DESCRIPTION_PRIORITY) {
+    const value = metaTags.get(key);
+    if (value) {
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+  return null;
+}
+
+function pickMetaSiteName(metaTags: Map<string, string>): string | null {
+  for (const key of META_SITE_NAME_KEYS) {
+    const value = metaTags.get(key);
+    if (value) {
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+  return null;
+}
+
 async function readBodyWithLimit(response: Response): Promise<string> {
   if (!response.body) {
     return "";
@@ -217,6 +251,13 @@ export async function GET(request: NextRequest) {
   const metaTags = collectMetaTags(html);
   const imageUrl = pickMetaImage(html, targetUrl, metaTags);
   const title = pickMetaTitle(html, metaTags);
-  return Response.json({ image: imageUrl ?? null, title: title ?? null });
+  const description = pickMetaDescription(metaTags);
+  const siteName = pickMetaSiteName(metaTags);
+  return Response.json({
+    image: imageUrl ?? null,
+    title: title ?? null,
+    description: description ?? null,
+    siteName: siteName ?? null,
+  });
 }
 

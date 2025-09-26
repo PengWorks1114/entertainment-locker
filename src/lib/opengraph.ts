@@ -1,6 +1,8 @@
 type OpenGraphMetadata = {
   image: string | null;
   title: string | null;
+  description: string | null;
+  siteName: string | null;
 };
 
 export async function fetchOpenGraphMetadata(
@@ -30,9 +32,22 @@ export async function fetchOpenGraphMetadata(
         typeof image === "string" ? image.trim() || null : null;
       const normalizedTitle =
         typeof title === "string" ? title.trim() || null : null;
-      return { image: normalizedImage, title: normalizedTitle };
+      const normalizedDescription =
+        "description" in data && typeof (data as { description?: unknown }).description === "string"
+          ? ((data as { description?: unknown }).description as string).trim() || null
+          : null;
+      const normalizedSiteName =
+        "siteName" in data && typeof (data as { siteName?: unknown }).siteName === "string"
+          ? ((data as { siteName?: unknown }).siteName as string).trim() || null
+          : null;
+      return {
+        image: normalizedImage,
+        title: normalizedTitle,
+        description: normalizedDescription,
+        siteName: normalizedSiteName,
+      };
     }
-    return { image: null, title: null };
+    return { image: null, title: null, description: null, siteName: null };
   } catch {
     return null;
   }

@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { collection, onSnapshot, query, Timestamp, where } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, Timestamp, where } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
@@ -14,9 +17,24 @@ type Note = {
   id: string;
   title: string;
   summary: string | null;
+  tags: string[];
+  linkedCabinetIds: string[];
+  linkedItemIds: string[];
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+};
+
+type CabinetOption = {
+  id: string;
+  name: string;
+  isLocked: boolean;
+};
+
+type ItemOption = {
+  id: string;
+  title: string;
+  cabinetId: string | null;
 };
 
 type SortOption = "recentUpdated" | "created" | "title";
@@ -47,6 +65,11 @@ function formatDateTime(ms: number): string {
 }
 
 export default function NotesPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialCabinetId = searchParams.get("cabinetId");
+  const initialItemId = searchParams.get("itemId");
+  const initialTag = searchParams.get("tag");
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -58,6 +81,17 @@ export default function NotesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
+  const [selectedCabinetId, setSelectedCabinetId] = useState<string>(initialCabinetId ?? "");
+  const [selectedItemId, setSelectedItemId] = useState<string>(initialItemId ?? "");
+  const [tagFilter, setTagFilter] = useState(initialTag ?? "");
+  const [noteTags, setNoteTags] = useState<string[]>([]);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [tagManagerStatus, setTagManagerStatus] = useState<{
+    message: string | null;
+    error: string | null;
+  }>({ message: null, error: null });
 
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
@@ -89,6 +123,117 @@ export default function NotesPage() {
 
   useEffect(() => {
     if (!user) {
+      setCabinetOptions([]);
+      setItemOptions([]);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      return;
+    }
+    const cabinetQuery = query(collection(db, "cabinet"), where("uid", "==", user.uid));
+    const itemQuery = query(collection(db, "item"), where("uid", "==", user.uid));
+
+    const unsubCabinet = onSnapshot(
+      cabinetQuery,
+      (snapshot) => {
+        setCabinetOptions(
+          snapshot.docs
+            .map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                name: typeof data?.name === "string" ? data.name : "未命名櫃子",
+                isLocked: Boolean(data?.isLocked),
+              } satisfies CabinetOption;
+            })
+            .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"))
+        );
+      },
+      () => {
+        setFeedback({ type: "error", message: "載入櫃子清單時發生錯誤" });
+      }
+    );
+
+    const unsubItem = onSnapshot(
+      itemQuery,
+      (snapshot) => {
+        setItemOptions(
+          snapshot.docs
+            .map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                title:
+                  typeof data?.titleZh === "string" && data.titleZh.trim()
+                    ? (data.titleZh as string)
+                    : "未命名作品",
+                cabinetId:
+                  typeof data?.cabinetId === "string" && data.cabinetId.trim().length > 0
+                    ? (data.cabinetId as string)
+                    : null,
+              } satisfies ItemOption;
+            })
+            .sort((a, b) => a.title.localeCompare(b.title, "zh-Hant"))
+        );
+      },
+      () => {
+        setFeedback({ type: "error", message: "載入作品清單時發生錯誤" });
+      }
+    );
+
+    return () => {
+      unsubCabinet();
+      unsubItem();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNoteTags([]);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteTags([]);
+      return;
+    }
+    let active = true;
+    getDoc(doc(db, "user", user.uid))
+      .then((snap) => {
+        if (!active) return;
+        if (!snap.exists()) {
+          setNoteTags([]);
+          return;
+        }
+        const data = snap.data();
+        setNoteTags(normalizeNoteTags(data?.noteTags));
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入筆記標籤時發生錯誤", err);
+        setNoteTags([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    setSelectedCabinetId((prev) =>
+      prev && !cabinetOptions.some((option) => option.id === prev) ? "" : prev
+    );
+  }, [cabinetOptions]);
+
+  useEffect(() => {
+    setSelectedItemId((prev) =>
+      prev && !itemOptions.some((option) => option.id === prev) ? "" : prev
+    );
+  }, [itemOptions]);
+
+  useEffect(() => {
+    if (!user) {
       setNotes([]);
       return;
     }
@@ -113,10 +258,22 @@ export default function NotesPage() {
               typeof data?.description === "string" && data.description.trim().length > 0
                 ? data.description.trim()
                 : null;
+            const tags = Array.isArray(data?.tags)
+              ? data.tags.filter((value: unknown): value is string => typeof value === "string")
+              : [];
+            const linkedCabinetIds = Array.isArray(data?.linkedCabinetIds)
+              ? data.linkedCabinetIds.filter((value: unknown): value is string => typeof value === "string")
+              : [];
+            const linkedItemIds = Array.isArray(data?.linkedItemIds)
+              ? data.linkedItemIds.filter((value: unknown): value is string => typeof value === "string")
+              : [];
             return {
               id: docSnap.id,
               title: (data?.title as string) || "",
               summary,
+              tags,
+              linkedCabinetIds,
+              linkedItemIds,
               isFavorite: Boolean(data?.isFavorite),
               createdMs,
               updatedMs,
@@ -135,9 +292,22 @@ export default function NotesPage() {
 
   const filteredNotes = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
+    const tagKeyword = tagFilter.trim().toLowerCase();
     return notes.filter((note) => {
       if (showFavoritesOnly && !note.isFavorite) {
         return false;
+      }
+      if (selectedCabinetId && !note.linkedCabinetIds.includes(selectedCabinetId)) {
+        return false;
+      }
+      if (selectedItemId && !note.linkedItemIds.includes(selectedItemId)) {
+        return false;
+      }
+      if (tagKeyword) {
+        const tagMatched = note.tags.some((tag) => tag.toLowerCase().includes(tagKeyword));
+        if (!tagMatched) {
+          return false;
+        }
       }
       if (!keyword) {
         return true;
@@ -146,7 +316,14 @@ export default function NotesPage() {
       const summaryMatch = (note.summary ?? "").toLowerCase().includes(keyword);
       return titleMatch || summaryMatch;
     });
-  }, [notes, searchTerm, showFavoritesOnly]);
+  }, [
+    notes,
+    searchTerm,
+    showFavoritesOnly,
+    selectedCabinetId,
+    selectedItemId,
+    tagFilter,
+  ]);
 
   const sortedNotes = useMemo(() => {
     const base = [...filteredNotes];
@@ -168,16 +345,92 @@ export default function NotesPage() {
     return base;
   }, [filteredNotes, sortDirection, sortOption]);
 
+  const cabinetLockMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option.isLocked);
+    });
+    return map;
+  }, [cabinetOptions]);
+
+  const cabinetNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option.name);
+    });
+    return map;
+  }, [cabinetOptions]);
+
+  const filteredTagSuggestions = useMemo(() => {
+    const keyword = tagFilter.trim().toLowerCase();
+    if (!keyword) {
+      return noteTags.slice(0, 20);
+    }
+    return noteTags
+      .filter((tag) => tag.toLowerCase().includes(keyword))
+      .slice(0, 20);
+  }, [noteTags, tagFilter]);
+
+  const itemOptionMap = useMemo(() => {
+    const map = new Map<string, ItemOption>();
+    itemOptions.forEach((option) => {
+      map.set(option.id, option);
+    });
+    return map;
+  }, [itemOptions]);
+
+  const showCabinetLockedAlert = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.alert("因該櫃子目前處於鎖定狀態，因此無法訪問該櫃子");
+    }
+  }, []);
+
+  const showItemLockedAlert = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.alert("因該物件所屬櫃子目前處於鎖定狀態，因此無法訪問該物件");
+    }
+  }, []);
+
   const totalNotes = sortedNotes.length;
   const totalPages = Math.max(1, Math.ceil(totalNotes / pageSize));
   const pageStartIndex = (currentPage - 1) * pageSize;
   const paginatedNotes = sortedNotes.slice(pageStartIndex, pageStartIndex + pageSize);
   const hasNotes = notes.length > 0;
   const hasFilteredNotes = totalNotes > 0;
+  const hasActiveFilters =
+    searchTerm.trim().length > 0 ||
+    sortOption !== "recentUpdated" ||
+    sortDirection !== "desc" ||
+    pageSize !== PAGE_SIZE_OPTIONS[1] ||
+    showFavoritesOnly ||
+    Boolean(selectedCabinetId) ||
+    Boolean(selectedItemId) ||
+    tagFilter.trim().length > 0;
+
+  const resetFilters = useCallback(() => {
+    setSearchTerm("");
+    setSortOption("recentUpdated");
+    setSortDirection("desc");
+    setPageSize(PAGE_SIZE_OPTIONS[1]);
+    setShowFavoritesOnly(false);
+    setSelectedCabinetId("");
+    setSelectedItemId("");
+    setTagFilter("");
+    setCurrentPage(1);
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sortOption, sortDirection, pageSize, showFavoritesOnly]);
+  }, [
+    searchTerm,
+    sortOption,
+    sortDirection,
+    pageSize,
+    showFavoritesOnly,
+    selectedCabinetId,
+    selectedItemId,
+    tagFilter,
+  ]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -234,12 +487,111 @@ export default function NotesPage() {
               {note.summary ? (
                 <p className="line-clamp-2 break-anywhere text-sm text-gray-600">{note.summary}</p>
               ) : null}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                {note.linkedCabinetIds.map((cabinetId) => {
+                  const name = cabinetNameMap.get(cabinetId);
+                  if (!name) {
+                    return null;
+                  }
+                  const locked = cabinetLockMap.get(cabinetId) ?? false;
+                  return (
+                    <span key={`cabinet-${cabinetId}`}>
+                      {locked ? (
+                        <button
+                          type="button"
+                          onClick={showCabinetLockedAlert}
+                          className="inline-flex items-center rounded-full border border-dashed border-indigo-200 bg-indigo-50 px-2 py-1 font-medium text-indigo-500"
+                        >
+                          🔒 櫃：{name}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(`/cabinet/${cabinetId}`);
+                          }}
+                          className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-600 transition hover:bg-indigo-100"
+                        >
+                          櫃：{name}
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+                {note.linkedItemIds.map((itemId) => {
+                  const option = itemOptionMap.get(itemId);
+                  if (!option) {
+                    return null;
+                  }
+                  const cabinetLabel = option.cabinetId
+                    ? cabinetNameMap.get(option.cabinetId) ?? null
+                    : null;
+                  const locked = option.cabinetId
+                    ? cabinetLockMap.get(option.cabinetId) ?? false
+                    : false;
+                  return (
+                    <span key={`item-${option.id}`}>
+                      {locked ? (
+                        <button
+                          type="button"
+                          onClick={showItemLockedAlert}
+                          className="inline-flex items-center rounded-full border border-dashed border-sky-200 bg-sky-50 px-2 py-1 font-medium text-sky-500"
+                        >
+                          🔒 作：{option.title}
+                          {cabinetLabel ? (
+                            <span className="ml-1 text-[11px] text-sky-500">（{cabinetLabel}）</span>
+                          ) : null}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(`/item/${option.id}`);
+                          }}
+                          className="inline-flex items-center rounded-full bg-sky-100 px-2 py-1 font-medium text-sky-600 transition hover:bg-sky-100/80"
+                        >
+                          作：{option.title}
+                          {cabinetLabel ? (
+                            <span className="ml-1 text-[11px] text-sky-600">（{cabinetLabel}）</span>
+                          ) : null}
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+              {note.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {note.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </Link>
           </li>
         ))}
       </ul>
     );
-  }, [hasFilteredNotes, hasNotes, paginatedNotes]);
+  }, [
+    cabinetLockMap,
+    cabinetNameMap,
+    hasFilteredNotes,
+    hasNotes,
+    itemOptionMap,
+    paginatedNotes,
+    router,
+    showCabinetLockedAlert,
+    showItemLockedAlert,
+  ]);
 
   if (!authChecked) {
     return (
@@ -280,10 +632,29 @@ export default function NotesPage() {
             <h1 className="text-2xl font-semibold text-gray-900">筆記本</h1>
             <p className="text-sm text-gray-500">管理與檢視所有筆記紀錄。</p>
           </div>
-          <Link href="/notes/new" className={buttonClass({ variant: "primary" })}>
-            新增筆記
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTagManagerOpen(true)}
+              className={buttonClass({ variant: "secondary" })}
+            >
+              筆記標籤管理
+            </button>
+            <Link href="/notes/new" className={buttonClass({ variant: "primary" })}>
+              新增筆記
+            </Link>
+          </div>
         </header>
+        {tagManagerStatus.error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {tagManagerStatus.error}
+          </div>
+        ) : null}
+        {tagManagerStatus.message ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {tagManagerStatus.message}
+          </div>
+        ) : null}
         {feedback && feedback.type === "error" ? (
           <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {feedback.message}
@@ -295,14 +666,25 @@ export default function NotesPage() {
               <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
               <p className="text-sm text-gray-500">找到目標筆記並調整列表顯示。</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setFiltersExpanded((prev) => !prev)}
-              className={buttonClass({ variant: "secondary", size: "sm" })}
-              aria-expanded={filtersExpanded}
-            >
-              {filtersExpanded ? "收合" : "展開"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  重設篩選
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setFiltersExpanded((prev) => !prev)}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+                aria-expanded={filtersExpanded}
+              >
+                {filtersExpanded ? "收合" : "展開"}
+              </button>
+            </div>
           </div>
           {filtersExpanded ? (
             <div className="space-y-4">
@@ -363,6 +745,23 @@ export default function NotesPage() {
                   </select>
                 </label>
               </div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <label className="flex flex-1 flex-col space-y-1">
+                  <span className="text-sm text-gray-600">櫃子</span>
+                  <select
+                    value={selectedCabinetId}
+                    onChange={(event) => setSelectedCabinetId(event.target.value)}
+                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
+                  >
+                    <option value="">全部櫃子</option>
+                    {cabinetOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input
@@ -373,6 +772,61 @@ export default function NotesPage() {
                   />
                   只顯示最愛
                 </label>
+                <div className="flex flex-1 min-w-[220px] flex-col space-y-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-1 flex-col space-y-1">
+                      <span className="text-sm text-gray-600">標籤</span>
+                      <input
+                        value={tagFilter}
+                        onChange={(event) => setTagFilter(event.target.value)}
+                        placeholder="輸入標籤名稱或點選建議"
+                        className="h-12 w-full rounded-xl border px-4 text-base"
+                      />
+                    </div>
+                    {tagFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => setTagFilter("")}
+                        className={buttonClass({ variant: "secondary", size: "sm" })}
+                      >
+                        清除
+                      </button>
+                    ) : null}
+                  </div>
+                  {noteTags.length === 0 ? (
+                    <p className="text-xs text-gray-400">尚未建立任何筆記標籤。</p>
+                  ) : filteredTagSuggestions.length === 0 ? (
+                    <p className="text-xs text-gray-400">找不到符合的標籤建議。</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setTagFilter(tag)}
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedItemId ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                      <span>
+                        僅顯示連結作品：
+                        {itemOptionMap.get(selectedItemId)?.title ?? "(已刪除或無法取得名稱)"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedItemId("")}
+                        className="inline-flex items-center rounded-full border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 transition hover:bg-indigo-100"
+                      >
+                        清除
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : null}
@@ -408,6 +862,32 @@ export default function NotesPage() {
           </footer>
         ) : null}
       </div>
+      <NoteTagQuickEditor
+        open={tagManagerOpen}
+        onClose={() => setTagManagerOpen(false)}
+        userId={user.uid}
+        tags={noteTags}
+        onTagsChange={(nextTags) => {
+          setNoteTags(nextTags);
+          setTagManagerStatus({ message: null, error: null });
+        }}
+        onTagRenamed={(previousTag, nextTag) => {
+          if (tagFilter === previousTag) {
+            setTagFilter(nextTag);
+          }
+        }}
+        onTagDeleted={(target) => {
+          if (tagFilter === target) {
+            setTagFilter("");
+          }
+        }}
+        onStatus={(status) => {
+          setTagManagerStatus({
+            message: status.message ?? null,
+            error: status.error ?? null,
+          });
+        }}
+      />
     </main>
   );
 }

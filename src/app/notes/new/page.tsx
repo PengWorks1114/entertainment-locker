@@ -1,13 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 
-import { RichTextEditor } from "@/components/RichTextEditor";
+import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
+import LinkTargetSelector from "@/components/LinkTargetSelector";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
@@ -20,6 +31,9 @@ type Feedback = {
 
 export default function NewNotePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const defaultCabinetId = searchParams.get("cabinetId");
+  const defaultItemId = searchParams.get("itemId");
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [title, setTitle] = useState("");
@@ -27,6 +41,22 @@ export default function NewNotePage() {
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
+  const [markdownContent, setMarkdownContent] = useState("");
+  const [selectedCabinetIds, setSelectedCabinetIds] = useState<string[]>(
+    defaultCabinetId ? [defaultCabinetId] : []
+  );
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>(
+    defaultItemId ? [defaultItemId] : []
+  );
+  const [tagQuery, setTagQuery] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [noteTags, setNoteTags] = useState<string[]>([]);
+  const [tagStatus, setTagStatus] = useState<{
+    message: string | null;
+    error: string | null;
+    saving: boolean;
+  }>({ message: null, error: null, saving: false });
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -43,6 +73,137 @@ export default function NewNotePage() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNoteTags([]);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setFeedback({ type: "error", message: "Firebase 尚未設定" });
+      setNoteTags([]);
+      return;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNoteTags([]);
+      return;
+    }
+    let active = true;
+    const db = getFirebaseDb();
+    if (!db) {
+      setNoteTags([]);
+      return;
+    }
+    getDoc(doc(db, "user", user.uid))
+      .then((snap) => {
+        if (!active) return;
+        if (!snap.exists()) {
+          setNoteTags([]);
+          return;
+        }
+        const data = snap.data();
+        setNoteTags(normalizeNoteTags(data?.noteTags));
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入筆記標籤時發生錯誤", err);
+        setNoteTags([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const selectedTagSet = useMemo(() => new Set(tags), [tags]);
+
+  const availableTagSuggestions = useMemo(
+    () => noteTags.filter((tag) => !selectedTagSet.has(tag)),
+    [noteTags, selectedTagSet]
+  );
+
+  const filteredTagSuggestions = useMemo(() => {
+    const keyword = tagQuery.trim().toLowerCase();
+    const base = availableTagSuggestions;
+    if (!keyword) {
+      return base.slice(0, 20);
+    }
+    return base
+      .filter((tag) => tag.toLowerCase().includes(keyword))
+      .slice(0, 20);
+  }, [availableTagSuggestions, tagQuery]);
+
+  const markdownPreview = useMemo(() => markdownPreviewHtml(markdownContent), [markdownContent]);
+
+  async function persistUserNoteTags(nextTags: string[]) {
+    if (!user) {
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      throw new Error("Firebase 尚未設定");
+    }
+    await setDoc(
+      doc(db, "user", user.uid),
+      { noteTags: nextTags, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  }
+
+  async function handleCommitTag(rawTag: string) {
+    const value = rawTag.trim();
+    if (!value) {
+      setTagStatus({ message: null, error: "請輸入標籤名稱", saving: false });
+      return;
+    }
+    if (tags.includes(value)) {
+      setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      setTagQuery("");
+      return;
+    }
+    if (!user) {
+      setTagStatus({ message: null, error: "請先登入", saving: false });
+      return;
+    }
+    setTagStatus({ message: null, error: null, saving: true });
+    setTags((prev) => [...prev, value]);
+    setTagQuery("");
+    try {
+      if (!noteTags.includes(value)) {
+        const nextTags = normalizeNoteTags([...noteTags, value]);
+        await persistUserNoteTags(nextTags);
+        setNoteTags(nextTags);
+        setTagStatus({ message: `已新增 #${value}`, error: null, saving: false });
+      } else {
+        setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
+      }
+    } catch (err) {
+      console.error("更新筆記標籤時發生錯誤", err);
+      setTags((prev) => prev.filter((tag) => tag !== value));
+      setTagStatus({ message: null, error: "更新標籤時發生錯誤", saving: false });
+    }
+  }
+
+  function handleRemoveSelectedTag(tag: string) {
+    setTags((prev) => prev.filter((item) => item !== tag));
+    setTagStatus({ message: `已移除 #${tag}`, error: null, saving: false });
+  }
+
+  function handleTagKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      void handleCommitTag(tagQuery);
+    }
+  }
+
+  function handleSyncMarkdownToEditor() {
+    const html = simpleMarkdownToHtml(markdownContent);
+    setContentHtml(html);
+    setContentText(extractPlainTextFromHtml(html));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,8 +230,9 @@ export default function NewNotePage() {
       setFeedback({ type: "error", message: `備註長度不可超過 ${DESCRIPTION_LIMIT} 字` });
       return;
     }
-    if (!trimmedContentText) {
-      setFeedback({ type: "error", message: "請填寫筆記內容" });
+    const markdownValue = markdownContent.trim();
+    if (!trimmedContentText && !markdownValue) {
+      setFeedback({ type: "error", message: "請填寫筆記內容或 Markdown" });
       return;
     }
 
@@ -84,11 +246,15 @@ export default function NewNotePage() {
     setFeedback(null);
 
     try {
-      await addDoc(collection(db, "note"), {
+      const docRef = await addDoc(collection(db, "note"), {
         uid: user.uid,
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
+        contentMarkdown: markdownValue ? markdownValue : null,
+        tags,
+        linkedCabinetIds: selectedCabinetIds,
+        linkedItemIds: selectedItemIds,
         isFavorite,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -98,14 +264,24 @@ export default function NewNotePage() {
       setDescription("");
       setContentHtml("");
       setContentText("");
+      setMarkdownContent("");
       setIsFavorite(false);
-      router.replace("/notes");
+      setSelectedCabinetIds([]);
+      setSelectedItemIds([]);
+      setTags([]);
+      setTagQuery("");
+      setTagStatus({ message: null, error: null, saving: false });
+      router.replace(`/notes/${docRef.id}`);
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
       setFeedback({ type: "error", message: "新增筆記時發生錯誤" });
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleLinkTargetError(message: string) {
+    setFeedback({ type: "error", message });
   }
 
   if (!authChecked) {
@@ -176,6 +352,98 @@ export default function NewNotePage() {
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
             </label>
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <span className="text-sm font-medium text-gray-700">標籤</span>
+                  <span className="text-xs text-gray-400">可使用 Enter 或逗號快速新增。</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTagManagerOpen(true)}
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
+                  >
+                    筆記標籤管理
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-3 rounded-xl border border-gray-200 bg-white/50 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    value={tagQuery}
+                    onChange={(event) => {
+                      setTagQuery(event.target.value);
+                      setTagStatus({ message: null, error: null, saving: false });
+                    }}
+                    onKeyDown={handleTagKeyDown}
+                    placeholder="輸入標籤後按 Enter"
+                    className="h-11 flex-1 rounded-xl border px-4 text-base"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleCommitTag(tagQuery)}
+                    disabled={tagStatus.saving}
+                    className={`${buttonClass({ variant: "secondary", size: "sm" })} w-full sm:w-auto`}
+                  >
+                    新增標籤
+                  </button>
+                </div>
+                {tagStatus.error ? (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{tagStatus.error}</div>
+                ) : null}
+                {tagStatus.message ? (
+                  <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{tagStatus.message}</div>
+                ) : null}
+                {tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => handleRemoveSelectedTag(tag)}
+                        className="group inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-gray-200"
+                      >
+                        <span>#{tag}</span>
+                        <span className="text-xs text-gray-400 group-hover:text-gray-600">移除</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">尚未選取任何標籤。</p>
+                )}
+                <div className="space-y-2">
+                  <span className="text-xs font-medium text-gray-500">快速選取</span>
+                  {availableTagSuggestions.length === 0 ? (
+                    <p className="text-xs text-gray-400">尚無可用建議。</p>
+                  ) : filteredTagSuggestions.length === 0 ? (
+                    <p className="text-xs text-gray-400">找不到符合關鍵字的建議標籤。</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => void handleCommitTag(tag)}
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                          disabled={tagStatus.saving}
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <LinkTargetSelector
+              userId={user?.uid ?? null}
+              selectedCabinetIds={selectedCabinetIds}
+              onCabinetIdsChange={setSelectedCabinetIds}
+              selectedItemIds={selectedItemIds}
+              onItemIdsChange={setSelectedItemIds}
+              onError={handleLinkTargetError}
+            />
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -185,6 +453,34 @@ export default function NewNotePage() {
               />
               設為最愛
             </label>
+            <div className="space-y-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-medium text-gray-700">Markdown 內容（選填）</span>
+                <button
+                  type="button"
+                  onClick={handleSyncMarkdownToEditor}
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
+                >
+                  以 Markdown 更新富文本
+                </button>
+              </div>
+              <textarea
+                value={markdownContent}
+                onChange={(event) => setMarkdownContent(event.target.value)}
+                placeholder="輸入 Markdown 文字，將在下方顯示即時預覽"
+                className="min-h-[140px] w-full resize-y rounded-xl border px-4 py-3 text-base"
+              />
+              <div className="space-y-2 rounded-xl border border-gray-200 bg-white/70 p-4">
+                <div className="flex items-center justify-between text-sm text-gray-600">
+                  <span>Markdown 預覽</span>
+                  <span>{markdownContent.trim().length} 字</span>
+                </div>
+                <div
+                  className="markdown-preview text-sm leading-relaxed text-gray-700"
+                  dangerouslySetInnerHTML={{ __html: markdownPreview }}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <span className="text-sm font-medium text-gray-700">筆記內容</span>
               <RichTextEditor
@@ -221,6 +517,31 @@ export default function NewNotePage() {
             </div>
           </form>
         </section>
+        <NoteTagQuickEditor
+          open={tagManagerOpen}
+          onClose={() => setTagManagerOpen(false)}
+          userId={user.uid}
+          tags={noteTags}
+          onTagsChange={(nextTags) => {
+            setNoteTags(nextTags);
+            setTagStatus({ message: null, error: null, saving: false });
+          }}
+          onTagRenamed={(previousTag, nextTag) => {
+            setTags((current) =>
+              current.map((tag) => (tag === previousTag ? nextTag : tag))
+            );
+          }}
+          onTagDeleted={(target) => {
+            setTags((current) => current.filter((tag) => tag !== target));
+          }}
+          onStatus={(status) => {
+            setTagStatus({
+              message: status.message ?? null,
+              error: status.error ?? null,
+              saving: false,
+            });
+          }}
+        />
       </div>
     </main>
   );

@@ -79,6 +79,9 @@ export type ItemLink = {
   label: string;
   url: string;
   isPrimary?: boolean;
+  title?: string | null;
+  description?: string | null;
+  siteName?: string | null;
 };
 
 export type AppearanceRecord = {
