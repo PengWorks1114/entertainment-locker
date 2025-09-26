@@ -635,13 +635,36 @@ export default function QuickAddItemPage() {
         }
       }
 
-      if (titleZh && cabinetTags.length > 0) {
-        const autoTagMatches = detectTagsFromTitle(titleZh, cabinetTags);
-        if (autoTagMatches.length > 0) {
+      if (cabinetTags.length > 0) {
+        const tagSourceSet = new Set<string>();
+        const primarySource =
+          titleZh && titleZh !== QUICK_ADD_DEFAULT_TITLE
+            ? titleZh
+            : externalMetadata?.primaryTitle ?? null;
+        if (primarySource) {
+          tagSourceSet.add(primarySource);
+        }
+        if (titleAlt) {
+          tagSourceSet.add(titleAlt);
+        }
+        if (externalMetadata?.alternateTitles?.length) {
+          externalMetadata.alternateTitles.forEach((candidate) => {
+            if (candidate) {
+              tagSourceSet.add(candidate);
+            }
+          });
+        }
+        const matchedTagMap = new Map<string, string>();
+        tagSourceSet.forEach((source) => {
+          detectTagsFromTitle(source, cabinetTags).forEach((tag) => {
+            matchedTagMap.set(tag.toLowerCase(), tag);
+          });
+        });
+        if (matchedTagMap.size > 0) {
           const existingLower = new Set(
             workingSelectedTags.map((tag) => tag.toLowerCase())
           );
-          const toAppend = autoTagMatches.filter(
+          const toAppend = Array.from(matchedTagMap.values()).filter(
             (tag) => !existingLower.has(tag.toLowerCase())
           );
           if (toAppend.length > 0) {

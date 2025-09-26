@@ -14,6 +14,37 @@ const USER_AGENT =
 
 const TITLE_ALIAS_PATTERN = /[\(（［\[]([^\)）］\]]+)[\)）］\]]/g;
 const TITLE_SLASH_SEPARATORS = /[\/|｜]/;
+const TITLE_ROLE_KEYWORDS = [
+  "作者",
+  "原作",
+  "著者",
+  "著",
+  "文",
+  "圖",
+  "繪",
+  "畫",
+  "作畫",
+  "漫畫",
+  "插畫",
+  "出版社",
+  "出版",
+  "發行",
+  "発行",
+  "監修",
+  "編輯",
+  "編",
+  "編集",
+  "翻譯",
+  "翻訳",
+  "譯",
+  "訳",
+  "illustrator",
+  "translator",
+  "editor",
+  "publisher",
+  "author",
+  "writer",
+];
 const NEXT_UPDATE_META_KEYS = [
   "next_update",
   "nextupdate",
@@ -271,6 +302,108 @@ function sanitizeTitleCandidate(
   });
   result = result.replace(/\s+/g, " ").trim();
   return result || null;
+}
+
+function isLikelyNonTitle(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return true;
+  }
+  if (/^isbn\s*\d+/i.test(trimmed)) {
+    return true;
+  }
+  if (/^(by|author|writer|publisher|illustrator|translator|edited by|translated by)/i.test(trimmed)) {
+    return true;
+  }
+  if (/[：:\/／]/.test(trimmed)) {
+    const segments = trimmed.split(/[：:\/／]/).map((segment) => segment.trim());
+    if (segments.length >= 2) {
+      const first = segments[0]?.toLowerCase() ?? "";
+      if (TITLE_ROLE_KEYWORDS.some((keyword) => keyword.toLowerCase() === first)) {
+        return true;
+      }
+      if (
+        TITLE_ROLE_KEYWORDS.some((keyword) =>
+          new RegExp(`${keyword}`, "i").test(segments[0] ?? "")
+        )
+      ) {
+        return true;
+      }
+      if (
+        TITLE_ROLE_KEYWORDS.some((keyword) =>
+          new RegExp(`${keyword}`, "i").test(segments[1] ?? "")
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  const lowered = trimmed.toLowerCase();
+  if (TITLE_ROLE_KEYWORDS.some((keyword) => lowered.includes(keyword.toLowerCase()))) {
+    const lengthWithoutKeyword = lowered.replace(
+      new RegExp(
+        TITLE_ROLE_KEYWORDS.map((keyword) => escapeRegExp(keyword.toLowerCase())).join("|")
+      ),
+      ""
+    ).trim();
+    if (!lengthWithoutKeyword) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type PreferredLanguage = ItemLanguage | "other";
+
+function pickTitleByLanguage(
+  list: { value: string; priority: number }[],
+  order: PreferredLanguage[]
+): string | null {
+  for (const language of order) {
+    const match = list.find((entry) => {
+      const detected = detectLanguageFromText(entry.value);
+      if (language === "other") {
+        return !detected;
+      }
+      return detected === language;
+    });
+    if (match) {
+      return match.value;
+    }
+  }
+  return null;
+}
+
+function selectPrimaryTitle(
+  processed: { value: string; priority: number }[],
+  fallback: { value: string; priority: number }[],
+  tokens: string[]
+): string | null {
+  const preference: PreferredLanguage[] = ["zh", "ja", "en", "ko", "other"];
+  const processedMatch = pickTitleByLanguage(processed, preference);
+  if (processedMatch) {
+    return processedMatch;
+  }
+  if (processed.length > 0) {
+    return processed[0].value;
+  }
+  const filteredFallback = fallback.filter(
+    (entry) => !matchesSiteToken(entry.value, tokens)
+  );
+  const fallbackMatch = pickTitleByLanguage(filteredFallback, preference);
+  if (fallbackMatch) {
+    return fallbackMatch;
+  }
+  const firstNonToken = filteredFallback[0] ?? fallback.find(
+    (entry) => !matchesSiteToken(entry.value, tokens)
+  );
+  if (firstNonToken) {
+    return firstNonToken.value;
+  }
+  return fallback[0]?.value ?? null;
 }
 
 function matchesSiteToken(value: string, tokens: string[]): boolean {
@@ -964,14 +1097,32 @@ function detectLanguageFromText(text: string | null): ItemLanguage | null {
   if (!text) {
     return null;
   }
-  if (/\p{Script=Han}/u.test(text)) {
-    return "zh";
+  const normalized = text.trim();
+  if (!normalized) {
+    return null;
   }
-  if (/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(text)) {
+  const hasHiragana = /\p{Script=Hiragana}/u.test(normalized);
+  const hasKatakana = /\p{Script=Katakana}/u.test(normalized);
+  const hasJapaneseMarks = /[の・〜～「」『』【】｢｣]/.test(normalized);
+  if (hasHiragana || hasKatakana || hasJapaneseMarks) {
     return "ja";
   }
-  if (/\p{Script=Hangul}/u.test(text)) {
+  if (/\p{Script=Hangul}/u.test(normalized)) {
     return "ko";
+  }
+  if (/\p{Script=Han}/u.test(normalized)) {
+    return "zh";
+  }
+  const asciiLetters = normalized.match(/[A-Za-z]/g)?.length ?? 0;
+  if (asciiLetters >= 3) {
+    const nonAscii = normalized.match(/[^\x00-\x7F]/g)?.length ?? 0;
+    const asciiWords = normalized.match(/[A-Za-z][A-Za-z'’\-]*/g)?.length ?? 0;
+    if (
+      asciiWords > 0 &&
+      (nonAscii === 0 || asciiLetters / Math.max(1, asciiLetters + nonAscii) >= 0.6)
+    ) {
+      return "en";
+    }
   }
   return null;
 }
@@ -1146,7 +1297,7 @@ function buildMetadata(
   const seenTitleKeys = new Set<string>();
   titleCandidates.forEach((candidate) => {
     const sanitized = sanitizeTitleCandidate(candidate.value, siteTokens);
-    if (sanitized) {
+    if (sanitized && !isLikelyNonTitle(sanitized)) {
       const key = sanitized.toLowerCase();
       if (!seenTitleKeys.has(key)) {
         processedTitles.push({ value: sanitized, priority: candidate.priority });
@@ -1155,7 +1306,7 @@ function buildMetadata(
       return;
     }
     const fallbackValue = cleanTextValue(candidate.value);
-    if (fallbackValue) {
+    if (fallbackValue && !isLikelyNonTitle(fallbackValue)) {
       const key = fallbackValue.toLowerCase();
       if (!seenTitleKeys.has(key)) {
         fallbackTitles.push({ value: fallbackValue, priority: candidate.priority });
@@ -1163,13 +1314,7 @@ function buildMetadata(
       }
     }
   });
-  let primaryTitle = processedTitles[0]?.value ?? null;
-  if (!primaryTitle) {
-    const preferredFallback = fallbackTitles.find(
-      (entry) => !matchesSiteToken(entry.value, siteTokens)
-    );
-    primaryTitle = preferredFallback?.value ?? fallbackTitles[0]?.value ?? null;
-  }
+  const primaryTitle = selectPrimaryTitle(processedTitles, fallbackTitles, siteTokens);
 
   const alternateTitleCandidates: string[] = [];
   schema.alternateTitles.forEach((title) => {
@@ -1193,7 +1338,7 @@ function buildMetadata(
   const alternateTitleSet = new Set<string>();
   alternateTitleCandidates.forEach((title) => {
     const sanitized = sanitizeTitleCandidate(title, siteTokens);
-    if (!sanitized) {
+    if (!sanitized || isLikelyNonTitle(sanitized)) {
       return;
     }
     if (primaryTitle && sanitized === primaryTitle) {
@@ -1202,6 +1347,10 @@ function buildMetadata(
     alternateTitleSet.add(sanitized);
   });
   const alternateTitles = Array.from(alternateTitleSet);
+  const alternateTitleEntries = alternateTitles.map((value) => ({
+    value,
+    language: detectLanguageFromText(value),
+  }));
 
   const languageCandidates: { value: ItemLanguage; priority: number }[] = [];
   const schemaLanguage = schema.language
@@ -1233,14 +1382,36 @@ function buildMetadata(
       languageCandidates.push({ value: normalized, priority: 4 });
     }
   }
-  if (primaryTitle) {
-    const detected = detectLanguageFromText(primaryTitle);
-    if (detected) {
-      languageCandidates.push({ value: detected, priority: 5 });
-    }
+  const primaryLanguage = primaryTitle ? detectLanguageFromText(primaryTitle) : null;
+  if (primaryLanguage) {
+    languageCandidates.push({ value: primaryLanguage, priority: 5 });
   }
   languageCandidates.sort((a, b) => a.priority - b.priority);
-  const language = languageCandidates[0]?.value ?? null;
+  let language: ItemLanguage | null = null;
+  let languageSourcePriority = Number.POSITIVE_INFINITY;
+  if (languageCandidates.length > 0) {
+    language = languageCandidates[0].value;
+    languageSourcePriority = languageCandidates[0].priority;
+  }
+
+  if (alternateTitleEntries.length > 0 && (!language || languageSourcePriority >= 5)) {
+    const preferredAltLanguages: ItemLanguage[] = ["ja", "en", "ko"];
+    for (const lang of preferredAltLanguages) {
+      const match = alternateTitleEntries.find((entry) => entry.language === lang);
+      if (match) {
+        language = lang;
+        languageSourcePriority = 5.5;
+        break;
+      }
+    }
+    if (!language) {
+      const fallbackAlt = alternateTitleEntries.find((entry) => entry.language);
+      if (fallbackAlt?.language) {
+        language = fallbackAlt.language;
+        languageSourcePriority = 5.5;
+      }
+    }
+  }
 
   const creatorMap = new Map<
     string,
@@ -1435,11 +1606,25 @@ function buildMetadata(
 
   let originalTitle: string | null = null;
   if (primaryTitle) {
-    const isPrimaryChinese = /\p{Script=Han}/u.test(primaryTitle);
-    if (!isPrimaryChinese) {
+    if (primaryLanguage && primaryLanguage !== "zh") {
       originalTitle = primaryTitle;
     } else {
-      originalTitle = alternateTitles.find((title) => !/\p{Script=Han}/u.test(title)) ?? null;
+      const preferredOriginalLanguages: ItemLanguage[] = ["ja", "en", "ko"];
+      for (const lang of preferredOriginalLanguages) {
+        const match = alternateTitleEntries.find((entry) => entry.language === lang);
+        if (match) {
+          originalTitle = match.value;
+          break;
+        }
+      }
+      if (!originalTitle) {
+        const nonZh = alternateTitleEntries.find(
+          (entry) => entry.language && entry.language !== "zh"
+        );
+        if (nonZh) {
+          originalTitle = nonZh.value;
+        }
+      }
     }
   }
 
