@@ -7,6 +7,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import {
   Timestamp,
+  deleteField,
   doc,
   getDoc,
   serverTimestamp,
@@ -412,13 +413,20 @@ export default function EditNotePage({ params }: PageProps) {
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
-        contentMarkdown: markdownValue ? markdownValue : null,
         tags: sanitizedTags,
         linkedCabinetIds: sanitizedCabinetIds,
         linkedItemIds: sanitizedItemIds,
         isFavorite,
         updatedAt: serverTimestamp(),
       };
+      if (sanitizedContentHtml.length === 0) {
+        payload.content = deleteField();
+      }
+      if (markdownValue.length > 0) {
+        payload.contentMarkdown = markdownValue;
+      } else {
+        payload.contentMarkdown = deleteField();
+      }
       if (originalCreatedAt) {
         payload.createdAt = originalCreatedAt;
       }

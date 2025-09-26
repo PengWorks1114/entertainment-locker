@@ -51,8 +51,8 @@ service cloud.firestore {
     function isValidNoteBase(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
-        && (!("content" in data) || isString(data.content, 60000))
-        && (!("contentMarkdown" in data) || isString(data.contentMarkdown, 60000))
+        && (!("content" in data) || isOptionalString(data.content, 60000))
+        && (!("contentMarkdown" in data) || isOptionalString(data.contentMarkdown, 60000))
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
         && (

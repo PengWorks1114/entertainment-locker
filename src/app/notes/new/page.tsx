@@ -10,6 +10,7 @@ import {
   collection,
   doc,
   getDoc,
+  type DocumentData,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
@@ -302,19 +303,24 @@ export default function NewNotePage() {
     setFeedback(null);
 
     try {
-      const docRef = await addDoc(collection(db, "note"), {
+      const payload: DocumentData = {
         uid: user.uid,
         title: trimmedTitle,
         description: trimmedDescription ? trimmedDescription : null,
-        content: sanitizedContentHtml,
-        contentMarkdown: markdownValue ? markdownValue : null,
         tags: sanitizedTags,
         linkedCabinetIds: sanitizedCabinetIds,
         linkedItemIds: sanitizedItemIds,
         isFavorite,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (sanitizedContentHtml.length > 0) {
+        payload.content = sanitizedContentHtml;
+      }
+      if (markdownValue.length > 0) {
+        payload.contentMarkdown = markdownValue;
+      }
+      const docRef = await addDoc(collection(db, "note"), payload);
       setFeedback({ type: "success", message: "已新增筆記" });
       setTitle("");
       setDescription("");
