@@ -4,16 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { FirebaseError } from "firebase/app";
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  type DocumentData,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, setDoc } from "firebase/firestore";
 
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
@@ -22,25 +13,13 @@ import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
 import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
-
-const TITLE_LIMIT = 100;
-const DESCRIPTION_LIMIT = 300;
-const MAX_CONTENT_LENGTH = 60000;
-const MAX_MARKDOWN_LENGTH = 60000;
-const MAX_TAG_LENGTH = 100;
-const MAX_TAGS = 500;
-const MAX_LINKED_TARGETS = 50;
-const MAX_ID_LENGTH = 100;
-
-function sanitizeIdList(values: string[]): string[] {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => (typeof value === "string" ? value.trim() : ""))
-        .filter((value): value is string => value.length > 0)
-    )
-  );
-}
+import {
+  NOTE_DESCRIPTION_LIMIT,
+  NOTE_TITLE_LIMIT,
+  buildNoteCreatePayload,
+  extractFirestoreErrorMessage,
+  validateNoteSubmission,
+} from "@/lib/noteForm";
 
 type Feedback = {
   type: "error" | "success";
@@ -232,67 +211,6 @@ export default function NewNotePage() {
       setFeedback({ type: "error", message: "請先登入" });
       return;
     }
-    const trimmedTitle = title.trim();
-    const trimmedDescription = description.trim();
-    const trimmedContentText = contentText.trim();
-    const sanitizedContentHtml = contentHtml.trim();
-    if (!trimmedTitle) {
-      setFeedback({ type: "error", message: "請填寫筆記標題" });
-      return;
-    }
-    if (trimmedTitle.length > TITLE_LIMIT) {
-      setFeedback({ type: "error", message: `標題長度不可超過 ${TITLE_LIMIT} 字` });
-      return;
-    }
-    if (trimmedDescription.length > DESCRIPTION_LIMIT) {
-      setFeedback({ type: "error", message: `備註長度不可超過 ${DESCRIPTION_LIMIT} 字` });
-      return;
-    }
-    const markdownValue = markdownContent.trim();
-    if (!trimmedContentText && !markdownValue) {
-      setFeedback({ type: "error", message: "請填寫筆記內容或 Markdown" });
-      return;
-    }
-
-    const sanitizedTags = normalizeNoteTags(tags);
-    if (sanitizedTags.length > MAX_TAGS) {
-      setFeedback({ type: "error", message: `標籤數量不可超過 ${MAX_TAGS} 個` });
-      return;
-    }
-    if (sanitizedTags.some((tag) => tag.length > MAX_TAG_LENGTH)) {
-      setFeedback({ type: "error", message: `標籤長度不可超過 ${MAX_TAG_LENGTH} 字` });
-      return;
-    }
-
-    const sanitizedCabinetIds = sanitizeIdList(selectedCabinetIds);
-    if (sanitizedCabinetIds.length > MAX_LINKED_TARGETS) {
-      setFeedback({ type: "error", message: `連結的櫃子數量不可超過 ${MAX_LINKED_TARGETS} 個` });
-      return;
-    }
-    if (sanitizedCabinetIds.some((id) => id.length > MAX_ID_LENGTH)) {
-      setFeedback({ type: "error", message: "櫃子識別碼長度異常，請重新選擇" });
-      return;
-    }
-
-    const sanitizedItemIds = sanitizeIdList(selectedItemIds);
-    if (sanitizedItemIds.length > MAX_LINKED_TARGETS) {
-      setFeedback({ type: "error", message: `連結的作品數量不可超過 ${MAX_LINKED_TARGETS} 個` });
-      return;
-    }
-    if (sanitizedItemIds.some((id) => id.length > MAX_ID_LENGTH)) {
-      setFeedback({ type: "error", message: "作品識別碼長度異常，請重新選擇" });
-      return;
-    }
-
-    if (sanitizedContentHtml.length > MAX_CONTENT_LENGTH) {
-      setFeedback({ type: "error", message: `筆記內容長度不可超過 ${MAX_CONTENT_LENGTH} 字` });
-      return;
-    }
-    if (markdownValue.length > MAX_MARKDOWN_LENGTH) {
-      setFeedback({ type: "error", message: `Markdown 內容長度不可超過 ${MAX_MARKDOWN_LENGTH} 字` });
-      return;
-    }
-
     const db = getFirebaseDb();
     if (!db) {
       setFeedback({ type: "error", message: "Firebase 尚未設定" });
@@ -303,24 +221,24 @@ export default function NewNotePage() {
     setFeedback(null);
 
     try {
-      const payload: DocumentData = {
-        uid: user.uid,
-        title: trimmedTitle,
-        description: trimmedDescription ? trimmedDescription : null,
-        tags: sanitizedTags,
-        linkedCabinetIds: sanitizedCabinetIds,
-        linkedItemIds: sanitizedItemIds,
-        isFavorite,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      if (sanitizedContentHtml.length > 0) {
-        payload.content = sanitizedContentHtml;
+      const validation = validateNoteSubmission({
+        title,
+        description,
+        contentHtml,
+        markdownContent,
+        plainTextContent: contentText,
+        tags,
+        linkedCabinetIds: selectedCabinetIds,
+        linkedItemIds: selectedItemIds,
+      });
+      if (!validation.ok) {
+        setFeedback({ type: "error", message: validation.error });
+        return;
       }
-      if (markdownValue.length > 0) {
-        payload.contentMarkdown = markdownValue;
-      }
-      const docRef = await addDoc(collection(db, "note"), payload);
+      const docRef = await addDoc(
+        collection(db, "note"),
+        buildNoteCreatePayload(user.uid, validation.sanitized, isFavorite)
+      );
       setFeedback({ type: "success", message: "已新增筆記" });
       setTitle("");
       setDescription("");
@@ -336,11 +254,10 @@ export default function NewNotePage() {
       router.replace(`/notes/${docRef.id}`);
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
-      let message = "新增筆記時發生錯誤";
-      if (err instanceof FirebaseError && err.code === "permission-denied") {
-        message = "沒有權限新增筆記，請確認登入狀態或 Firestore 規則設定。";
-      }
-      setFeedback({ type: "error", message });
+      setFeedback({
+        type: "error",
+        message: extractFirestoreErrorMessage(err, "新增筆記時發生錯誤"),
+      });
     } finally {
       setSaving(false);
     }
@@ -396,13 +313,13 @@ export default function NewNotePage() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="輸入筆記標題"
-                maxLength={TITLE_LIMIT}
+                maxLength={NOTE_TITLE_LIMIT}
                 required
                 className="h-12 w-full rounded-xl border px-4 text-base"
                 autoFocus
               />
               <span className="block text-right text-xs text-gray-400">
-                {title.trim().length}/{TITLE_LIMIT}
+                {title.trim().length}/{NOTE_TITLE_LIMIT}
               </span>
             </label>
             <label className="block space-y-2">
@@ -411,11 +328,11 @@ export default function NewNotePage() {
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="補充筆記相關備註（選填）"
-                maxLength={DESCRIPTION_LIMIT}
+                maxLength={NOTE_DESCRIPTION_LIMIT}
                 className="min-h-[100px] w-full resize-y rounded-xl border px-4 py-3 text-base"
               />
               <span className="block text-right text-xs text-gray-400">
-                {description.trim().length}/{DESCRIPTION_LIMIT}
+                {description.trim().length}/{NOTE_DESCRIPTION_LIMIT}
               </span>
             </label>
             <div className="space-y-3">

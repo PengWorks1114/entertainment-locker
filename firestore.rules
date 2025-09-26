@@ -20,32 +20,17 @@ service cloud.firestore {
         && list.size() == list.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size();
     }
 
-    function isOptionalBoundedStringList(field, maxItems, minLen, maxLen) {
+    function isOptionalBoundedStringList(field, maxItems, maxLen) {
       return field == null
         || (field is list
           && field.size() <= maxItems
-          && field.size() == field.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size());
+          && field.size() == field.where(item,
+            item == null || (item is string && item.size() <= maxLen)
+          ).size());
     }
 
     function isTimestamp(value) {
       return value is timestamp || value == request.time;
-    }
-
-    function hasNoteContent(data) {
-      return (
-          ("content" in data && isString(data.content, 60000) && data.content.size() > 0)
-        || ("contentMarkdown" in data && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
-      );
-    }
-
-    function hasExistingNoteContent() {
-      return resource != null
-        && resource.data != null
-        && (
-          hasNoteContent(resource.data)
-          || (("content" in resource.data) && resource.data.content is string)
-          || (("contentMarkdown" in resource.data) && resource.data.contentMarkdown is string)
-        );
     }
 
     function isValidNoteBase(data) {
@@ -55,19 +40,14 @@ service cloud.firestore {
         && (!("contentMarkdown" in data) || isOptionalString(data.contentMarkdown, 60000))
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
-        && (
-          "category" in data
-            ? (data.category == null
-                || data.category in ["general", "progress", "insight", "reference"])
-            : true
-        )
-        && (!("tags" in data) || isOptionalBoundedStringList(data.tags, 500, 1, 100))
+        && (!("category" in data)
+            || data.category == null
+            || isString(data.category, 100))
+        && (!("tags" in data) || isOptionalBoundedStringList(data.tags, 500, 100))
         && (!("linkedCabinetIds" in data)
-            || isOptionalBoundedStringList(data.linkedCabinetIds, 50, 1, 100))
+            || isOptionalBoundedStringList(data.linkedCabinetIds, 50, 100))
         && (!("linkedItemIds" in data)
-            || isOptionalBoundedStringList(data.linkedItemIds, 50, 1, 100))
-        && (!("createdAt" in data) || isTimestamp(data.createdAt))
-        && (!("updatedAt" in data) || isTimestamp(data.updatedAt));
+            || isOptionalBoundedStringList(data.linkedItemIds, 50, 100));
     }
 
     function isValidNoteCreate(data) {
@@ -75,13 +55,13 @@ service cloud.firestore {
         && ("createdAt" in data)
         && ("updatedAt" in data)
         && isTimestamp(data.createdAt)
-        && isTimestamp(data.updatedAt)
-        && hasNoteContent(data);
+        && isTimestamp(data.updatedAt);
     }
 
     function isValidNoteUpdate(data) {
       return isValidNoteBase(data)
-        && (hasNoteContent(data) || hasExistingNoteContent());
+        && (!("createdAt" in data) || isTimestamp(data.createdAt))
+        && (!("updatedAt" in data) || isTimestamp(data.updatedAt));
     }
 
     // 櫃子

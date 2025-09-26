@@ -4,14 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { FirebaseError } from "firebase/app";
 import {
   collection,
   deleteDoc,
   doc,
   onSnapshot,
   query,
-  serverTimestamp,
   Timestamp,
   updateDoc,
   where,
@@ -20,6 +18,10 @@ import {
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { markdownPreviewHtml } from "@/lib/markdown";
 import { buttonClass } from "@/lib/ui";
+import {
+  buildFavoriteTogglePayload,
+  extractFirestoreErrorMessage,
+} from "@/lib/noteForm";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -374,22 +376,16 @@ export default function NoteDetailPage({ params }: PageProps) {
     try {
       setFavoriting(true);
       setFeedback(null);
-      const updates: Record<string, unknown> = {
-        uid: user.uid,
-        isFavorite: !note.isFavorite,
-        updatedAt: serverTimestamp(),
-      };
-      if (note.createdAtTimestamp instanceof Timestamp) {
-        updates.createdAt = note.createdAtTimestamp;
-      }
-      await updateDoc(doc(db, "note", note.id), updates);
+      await updateDoc(
+        doc(db, "note", note.id),
+        buildFavoriteTogglePayload(user.uid, !note.isFavorite, note.createdAtTimestamp)
+      );
     } catch (err) {
       console.error("更新最愛狀態時發生錯誤", err);
-      let message = "更新最愛狀態時發生錯誤";
-      if (err instanceof FirebaseError && err.code === "permission-denied") {
-        message = "沒有權限更新筆記最愛狀態，請確認登入狀態或 Firestore 規則設定。";
-      }
-      setFeedback({ type: "error", message });
+      setFeedback({
+        type: "error",
+        message: extractFirestoreErrorMessage(err, "更新最愛狀態時發生錯誤"),
+      });
     } finally {
       setFavoriting(false);
     }
