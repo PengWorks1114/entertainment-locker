@@ -15,39 +15,35 @@ service cloud.firestore {
       return field == null || isString(field, maxLen);
     }
 
+    function isStringList(list, maxItems, minLen, maxLen) {
+      return list is list
+        && list.size() <= maxItems
+        && list.size() == list.where(item, item is string && item.size() >= minLen && item.size() <= maxLen).size();
+    }
+
     function isTimestamp(value) {
       return value is timestamp;
     }
 
     function hasNoteContent(data) {
-      return ("content" in data && isString(data.content, 60000))
-        && (
-          data.content.size() > 0 ||
-          (("contentMarkdown" in data) && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
-        );
+      return (
+          ("content" in data && isString(data.content, 60000) && data.content.size() > 0)
+        || ("contentMarkdown" in data && isString(data.contentMarkdown, 60000) && data.contentMarkdown.size() > 0)
+      );
     }
 
     function isValidNoteData(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
-        && ("content" in data && isString(data.content, 60000))
+        && (!("content" in data) || isString(data.content, 60000))
         && (!("contentMarkdown" in data) || isString(data.contentMarkdown, 60000))
         && hasNoteContent(data)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
         && ("isFavorite" in data ? data.isFavorite is bool : true)
         && ("category" in data ? (data.category == null || data.category in ["general", "progress", "insight", "reference"]) : true)
-        && ("tags" in data ? data.tags is list
-             && data.tags.size() <= 20
-             && data.tags.size() == data.tags.where(tag => tag is string && tag.size() >= 1 && tag.size() <= 50).size()
-             : true)
-        && ("linkedCabinetIds" in data ? data.linkedCabinetIds is list
-             && data.linkedCabinetIds.size() <= 50
-             && data.linkedCabinetIds.size() == data.linkedCabinetIds.where(cabinetId => cabinetId is string && cabinetId.size() >= 1 && cabinetId.size() <= 100).size()
-             : true)
-        && ("linkedItemIds" in data ? data.linkedItemIds is list
-             && data.linkedItemIds.size() <= 50
-             && data.linkedItemIds.size() == data.linkedItemIds.where(itemId => itemId is string && itemId.size() >= 1 && itemId.size() <= 100).size()
-             : true)
+        && (!("tags" in data) || isStringList(data.tags, 20, 1, 50))
+        && (!("linkedCabinetIds" in data) || isStringList(data.linkedCabinetIds, 50, 1, 100))
+        && (!("linkedItemIds" in data) || isStringList(data.linkedItemIds, 50, 1, 100))
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
     }
