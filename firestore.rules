@@ -28,7 +28,7 @@ service cloud.firestore {
     }
 
     function isTimestamp(value) {
-      return value is timestamp;
+      return value is timestamp || value == request.time;
     }
 
     function hasNoteContent(data) {
@@ -39,7 +39,13 @@ service cloud.firestore {
     }
 
     function hasExistingNoteContent() {
-      return resource != null && resource.data != null && hasNoteContent(resource.data);
+      return resource != null
+        && resource.data != null
+        && (
+          hasNoteContent(resource.data)
+          || (("content" in resource.data) && resource.data.content is string)
+          || (("contentMarkdown" in resource.data) && resource.data.contentMarkdown is string)
+        );
     }
 
     function isValidNoteBase(data) {
