@@ -79,6 +79,7 @@ export default function CabinetsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
+  const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const canChangeSortDirection = sortOption !== "custom";
@@ -87,6 +88,8 @@ export default function CabinetsPage() {
       variant: sortDirection === direction ? "primary" : "secondary",
       size: "sm",
     })} whitespace-nowrap px-3`;
+  const itemCountBadgeClass =
+    "inline-flex h-6 min-w-[1.75rem] items-center justify-center rounded-full bg-indigo-50 px-2 text-xs font-medium text-indigo-700";
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -169,6 +172,42 @@ export default function CabinetsPage() {
       }
     );
     return () => unSub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setItemCounts({});
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setItemCounts({});
+      return;
+    }
+    const itemQuery = query(
+      collection(db, "item"),
+      where("uid", "==", user.uid)
+    );
+    const unsubscribe = onSnapshot(
+      itemQuery,
+      (snap) => {
+        const counts: Record<string, number> = {};
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          const cabinetIdValue =
+            typeof data?.cabinetId === "string" ? data.cabinetId.trim() : "";
+          if (!cabinetIdValue) {
+            return;
+          }
+          counts[cabinetIdValue] = (counts[cabinetIdValue] ?? 0) + 1;
+        });
+        setItemCounts(counts);
+      },
+      (err) => {
+        console.error("載入櫃子物件數量時發生錯誤", err);
+      }
+    );
+    return () => unsubscribe();
   }, [user]);
 
   const hasCabinet = list.length > 0;
@@ -659,6 +698,7 @@ export default function CabinetsPage() {
                       } as const;
                       const canUseOptimizedThumb = isOptimizedImageUrl(row.thumbUrl);
                       const isLocked = row.isLocked;
+                      const itemCount = itemCounts[row.id] ?? 0;
                       const coverClassName =
                         "relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-inner";
                       const coverContent = row.thumbUrl ? (
@@ -734,6 +774,13 @@ export default function CabinetsPage() {
                                       收藏
                                     </span>
                                   )}
+                                  <span
+                                    className={itemCountBadgeClass}
+                                    aria-label={`物件數量：${itemCount}`}
+                                    title={`物件數量：${itemCount}`}
+                                  >
+                                    {itemCount}
+                                  </span>
                                 </div>
                                 {row.note && (
                                   <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
@@ -781,6 +828,7 @@ export default function CabinetsPage() {
                     {pageItems.map((row) => {
                       const displayName = row.name || "未命名櫃子";
                       const encodedId = encodeURIComponent(row.id);
+                      const itemCount = itemCounts[row.id] ?? 0;
                       return (
                         <li
                           key={row.id}
@@ -806,6 +854,13 @@ export default function CabinetsPage() {
                                     收藏
                                   </span>
                                 )}
+                                <span
+                                  className={itemCountBadgeClass}
+                                  aria-label={`物件數量：${itemCount}`}
+                                  title={`物件數量：${itemCount}`}
+                                >
+                                  {itemCount}
+                                </span>
                               </div>
                               {row.note && (
                                 <p
@@ -849,6 +904,7 @@ export default function CabinetsPage() {
                       <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="px-4 py-3">名稱</th>
+                          <th className="px-4 py-3 text-right">物件數</th>
                           <th className="px-4 py-3">備註</th>
                           <th className="px-4 py-3">收藏</th>
                           <th className="px-4 py-3">狀態</th>
@@ -858,6 +914,7 @@ export default function CabinetsPage() {
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {pageItems.map((row) => {
                           const encodedId = encodeURIComponent(row.id);
+                          const itemCount = itemCounts[row.id] ?? 0;
                           return (
                             <tr key={row.id} className="align-top">
                               <td className="max-w-[240px] px-4 py-3">
@@ -868,6 +925,15 @@ export default function CabinetsPage() {
                                 >
                                   {row.name || "未命名櫃子"}
                                 </Link>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <span
+                                  className={itemCountBadgeClass}
+                                  aria-label={`物件數量：${itemCount}`}
+                                  title={`物件數量：${itemCount}`}
+                                >
+                                  {itemCount}
+                                </span>
                               </td>
                               <td className="max-w-[320px] px-4 py-3 text-gray-600">
                                 {row.note ? (

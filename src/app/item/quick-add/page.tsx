@@ -13,6 +13,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
+  Timestamp,
   addDoc,
   collection,
   doc,
@@ -22,10 +23,9 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import {
-  fetchOpenGraphImage,
-  fetchOpenGraphMetadata,
-} from "@/lib/opengraph";
+import { fetchOpenGraphImage } from "@/lib/opengraph";
+import { fetchExternalItemData } from "@/lib/external-metadata";
+import type { ExternalItemMetadata } from "@/lib/external-metadata-types";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType, ItemLanguage } from "@/lib/types";
 import { ITEM_LANGUAGE_OPTIONS, ITEM_LANGUAGE_VALUES } from "@/lib/types";
@@ -76,6 +76,54 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+function detectTagsFromTitle(title: string, tags: string[]): string[] {
+  if (!title || tags.length === 0) {
+    return [];
+  }
+  const loweredTitle = title.toLowerCase();
+  const matched = tags.filter((tag) => {
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return loweredTitle.includes(normalized);
+  });
+  return matched;
+}
+
+function formatDateLabel(dateString: string | null): string | null {
+  if (!dateString) {
+    return null;
+  }
+  const parsed = new Date(dateString);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function createProgressNote(
+  publishedAt: string | null,
+  updatedAt: string | null
+): string | null {
+  const parts: string[] = [];
+  const publishedLabel = formatDateLabel(publishedAt);
+  const updatedLabel = formatDateLabel(updatedAt);
+  if (publishedLabel) {
+    parts.push(`發布：${publishedLabel}`);
+  }
+  if (updatedLabel && updatedLabel !== publishedLabel) {
+    parts.push(`更新：${updatedLabel}`);
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join(" / ");
+}
+
 export default function QuickAddItemPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -93,6 +141,7 @@ export default function QuickAddItemPage() {
     thumbUrl: "",
     progressValue: "",
   });
+  const [languageTouched, setLanguageTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clipboardCheckedRef = useRef(false);
@@ -427,6 +476,9 @@ export default function QuickAddItemPage() {
   }, [form.sourceUrl, form.titleZh, hasCabinet, saving]);
 
   function handleInputChange<K extends keyof FormState>(key: K, value: string) {
+    if (key === "language") {
+      setLanguageTouched(true);
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -466,38 +518,210 @@ export default function QuickAddItemPage() {
     }
 
     let titleZh = form.titleZh.trim();
-    const titleAlt = form.titleAlt.trim();
-    const author = form.author.trim();
-    const languageValue = form.language;
-    if (languageValue && !ITEM_LANGUAGE_VALUES.includes(languageValue)) {
+    let titleAlt = form.titleAlt.trim();
+    let author = form.author.trim();
+    let resolvedLanguage = form.language;
+    if (resolvedLanguage && !ITEM_LANGUAGE_VALUES.includes(resolvedLanguage)) {
       setError("請選擇有效的語言");
       return;
     }
 
-    const allowedTags = new Set(cabinetTags);
-    const uniqueTags = Array.from(
-      new Set(
-        form.selectedTags
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-          .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
-      )
-    );
+    let workingSelectedTags = [...form.selectedTags];
 
     setSaving(true);
     setError(null);
     try {
-      if (!titleZh) {
-        if (sourceUrl) {
-          const metadata = await fetchOpenGraphMetadata(sourceUrl);
-          const fetchedTitle = metadata?.title?.trim();
-          const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
-          titleZh = resolvedTitle;
-          setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
-        } else {
-          titleZh = QUICK_ADD_DEFAULT_TITLE;
-          setForm((prev) => ({ ...prev, titleZh: QUICK_ADD_DEFAULT_TITLE }));
+      const autoUpdates: Partial<FormState> = {};
+      let externalMetadata: ExternalItemMetadata | null = null;
+      if (sourceUrl) {
+        externalMetadata = await fetchExternalItemData(sourceUrl);
+      }
+
+      let resolvedThumbUrl = thumbUrlInput;
+      let generalNote: string | null = null;
+      let progressNoteValue: string | null = null;
+      let nextUpdateTimestamp: Timestamp | null = null;
+
+      if (!titleZh && externalMetadata?.primaryTitle) {
+        titleZh = externalMetadata.primaryTitle;
+        autoUpdates.titleZh = externalMetadata.primaryTitle;
+      }
+
+      if (!titleAlt && externalMetadata?.originalTitle) {
+        titleAlt = externalMetadata.originalTitle;
+        autoUpdates.titleAlt = externalMetadata.originalTitle;
+      } else if (!titleAlt && externalMetadata?.alternateTitles?.length) {
+        const altCandidate =
+          externalMetadata.alternateTitles.find((entry) => entry !== titleZh) ??
+          externalMetadata.alternateTitles[0];
+        if (altCandidate) {
+          titleAlt = altCandidate;
+          autoUpdates.titleAlt = altCandidate;
         }
+      }
+
+      if (!author && externalMetadata?.author) {
+        author = externalMetadata.author;
+        autoUpdates.author = externalMetadata.author;
+      }
+
+      if (
+        externalMetadata?.language &&
+        languageTouched &&
+        (!resolvedLanguage || resolvedLanguage === "")
+      ) {
+        const metadataLanguage = externalMetadata.language;
+        if (resolvedLanguage !== metadataLanguage) {
+          resolvedLanguage = metadataLanguage;
+          autoUpdates.language = metadataLanguage;
+        }
+      }
+
+      if (!progressValueInput && externalMetadata?.episode) {
+        const { number, raw } = externalMetadata.episode;
+        if (typeof number === "number" && Number.isFinite(number)) {
+          parsedProgressValue = number;
+          autoUpdates.progressValue = String(number);
+        } else if (typeof raw === "string") {
+          const numericMatch = raw.match(/(\d{1,4})/);
+          if (numericMatch) {
+            const numeric = Number.parseInt(numericMatch[1] ?? "", 10);
+            if (Number.isFinite(numeric)) {
+              parsedProgressValue = numeric;
+              autoUpdates.progressValue = String(numeric);
+            }
+          }
+        }
+      }
+
+      if (!resolvedThumbUrl && externalMetadata?.image) {
+        resolvedThumbUrl = externalMetadata.image;
+        if (resolvedThumbUrl) {
+          autoUpdates.thumbUrl = resolvedThumbUrl;
+        }
+      }
+
+      if (!generalNote && externalMetadata?.description) {
+        const trimmedDescription = externalMetadata.description.trim();
+        if (trimmedDescription) {
+          generalNote = trimmedDescription;
+        }
+      }
+
+      if (!progressNoteValue) {
+        progressNoteValue = createProgressNote(
+          externalMetadata?.publishedAt ?? null,
+          externalMetadata?.updatedAt ?? null
+        );
+      }
+
+      if (externalMetadata?.facts?.length) {
+        const detailLines = externalMetadata.facts
+          .filter((fact) => fact.type !== "tag")
+          .map((fact) => `${fact.label}：${fact.value}`.trim())
+          .filter((line) => line.length > 0);
+        if (detailLines.length > 0) {
+          const mergedDetails = Array.from(new Set(detailLines)).join("\n");
+          generalNote = generalNote
+            ? `${generalNote}\n${mergedDetails}`
+            : mergedDetails;
+        }
+      }
+
+      if (!nextUpdateTimestamp && externalMetadata?.nextUpdateAt) {
+        const parsedNext = new Date(externalMetadata.nextUpdateAt);
+        if (!Number.isNaN(parsedNext.getTime())) {
+          nextUpdateTimestamp = Timestamp.fromDate(parsedNext);
+        }
+      }
+
+      if (!titleZh) {
+        const fallbackTitle = externalMetadata?.primaryTitle ?? QUICK_ADD_DEFAULT_TITLE;
+        titleZh = fallbackTitle;
+        autoUpdates.titleZh = fallbackTitle;
+      }
+
+      if (!resolvedThumbUrl && sourceUrl) {
+        const autoThumb = await fetchOpenGraphImage(sourceUrl);
+        if (autoThumb) {
+          resolvedThumbUrl = autoThumb;
+          autoUpdates.thumbUrl = autoThumb;
+        }
+      }
+
+      if (cabinetTags.length > 0) {
+        const tagSourceSet = new Set<string>();
+        const primarySource =
+          titleZh && titleZh !== QUICK_ADD_DEFAULT_TITLE
+            ? titleZh
+            : externalMetadata?.primaryTitle ?? null;
+        if (primarySource) {
+          tagSourceSet.add(primarySource);
+        }
+        if (titleAlt) {
+          tagSourceSet.add(titleAlt);
+        }
+        if (externalMetadata?.alternateTitles?.length) {
+          externalMetadata.alternateTitles.forEach((candidate) => {
+            if (candidate) {
+              tagSourceSet.add(candidate);
+            }
+          });
+        }
+        if (externalMetadata?.keywords?.length) {
+          externalMetadata.keywords.forEach((keyword) => {
+            if (keyword) {
+              tagSourceSet.add(keyword);
+            }
+          });
+        }
+        if (externalMetadata?.facts?.length) {
+          externalMetadata.facts
+            .filter((fact) => fact.type === "tag")
+            .forEach((fact) => {
+              if (fact.value) {
+                tagSourceSet.add(fact.value);
+              }
+            });
+        }
+        const matchedTagMap = new Map<string, string>();
+        tagSourceSet.forEach((source) => {
+          detectTagsFromTitle(source, cabinetTags).forEach((tag) => {
+            matchedTagMap.set(tag.toLowerCase(), tag);
+          });
+        });
+        if (matchedTagMap.size > 0) {
+          const existingLower = new Set(
+            workingSelectedTags.map((tag) => tag.toLowerCase())
+          );
+          const toAppend = Array.from(matchedTagMap.values()).filter(
+            (tag) => !existingLower.has(tag.toLowerCase())
+          );
+          if (toAppend.length > 0) {
+            workingSelectedTags = [...workingSelectedTags, ...toAppend];
+          }
+        }
+      }
+
+      const allowedTags = new Set(cabinetTags);
+      const uniqueTags = Array.from(
+        new Set(
+          workingSelectedTags
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+            .filter((tag) => allowedTags.size === 0 || allowedTags.has(tag))
+        )
+      );
+
+      const selectionChanged =
+        uniqueTags.length !== form.selectedTags.length ||
+        uniqueTags.some((tag, index) => form.selectedTags[index] !== tag);
+      if (selectionChanged) {
+        autoUpdates.selectedTags = uniqueTags;
+      }
+
+      if (Object.keys(autoUpdates).length > 0) {
+        setForm((prev) => ({ ...prev, ...autoUpdates }));
       }
 
       const db = getFirebaseDb();
@@ -520,23 +744,31 @@ export default function QuickAddItemPage() {
         }
       }
 
+      const linkLabel = (() => {
+        if (!sourceUrl) {
+          return "來源";
+        }
+        if (externalMetadata?.sourceName?.trim()) {
+          return externalMetadata.sourceName.trim();
+        }
+        try {
+          const parsed = new URL(sourceUrl);
+          const host = parsed.hostname.replace(/^www\./, "");
+          return host || "來源";
+        } catch {
+          return "來源";
+        }
+      })();
+
       const links = sourceUrl
         ? [
             {
-              label: "來源",
+              label: linkLabel || "來源",
               url: sourceUrl,
               isPrimary: true,
             },
           ]
         : [];
-
-      let resolvedThumbUrl = thumbUrlInput;
-      if (!resolvedThumbUrl && sourceUrl) {
-        const autoThumb = await fetchOpenGraphImage(sourceUrl);
-        if (autoThumb) {
-          resolvedThumbUrl = autoThumb;
-        }
-      }
 
       const docRef = await addDoc(collection(db, "item"), {
         uid: user.uid,
@@ -544,20 +776,20 @@ export default function QuickAddItemPage() {
         titleZh,
         titleAlt: titleAlt || null,
         author: author || null,
-        language: languageValue || null,
+        language: resolvedLanguage || null,
         tags: uniqueTags,
         links,
         thumbUrl: resolvedThumbUrl || null,
         thumbTransform: null,
-        progressNote: null,
+        progressNote: progressNoteValue || null,
         insightNotes: [],
         insightNote: null,
-        note: null,
+        note: generalNote || null,
         appearances: [],
         rating: null,
         status: "in-progress",
         updateFrequency: null,
-        nextUpdateAt: null,
+        nextUpdateAt: nextUpdateTimestamp,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -567,7 +799,7 @@ export default function QuickAddItemPage() {
         type: QUICK_ADD_PROGRESS_TYPE,
         value: parsedProgressValue,
         unit: QUICK_ADD_PROGRESS_UNIT,
-        note: null,
+        note: progressNoteValue,
         link: null,
         isPrimary: true,
         updatedAt: serverTimestamp(),

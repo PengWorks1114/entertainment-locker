@@ -25,6 +25,8 @@ import {
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { fetchOpenGraphImage } from "@/lib/opengraph";
+import { fetchExternalItemData } from "@/lib/external-metadata";
+import type { ExternalItemMetadata } from "@/lib/external-metadata-types";
 import ThumbLinkField from "./ThumbLinkField";
 import ThumbEditorDialog from "./ThumbEditorDialog";
 import CabinetTagQuickEditor from "./CabinetTagQuickEditor";
@@ -793,23 +795,97 @@ export default function ItemForm({ itemId, initialCabinetId }: ItemFormProps) {
     });
 
     try {
+      let workingForm: ItemFormState = { ...form };
+      const externalStateUpdates: Partial<ItemFormState> = {};
+      const primaryLinkInput =
+        filteredLinks.find((link) => link.isPrimary) ?? filteredLinks[0] ?? null;
+      const candidateSourceUrlInput = primaryLinkInput?.url?.trim() ?? "";
+      let externalMetadata: ExternalItemMetadata | null = null;
+      if (mode === "create" && candidateSourceUrlInput) {
+        try {
+          externalMetadata = await fetchExternalItemData(candidateSourceUrlInput);
+        } catch (err) {
+          console.debug("fetchExternalItemData failed", err);
+        }
+      }
+
+      if (externalMetadata) {
+        if (!workingForm.titleZh.trim() && externalMetadata.primaryTitle) {
+          workingForm = { ...workingForm, titleZh: externalMetadata.primaryTitle };
+          externalStateUpdates.titleZh = externalMetadata.primaryTitle;
+        }
+
+        if (!workingForm.titleAlt.trim() && externalMetadata.originalTitle) {
+          workingForm = { ...workingForm, titleAlt: externalMetadata.originalTitle };
+          externalStateUpdates.titleAlt = externalMetadata.originalTitle;
+        } else if (
+          !workingForm.titleAlt.trim() &&
+          externalMetadata.alternateTitles.length > 0
+        ) {
+          const altCandidate =
+            externalMetadata.alternateTitles.find(
+              (entry) => entry !== externalMetadata.primaryTitle
+            ) ?? externalMetadata.alternateTitles[0];
+          if (altCandidate) {
+            workingForm = { ...workingForm, titleAlt: altCandidate };
+            externalStateUpdates.titleAlt = altCandidate;
+          }
+        }
+
+        if (!workingForm.author.trim() && externalMetadata.author) {
+          workingForm = { ...workingForm, author: externalMetadata.author };
+          externalStateUpdates.author = externalMetadata.author;
+        }
+
+        if (externalMetadata.language) {
+          const metadataLanguage = externalMetadata.language;
+          if (
+            !workingForm.language ||
+            workingForm.language === "" ||
+            workingForm.language === "zh" ||
+            workingForm.language === metadataLanguage
+          ) {
+            if (workingForm.language !== metadataLanguage) {
+              workingForm = { ...workingForm, language: metadataLanguage };
+              externalStateUpdates.language = metadataLanguage;
+            }
+          }
+        }
+
+        if (!workingForm.thumbUrl.trim() && externalMetadata.image) {
+          workingForm = {
+            ...workingForm,
+            thumbUrl: externalMetadata.image,
+            thumbTransform: { ...DEFAULT_THUMB_TRANSFORM },
+          };
+          externalStateUpdates.thumbUrl = externalMetadata.image;
+          externalStateUpdates.thumbTransform = { ...DEFAULT_THUMB_TRANSFORM };
+        }
+      }
+
+      if (Object.keys(externalStateUpdates).length > 0) {
+        setForm((prev) => ({ ...prev, ...externalStateUpdates }));
+      }
+
       const parsedData: ItemFormData = parseItemForm({
-        cabinetId: form.cabinetId,
-        titleZh: form.titleZh,
-        titleAlt: form.titleAlt,
-        author: form.author,
-        language: form.language,
+        cabinetId: workingForm.cabinetId,
+        titleZh: workingForm.titleZh,
+        titleAlt: workingForm.titleAlt,
+        author: workingForm.author,
+        language: workingForm.language,
         tags,
         links: filteredLinks,
-        thumbUrl: form.thumbUrl,
-        thumbTransform: form.thumbTransform,
-        progressNote: form.progressNote,
+        thumbUrl: workingForm.thumbUrl,
+        thumbTransform: workingForm.thumbTransform,
+        progressNote: workingForm.progressNote,
         insightNotes: insightPayload,
-        note: form.note,
+        note: workingForm.note,
         appearances: appearancePayload,
-        rating: form.rating ? Number(form.rating) : undefined,
-        status: form.status,
-        updateFrequency: form.updateFrequency ? form.updateFrequency : null,
+        rating: workingForm.rating ? Number(workingForm.rating) : undefined,
+        status: workingForm.status,
+        updateFrequency: workingForm.updateFrequency
+          ? workingForm.updateFrequency
+          : null,
         nextUpdateAt: nextUpdateDate,
       });
 
