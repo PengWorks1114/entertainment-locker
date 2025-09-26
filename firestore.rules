@@ -33,6 +33,11 @@ service cloud.firestore {
       return value is timestamp || value == request.time;
     }
 
+    function hasNoteBody(data) {
+      return (("content" in data) && isNonEmptyString(data.content, 60000))
+        || (("contentMarkdown" in data) && isNonEmptyString(data.contentMarkdown, 60000));
+    }
+
     function isValidNoteBase(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
@@ -55,13 +60,15 @@ service cloud.firestore {
         && ("createdAt" in data)
         && ("updatedAt" in data)
         && isTimestamp(data.createdAt)
-        && isTimestamp(data.updatedAt);
+        && isTimestamp(data.updatedAt)
+        && hasNoteBody(data);
     }
 
     function isValidNoteUpdate(data) {
       return isValidNoteBase(data)
         && (!("createdAt" in data) || isTimestamp(data.createdAt))
-        && (!("updatedAt" in data) || isTimestamp(data.updatedAt));
+        && (!("updatedAt" in data) || isTimestamp(data.updatedAt))
+        && hasNoteBody(data);
     }
 
     // 櫃子

@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 
 import { normalizeNoteTags } from "@/lib/note";
+import { simpleMarkdownToHtml } from "@/lib/markdown";
 
 export const NOTE_TITLE_LIMIT = 100;
 export const NOTE_DESCRIPTION_LIMIT = 300;
@@ -25,6 +26,16 @@ function sanitizeIdList(values: string[]): string[] {
         .filter((value): value is string => value.length > 0)
     )
   );
+}
+
+function extractPlainTextFromHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export type NoteFormInput = {
@@ -67,21 +78,43 @@ export function validateNoteSubmission(input: NoteFormInput): ValidationResult {
   }
 
   const trimmedContentHtml = input.contentHtml.trim();
-  const trimmedPlainText = input.plainTextContent.trim();
   const trimmedMarkdown = input.markdownContent.trim();
+  const trimmedPlainTextInput = input.plainTextContent.trim();
 
-  if (!trimmedPlainText && !trimmedMarkdown) {
+  const hasMarkdown = trimmedMarkdown.length > 0;
+  const sanitizedMarkdown = hasMarkdown ? trimmedMarkdown : null;
+
+  let sanitizedHtml = trimmedContentHtml.length > 0 ? trimmedContentHtml : null;
+  let derivedPlainText =
+    sanitizedHtml !== null && trimmedPlainTextInput
+      ? trimmedPlainTextInput
+      : "";
+
+  if (!sanitizedHtml && hasMarkdown) {
+    const generatedHtml = simpleMarkdownToHtml(trimmedMarkdown).trim();
+    if (generatedHtml.length > 0) {
+      sanitizedHtml = generatedHtml;
+      derivedPlainText = extractPlainTextFromHtml(generatedHtml);
+    }
+  } else if (sanitizedHtml) {
+    derivedPlainText =
+      trimmedPlainTextInput || extractPlainTextFromHtml(sanitizedHtml);
+  }
+
+  const hasRichTextContent = Boolean(sanitizedHtml && derivedPlainText.length > 0);
+
+  if (!hasRichTextContent && !hasMarkdown) {
     return { ok: false, error: "請填寫筆記內容或 Markdown" };
   }
 
-  if (trimmedContentHtml.length > NOTE_CONTENT_LIMIT) {
+  if (sanitizedHtml && sanitizedHtml.length > NOTE_CONTENT_LIMIT) {
     return {
       ok: false,
       error: `筆記內容長度不可超過 ${NOTE_CONTENT_LIMIT} 字`,
     };
   }
 
-  if (trimmedMarkdown.length > NOTE_MARKDOWN_LIMIT) {
+  if (sanitizedMarkdown && sanitizedMarkdown.length > NOTE_MARKDOWN_LIMIT) {
     return {
       ok: false,
       error: `Markdown 內容長度不可超過 ${NOTE_MARKDOWN_LIMIT} 字`,
@@ -126,8 +159,8 @@ export function validateNoteSubmission(input: NoteFormInput): ValidationResult {
     sanitized: {
       title: trimmedTitle,
       description: trimmedDescription ? trimmedDescription : null,
-      contentHtml: trimmedContentHtml ? trimmedContentHtml : null,
-      markdownContent: trimmedMarkdown ? trimmedMarkdown : null,
+      contentHtml: sanitizedHtml,
+      markdownContent: sanitizedMarkdown,
       tags: sanitizedTags,
       linkedCabinetIds: sanitizedCabinetIds,
       linkedItemIds: sanitizedItemIds,
