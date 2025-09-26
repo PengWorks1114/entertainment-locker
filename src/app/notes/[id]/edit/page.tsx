@@ -18,7 +18,7 @@ import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextE
 import LinkTargetSelector from "@/components/LinkTargetSelector";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
-import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
@@ -152,14 +152,6 @@ export default function EditNotePage({ params }: PageProps) {
       setTagQuery("");
       return;
     }
-    if (tags.length >= NOTE_TAG_LIMIT) {
-      setTagStatus({
-        message: null,
-        error: `最多可選擇 ${NOTE_TAG_LIMIT} 個標籤`,
-        saving: false,
-      });
-      return;
-    }
     if (!user) {
       setTagStatus({ message: null, error: "請先登入", saving: false });
       return;
@@ -280,11 +272,7 @@ export default function EditNotePage({ params }: PageProps) {
             ? data.linkedItemIds.filter((value): value is string => typeof value === "string")
             : []
         );
-        setTags(
-          Array.isArray(data.tags)
-            ? normalizeNoteTags(data.tags).slice(0, NOTE_TAG_LIMIT)
-            : []
-        );
+        setTags(Array.isArray(data.tags) ? normalizeNoteTags(data.tags) : []);
         setTagStatus({ message: null, error: null, saving: false });
         setFeedback(null);
         setNotFound(false);
@@ -482,7 +470,7 @@ export default function EditNotePage({ params }: PageProps) {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">標籤</span>
-                  <span className="text-xs text-gray-400">最多 {NOTE_TAG_LIMIT} 個，可使用 Enter 或逗號快速新增。</span>
+                  <span className="text-xs text-gray-400">可使用 Enter 或逗號快速新增。</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button

@@ -252,6 +252,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [linkedNotesLoading, setLinkedNotesLoading] = useState(true);
   const [linkedNotesError, setLinkedNotesError] = useState<string | null>(null);
   const [linkedNotesFeedback, setLinkedNotesFeedback] = useState<NoteFeedback | null>(null);
+  const [linkedNotesExpanded, setLinkedNotesExpanded] = useState(false);
   const [unlinkingNoteId, setUnlinkingNoteId] = useState<string | null>(null);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -690,6 +691,12 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const timer = setTimeout(() => setLinkedNotesFeedback(null), 3000);
     return () => clearTimeout(timer);
   }, [linkedNotesFeedback]);
+
+  useEffect(() => {
+    if (linkedNotes.length === 0) {
+      setLinkedNotesExpanded(false);
+    }
+  }, [linkedNotes.length]);
 
   useEffect(() => {
     if (!appearanceFeedback) return;
@@ -2791,6 +2798,15 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               <p className="text-sm text-gray-500">快速檢視與此作品關聯的筆記記錄。</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:flex-none">
+              <button
+                type="button"
+                onClick={() => setLinkedNotesExpanded((prev) => !prev)}
+                className={buttonClass({ variant: "subtle", size: "sm" })}
+                disabled={linkedNotesLoading || (linkedNotes.length === 0 && !linkedNotesError)}
+                aria-pressed={linkedNotesExpanded}
+              >
+                {linkedNotesExpanded ? "收合" : "展開"}
+              </button>
               <Link
                 href={`/notes?itemId=${itemId}`}
                 className={buttonClass({ variant: "secondary", size: "sm" })}
@@ -2826,68 +2842,74 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               正在載入連結的筆記…
             </div>
           ) : linkedNotes.length > 0 ? (
-            <ul className="space-y-3">
-              {linkedNotes.map((note) => (
-                <li
-                  key={note.id}
-                  className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm"
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        {note.isFavorite ? (
-                          <span className="text-amber-500" aria-hidden="true">
-                            ★
-                          </span>
+            linkedNotesExpanded ? (
+              <ul className="space-y-3">
+                {linkedNotes.map((note) => (
+                  <li
+                    key={note.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          {note.isFavorite ? (
+                            <span className="text-amber-500" aria-hidden="true">
+                              ★
+                            </span>
+                          ) : null}
+                          <Link
+                            href={`/notes/${note.id}`}
+                            className="break-anywhere text-base font-semibold text-gray-900 hover:text-gray-700"
+                          >
+                            {note.title || "(未命名筆記)"}
+                          </Link>
+                        </div>
+                        {note.summary ? (
+                          <p className="break-anywhere text-sm text-gray-600">{note.summary}</p>
                         ) : null}
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                          <span>
+                            更新：{formatDateTime(Timestamp.fromMillis(note.updatedMs))}
+                          </span>
+                        </div>
+                        {note.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {note.tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-2 sm:flex-none">
                         <Link
                           href={`/notes/${note.id}`}
-                          className="break-anywhere text-base font-semibold text-gray-900 hover:text-gray-700"
+                          className={buttonClass({ variant: "secondary", size: "sm" })}
                         >
-                          {note.title || "(未命名筆記)"}
+                          開啟筆記
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleUnlinkNote(note.id)}
+                          className={buttonClass({ variant: "outlineDanger", size: "sm" })}
+                          disabled={unlinkingNoteId === note.id}
+                        >
+                          {unlinkingNoteId === note.id ? "處理中…" : "解除連結"}
+                        </button>
                       </div>
-                      {note.summary ? (
-                        <p className="break-anywhere text-sm text-gray-600">{note.summary}</p>
-                      ) : null}
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                        <span>
-                          更新：{formatDateTime(Timestamp.fromMillis(note.updatedMs))}
-                        </span>
-                      </div>
-                      {note.tags.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {note.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
-                    <div className="flex items-center gap-2 sm:flex-none">
-                      <Link
-                        href={`/notes/${note.id}`}
-                        className={buttonClass({ variant: "secondary", size: "sm" })}
-                      >
-                        開啟筆記
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleUnlinkNote(note.id)}
-                        className={buttonClass({ variant: "outlineDanger", size: "sm" })}
-                        disabled={unlinkingNoteId === note.id}
-                      >
-                        {unlinkingNoteId === note.id ? "處理中…" : "解除連結"}
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+                共 {linkedNotes.length} 筆連結筆記，按「展開」即可檢視詳細內容。
+              </div>
+            )
           ) : (
             <div className="rounded-xl border border-dashed border-gray-200 bg-white/70 p-6 text-center text-sm text-gray-500">
               尚未連結任何筆記，透過上方按鈕新增或挑選。

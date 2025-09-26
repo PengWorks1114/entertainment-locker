@@ -17,7 +17,7 @@ import {
 
 import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 function formatTotal(count: number): string {
@@ -185,11 +185,6 @@ export default function NoteTagManagerPage() {
     }
     if (tags.includes(value)) {
       setTagError("已有相同標籤");
-      setTagMessage(null);
-      return;
-    }
-    if (tags.length >= NOTE_TAG_LIMIT) {
-      setTagError(`最多僅能維護 ${NOTE_TAG_LIMIT} 個筆記標籤`);
       setTagMessage(null);
       return;
     }

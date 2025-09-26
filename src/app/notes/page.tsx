@@ -8,7 +8,7 @@ import { collection, doc, getDoc, onSnapshot, query, Timestamp, where } from "fi
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
-import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
@@ -397,6 +397,27 @@ export default function NotesPage() {
   const paginatedNotes = sortedNotes.slice(pageStartIndex, pageStartIndex + pageSize);
   const hasNotes = notes.length > 0;
   const hasFilteredNotes = totalNotes > 0;
+  const hasActiveFilters =
+    searchTerm.trim().length > 0 ||
+    sortOption !== "recentUpdated" ||
+    sortDirection !== "desc" ||
+    pageSize !== PAGE_SIZE_OPTIONS[1] ||
+    showFavoritesOnly ||
+    Boolean(selectedCabinetId) ||
+    Boolean(selectedItemId) ||
+    tagFilter.trim().length > 0;
+
+  const resetFilters = useCallback(() => {
+    setSearchTerm("");
+    setSortOption("recentUpdated");
+    setSortDirection("desc");
+    setPageSize(PAGE_SIZE_OPTIONS[1]);
+    setShowFavoritesOnly(false);
+    setSelectedCabinetId("");
+    setSelectedItemId("");
+    setTagFilter("");
+    setCurrentPage(1);
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -645,14 +666,25 @@ export default function NotesPage() {
               <h2 className="text-lg font-semibold text-gray-900">搜尋與篩選</h2>
               <p className="text-sm text-gray-500">找到目標筆記並調整列表顯示。</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setFiltersExpanded((prev) => !prev)}
-              className={buttonClass({ variant: "secondary", size: "sm" })}
-              aria-expanded={filtersExpanded}
-            >
-              {filtersExpanded ? "收合" : "展開"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className={buttonClass({ variant: "subtle", size: "sm" })}
+                >
+                  重設篩選
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setFiltersExpanded((prev) => !prev)}
+                className={buttonClass({ variant: "secondary", size: "sm" })}
+                aria-expanded={filtersExpanded}
+              >
+                {filtersExpanded ? "收合" : "展開"}
+              </button>
+            </div>
           </div>
           {filtersExpanded ? (
             <div className="space-y-4">
@@ -729,21 +761,6 @@ export default function NotesPage() {
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-1 flex-col space-y-1">
-                  <span className="text-sm text-gray-600">作品</span>
-                  <select
-                    value={selectedItemId}
-                    onChange={(event) => setSelectedItemId(event.target.value)}
-                    className="h-12 w-full rounded-xl border bg-white px-4 text-base"
-                  >
-                    <option value="">全部作品</option>
-                    {itemOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-sm text-gray-600">
@@ -794,7 +811,21 @@ export default function NotesPage() {
                       ))}
                     </div>
                   )}
-                  <span className="text-xs text-gray-400">可新增至 {NOTE_TAG_LIMIT} 個標籤，使用標籤管理調整列表。</span>
+                  {selectedItemId ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                      <span>
+                        僅顯示連結作品：
+                        {itemOptionMap.get(selectedItemId)?.title ?? "(已刪除或無法取得名稱)"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedItemId("")}
+                        className="inline-flex items-center rounded-full border border-indigo-200 bg-white px-2 py-1 font-medium text-indigo-600 transition hover:bg-indigo-100"
+                      >
+                        清除
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

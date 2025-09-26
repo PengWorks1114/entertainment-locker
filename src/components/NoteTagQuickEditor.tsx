@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseDb } from "@/lib/firebase";
-import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
+import { normalizeNoteTags } from "@/lib/note";
 
 const inputClass =
   "h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 shadow-sm focus:border-gray-300 focus:outline-none";
@@ -197,13 +197,6 @@ export default function NoteTagQuickEditor({
       setMessage(messageText);
       onStatus?.({ message: messageText, error: null });
       setTagInput("");
-      return;
-    }
-    if (localTags.length >= NOTE_TAG_LIMIT) {
-      const errorMessage = `最多僅能維護 ${NOTE_TAG_LIMIT} 個筆記標籤`;
-      setError(errorMessage);
-      setMessage(null);
-      onStatus?.({ message: null, error: errorMessage });
       return;
     }
     if (!userId) {

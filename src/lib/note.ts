@@ -1,5 +1,3 @@
-export const NOTE_TAG_LIMIT = 20;
-
 export function normalizeNoteTags(input: unknown): string[] {
   if (!Array.isArray(input)) {
     return [];

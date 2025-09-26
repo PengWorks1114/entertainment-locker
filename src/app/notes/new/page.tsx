@@ -18,7 +18,7 @@ import NoteTagQuickEditor from "@/components/NoteTagQuickEditor";
 import LinkTargetSelector from "@/components/LinkTargetSelector";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { markdownPreviewHtml, simpleMarkdownToHtml } from "@/lib/markdown";
-import { NOTE_TAG_LIMIT, normalizeNoteTags } from "@/lib/note";
+import { normalizeNoteTags } from "@/lib/note";
 import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
@@ -162,14 +162,6 @@ export default function NewNotePage() {
     if (tags.includes(value)) {
       setTagStatus({ message: `已選取 #${value}`, error: null, saving: false });
       setTagQuery("");
-      return;
-    }
-    if (tags.length >= NOTE_TAG_LIMIT) {
-      setTagStatus({
-        message: null,
-        error: `最多可選擇 ${NOTE_TAG_LIMIT} 個標籤`,
-        saving: false,
-      });
       return;
     }
     if (!user) {
@@ -364,7 +356,7 @@ export default function NewNotePage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">標籤</span>
-                  <span className="text-xs text-gray-400">最多 {NOTE_TAG_LIMIT} 個，可使用 Enter 或逗號快速新增。</span>
+                  <span className="text-xs text-gray-400">可使用 Enter 或逗號快速新增。</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
