@@ -475,7 +475,7 @@ export default function QuickAddItemPage() {
     }
 
     const allowedTags = new Set(cabinetTags);
-    const uniqueTags = Array.from(
+    const manualTags = Array.from(
       new Set(
         form.selectedTags
           .map((tag) => tag.trim())
@@ -537,6 +537,15 @@ export default function QuickAddItemPage() {
           resolvedThumbUrl = autoThumb;
         }
       }
+
+      const normalizedTitleForTags = titleZh.toLowerCase();
+      const autoDetectedTags =
+        normalizedTitleForTags.length === 0
+          ? []
+          : cabinetTags.filter((tag) =>
+              normalizedTitleForTags.includes(tag.toLowerCase())
+            );
+      const uniqueTags = Array.from(new Set([...manualTags, ...autoDetectedTags]));
 
       const docRef = await addDoc(collection(db, "item"), {
         uid: user.uid,
