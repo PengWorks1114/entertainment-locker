@@ -17,10 +17,10 @@ function createRequest(url: string): MinimalRequest {
   };
 }
 
-test("GET uses JSON-LD metadata as fallback", async () => {
+test("GET merges browser and legacy fetch metadata", async () => {
   const originalFetch = globalThis.fetch;
 
-  const html = `<!DOCTYPE html>
+  const browserHtml = `<!DOCTYPE html>
   <html lang="en">
     <head>
       <meta charset="utf-8" />
@@ -34,12 +34,27 @@ test("GET uses JSON-LD metadata as fallback", async () => {
     </body>
   </html>`;
 
+  const legacyHtml = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:image" content="/legacy-image.jpg" />
+      <meta property="og:title" content="Legacy Title" />
+    </head>
+    <body>
+      <img src="/legacy-image.jpg" alt="Legacy" />
+    </body>
+  </html>`;
+
   const requests: RequestInit[] = [];
+  let callCount = 0;
 
   globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
     if (init) {
       requests.push(init);
     }
+    const html = callCount === 0 ? browserHtml : legacyHtml;
+    callCount += 1;
     return new Response(html, {
       status: 200,
       headers: {
@@ -54,21 +69,29 @@ test("GET uses JSON-LD metadata as fallback", async () => {
 
     const payload = await response.json();
     assert.deepEqual(payload, {
-      image: null,
+      image: "https://example.com/legacy-image.jpg",
       title: "JSON-LD Headline",
       author: "Jane Doe",
       siteName: "Example Publisher",
     });
 
-    assert.ok(requests.length > 0, "fetch should be invoked");
-    const [init] = requests;
-    const headers = new Headers(init.headers);
+    assert.equal(callCount, 2, "should perform primary and fallback fetches");
+    assert.equal(requests.length, 2);
+
+    const primaryHeaders = new Headers(requests[0]?.headers);
     assert.equal(
-      headers.get("User-Agent"),
+      primaryHeaders.get("User-Agent"),
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     );
-    assert.equal(headers.get("Accept-Language"), "en-US,en;q=0.9");
-    assert.equal(headers.get("Sec-Fetch-Mode"), "navigate");
+    assert.equal(primaryHeaders.get("Accept-Language"), "en-US,en;q=0.9");
+    assert.equal(primaryHeaders.get("Sec-Fetch-Mode"), "navigate");
+
+    const fallbackHeaders = new Headers(requests[1]?.headers);
+    assert.equal(
+      fallbackHeaders.get("User-Agent"),
+      "Mozilla/5.0 (compatible; EntertainmentLockerBot/1.0; +https://github.com/)"
+    );
+    assert.equal(fallbackHeaders.get("Accept"), "text/html,application/xhtml+xml");
   } finally {
     globalThis.fetch = originalFetch;
   }

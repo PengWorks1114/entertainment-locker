@@ -3,6 +3,28 @@ import { NextRequest } from "next/server";
 const FETCH_TIMEOUT_MS = 7000;
 const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
 
+const BROWSER_REQUEST_HEADERS = {
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+} as const;
+
+const LEGACY_REQUEST_HEADERS = {
+  Accept: "text/html,application/xhtml+xml",
+  "User-Agent":
+    "Mozilla/5.0 (compatible; EntertainmentLockerBot/1.0; +https://github.com/)",
+} as const;
+
 const META_IMAGE_PRIORITY = [
   "og:image",
   "og:image:url",
@@ -48,6 +70,26 @@ const AUTHOR_KEYWORDS = [
 ];
 
 type JsonLdNode = Record<string, unknown>;
+
+interface DocumentSnapshot {
+  html: string;
+  baseUrl: URL;
+  metaTags: Map<string, string>;
+  jsonLdNodes: JsonLdNode[];
+}
+
+type FetchFailureReason =
+  | "timeout"
+  | "network"
+  | "bad_status"
+  | "unsupported"
+  | "empty";
+
+class FetchFailure extends Error {
+  constructor(readonly reason: FetchFailureReason) {
+    super(reason);
+  }
+}
 
 function extractJsonLdData(html: string): JsonLdNode[] {
   const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -369,6 +411,77 @@ async function readBodyWithLimit(response: Response): Promise<string> {
   return result;
 }
 
+function safeParseUrl(candidate: string | null | undefined): URL | null {
+  if (!candidate) {
+    return null;
+  }
+  try {
+    return new URL(candidate);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDocument(
+  url: URL,
+  headers: HeadersInit
+): Promise<DocumentSnapshot> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers,
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new FetchFailure("timeout");
+    }
+    throw new FetchFailure("network");
+  }
+
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    throw new FetchFailure("bad_status");
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html")) {
+    throw new FetchFailure("unsupported");
+  }
+
+  const html = await readBodyWithLimit(response);
+  if (!html) {
+    throw new FetchFailure("empty");
+  }
+
+  const baseUrl = safeParseUrl(response.url) ?? url;
+  const metaTags = collectMetaTags(html);
+  const jsonLdNodes = extractJsonLdData(html);
+
+  return { html, baseUrl, metaTags, jsonLdNodes };
+}
+
+async function tryFetchDocument(
+  url: URL,
+  headers: HeadersInit
+): Promise<DocumentSnapshot | null> {
+  try {
+    return await fetchDocument(url, headers);
+  } catch (error) {
+    if (error instanceof FetchFailure) {
+      return null;
+    }
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const urlParam = request.nextUrl.searchParams.get("url");
   if (!urlParam) {
@@ -385,66 +498,69 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "網址格式錯誤" }, { status: 400 });
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  let response: Response;
   try {
-    response = await fetch(targetUrl, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      },
+    const primary = await fetchDocument(targetUrl, BROWSER_REQUEST_HEADERS);
+
+    let imageUrl = pickMetaImage(primary.html, primary.baseUrl, primary.metaTags);
+    let title =
+      pickMetaTitle(primary.html, primary.metaTags) ??
+      pickJsonLdTitle(primary.jsonLdNodes);
+    let author =
+      pickMetaAuthor(primary.html, primary.metaTags) ??
+      pickJsonLdAuthor(primary.jsonLdNodes);
+    let siteName =
+      pickMetaSiteName(primary.metaTags) ??
+      pickJsonLdSiteName(primary.jsonLdNodes);
+
+    if (!imageUrl || !title || !author || !siteName) {
+      const fallback = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
+      if (fallback) {
+        if (!imageUrl) {
+          imageUrl = pickMetaImage(
+            fallback.html,
+            fallback.baseUrl,
+            fallback.metaTags
+          );
+        }
+        if (!title) {
+          title =
+            pickMetaTitle(fallback.html, fallback.metaTags) ??
+            pickJsonLdTitle(fallback.jsonLdNodes);
+        }
+        if (!author) {
+          author =
+            pickMetaAuthor(fallback.html, fallback.metaTags) ??
+            pickJsonLdAuthor(fallback.jsonLdNodes);
+        }
+        if (!siteName) {
+          siteName =
+            pickMetaSiteName(fallback.metaTags) ??
+            pickJsonLdSiteName(fallback.jsonLdNodes);
+        }
+      }
+    }
+
+    return Response.json({
+      image: imageUrl ?? null,
+      title: title ?? null,
+      author: author ?? null,
+      siteName: siteName ?? null,
     });
   } catch (error) {
-    clearTimeout(timeout);
-    if (error instanceof Error && error.name === "AbortError") {
-      return Response.json({ error: "抓取逾時" }, { status: 504 });
+    if (error instanceof FetchFailure) {
+      switch (error.reason) {
+        case "timeout":
+          return Response.json({ error: "抓取逾時" }, { status: 504 });
+        case "network":
+          return Response.json({ error: "抓取失敗" }, { status: 502 });
+        case "bad_status":
+          return Response.json({ error: "來源回應錯誤" }, { status: 502 });
+        case "unsupported":
+        case "empty":
+          return Response.json({ image: null });
+      }
     }
     return Response.json({ error: "抓取失敗" }, { status: 502 });
   }
-
-  clearTimeout(timeout);
-
-  if (!response.ok) {
-    return Response.json({ error: "來源回應錯誤" }, { status: 502 });
-  }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/html")) {
-    return Response.json({ image: null });
-  }
-
-  const html = await readBodyWithLimit(response);
-  if (!html) {
-    return Response.json({ image: null });
-  }
-
-  const metaTags = collectMetaTags(html);
-  const jsonLdNodes = extractJsonLdData(html);
-  const imageUrl = pickMetaImage(html, targetUrl, metaTags);
-  const title = pickMetaTitle(html, metaTags) ?? pickJsonLdTitle(jsonLdNodes);
-  const author = pickMetaAuthor(html, metaTags) ?? pickJsonLdAuthor(jsonLdNodes);
-  const siteName = pickMetaSiteName(metaTags) ?? pickJsonLdSiteName(jsonLdNodes);
-  return Response.json({
-    image: imageUrl ?? null,
-    title: title ?? null,
-    author: author ?? null,
-    siteName: siteName ?? null,
-  });
 }
 
