@@ -387,6 +387,17 @@ function sanitizeSiteName(value: string | null, baseUrl: URL): string | null {
   return normalized;
 }
 
+function rememberCandidate(
+  list: string[],
+  value: string | null | undefined
+): string | null {
+  if (typeof value === "string" && value) {
+    list.push(value);
+    return value;
+  }
+  return null;
+}
+
 function isLikelyFavicon(url: string): boolean {
   try {
     const { pathname } = new URL(url);
@@ -615,22 +626,38 @@ export async function GET(request: NextRequest) {
   try {
     const primary = await fetchDocument(targetUrl, BROWSER_REQUEST_HEADERS);
 
+    const imageCandidates: string[] = [];
+    const titleCandidates: string[] = [];
+    const siteNameCandidates: string[] = [];
+
     let imageUrl = sanitizeImage(
-      pickMetaImage(primary.html, primary.baseUrl, primary.metaTags)
+      rememberCandidate(
+        imageCandidates,
+        pickMetaImage(primary.html, primary.baseUrl, primary.metaTags)
+      )
     );
     if (!imageUrl) {
       imageUrl = sanitizeImage(
-        pickJsonLdImage(primary.jsonLdNodes, primary.baseUrl)
+        rememberCandidate(
+          imageCandidates,
+          pickJsonLdImage(primary.jsonLdNodes, primary.baseUrl)
+        )
       );
     }
 
     let title = sanitizeTitle(
-      pickMetaTitle(primary.html, primary.metaTags),
+      rememberCandidate(
+        titleCandidates,
+        pickMetaTitle(primary.html, primary.metaTags)
+      ),
       primary.baseUrl
     );
     if (!title) {
       title = sanitizeTitle(
-        pickJsonLdTitle(primary.jsonLdNodes),
+        rememberCandidate(
+          titleCandidates,
+          pickJsonLdTitle(primary.jsonLdNodes)
+        ),
         primary.baseUrl
       );
     }
@@ -638,12 +665,18 @@ export async function GET(request: NextRequest) {
       pickMetaAuthor(primary.html, primary.metaTags) ??
       pickJsonLdAuthor(primary.jsonLdNodes);
     let siteName = sanitizeSiteName(
-      pickMetaSiteName(primary.metaTags),
+      rememberCandidate(
+        siteNameCandidates,
+        pickMetaSiteName(primary.metaTags)
+      ),
       primary.baseUrl
     );
     if (!siteName) {
       siteName = sanitizeSiteName(
-        pickJsonLdSiteName(primary.jsonLdNodes),
+        rememberCandidate(
+          siteNameCandidates,
+          pickJsonLdSiteName(primary.jsonLdNodes)
+        ),
         primary.baseUrl
       );
     }
@@ -651,50 +684,72 @@ export async function GET(request: NextRequest) {
     if (!imageUrl || !title || !author || !siteName) {
       const fallback = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
       if (fallback) {
+        const fallbackMetaImage = rememberCandidate(
+          imageCandidates,
+          pickMetaImage(fallback.html, fallback.baseUrl, fallback.metaTags)
+        );
         if (!imageUrl) {
-          imageUrl = sanitizeImage(
-            pickMetaImage(
-              fallback.html,
-              fallback.baseUrl,
-              fallback.metaTags
-            )
+          imageUrl = sanitizeImage(fallbackMetaImage);
+        }
+        if (!imageUrl) {
+          const fallbackJsonLdImage = rememberCandidate(
+            imageCandidates,
+            pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
           );
-          if (!imageUrl) {
-            imageUrl = sanitizeImage(
-              pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
-            );
-          }
+          imageUrl = sanitizeImage(fallbackJsonLdImage);
+        }
+
+        const fallbackMetaTitle = rememberCandidate(
+          titleCandidates,
+          pickMetaTitle(fallback.html, fallback.metaTags)
+        );
+        if (!title) {
+          title = sanitizeTitle(fallbackMetaTitle, fallback.baseUrl);
         }
         if (!title) {
-          title = sanitizeTitle(
-            pickMetaTitle(fallback.html, fallback.metaTags),
-            fallback.baseUrl
+          const fallbackJsonLdTitle = rememberCandidate(
+            titleCandidates,
+            pickJsonLdTitle(fallback.jsonLdNodes)
           );
-          if (!title) {
-            title = sanitizeTitle(
-              pickJsonLdTitle(fallback.jsonLdNodes),
-              fallback.baseUrl
-            );
-          }
+          title = sanitizeTitle(fallbackJsonLdTitle, fallback.baseUrl);
         }
         if (!author) {
           author =
             pickMetaAuthor(fallback.html, fallback.metaTags) ??
             pickJsonLdAuthor(fallback.jsonLdNodes);
         }
+        const fallbackMetaSiteName = rememberCandidate(
+          siteNameCandidates,
+          pickMetaSiteName(fallback.metaTags)
+        );
         if (!siteName) {
           siteName = sanitizeSiteName(
-            pickMetaSiteName(fallback.metaTags),
+            fallbackMetaSiteName,
             fallback.baseUrl
           );
-          if (!siteName) {
-            siteName = sanitizeSiteName(
-              pickJsonLdSiteName(fallback.jsonLdNodes),
-              fallback.baseUrl
-            );
-          }
+        }
+        if (!siteName) {
+          const fallbackJsonLdSiteName = rememberCandidate(
+            siteNameCandidates,
+            pickJsonLdSiteName(fallback.jsonLdNodes)
+          );
+          siteName = sanitizeSiteName(
+            fallbackJsonLdSiteName,
+            fallback.baseUrl
+          );
         }
       }
+    }
+
+    if (!imageUrl) {
+      imageUrl = imageCandidates.find((candidate) => Boolean(candidate)) ?? null;
+    }
+    if (!title) {
+      title = titleCandidates.find((candidate) => Boolean(candidate)) ?? null;
+    }
+    if (!siteName) {
+      siteName =
+        siteNameCandidates.find((candidate) => Boolean(candidate)) ?? null;
     }
 
     return Response.json({
