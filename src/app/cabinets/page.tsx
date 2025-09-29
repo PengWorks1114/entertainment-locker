@@ -233,7 +233,9 @@ export default function CabinetsPage() {
       return filteredList;
     }
     const base = [...filteredList];
-    const directionFactor = sortDirection === "asc" ? 1 : -1;
+    const directionFactor =
+      (sortDirection === "asc" ? 1 : -1) *
+      (sortOption === "recentUpdated" || sortOption === "itemCount" ? -1 : 1);
     switch (sortOption) {
       case "recentUpdated":
         base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
