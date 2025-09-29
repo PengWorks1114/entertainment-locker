@@ -51,7 +51,12 @@ type Feedback = {
   message: string;
 };
 
-type SortOption = "custom" | "recentUpdated" | "created" | "name";
+type SortOption =
+  | "custom"
+  | "recentUpdated"
+  | "created"
+  | "name"
+  | "itemCount";
 type SortDirection = "asc" | "desc";
 type DisplayMode = "detailed" | "compact" | "list";
 
@@ -65,6 +70,7 @@ export default function CabinetsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [list, setList] = useState<Cabinet[]>([]);
+  const [cabinetItemCounts, setCabinetItemCounts] = useState<Record<string, number>>({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [showReorder, setShowReorder] = useState(false);
   const [reorderList, setReorderList] = useState<Cabinet[]>([]);
@@ -105,6 +111,7 @@ export default function CabinetsPage() {
   useEffect(() => {
     if (!user) {
       setList([]);
+      setCabinetItemCounts({});
       invalidateCabinetOptions();
       return;
     }
@@ -171,6 +178,39 @@ export default function CabinetsPage() {
     return () => unSub();
   }, [user]);
 
+  useEffect(() => {
+    if (!user) {
+      setCabinetItemCounts({});
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setCabinetItemCounts({});
+      return;
+    }
+    const q = query(collection(db, "item"), where("uid", "==", user.uid));
+    const unSub = onSnapshot(
+      q,
+      (snap) => {
+        const counts: Record<string, number> = {};
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const rawCabinetId =
+            typeof data?.cabinetId === "string" ? data.cabinetId.trim() : "";
+          if (!rawCabinetId) {
+            return;
+          }
+          counts[rawCabinetId] = (counts[rawCabinetId] ?? 0) + 1;
+        });
+        setCabinetItemCounts(counts);
+      },
+      () => {
+        setCabinetItemCounts({});
+      }
+    );
+    return () => unSub();
+  }, [user]);
+
   const hasCabinet = list.length > 0;
 
   const filteredList = useMemo(() => {
@@ -193,7 +233,9 @@ export default function CabinetsPage() {
       return filteredList;
     }
     const base = [...filteredList];
-    const directionFactor = sortDirection === "asc" ? 1 : -1;
+    const directionFactor =
+      (sortDirection === "asc" ? 1 : -1) *
+      (sortOption === "recentUpdated" || sortOption === "itemCount" ? -1 : 1);
     switch (sortOption) {
       case "recentUpdated":
         base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
@@ -210,11 +252,18 @@ export default function CabinetsPage() {
         );
         break;
       }
+      case "itemCount":
+        base.sort(
+          (a, b) =>
+            ((cabinetItemCounts[a.id] ?? 0) - (cabinetItemCounts[b.id] ?? 0)) *
+            directionFactor
+        );
+        break;
       default:
         break;
     }
     return base;
-  }, [filteredList, sortDirection, sortOption]);
+  }, [cabinetItemCounts, filteredList, sortDirection, sortOption]);
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -557,6 +606,8 @@ export default function CabinetsPage() {
                         setSortOption(nextOption);
                         if (nextOption === "custom") {
                           setSortDirection("desc");
+                        } else if (nextOption === "itemCount") {
+                          setSortDirection("desc");
                         }
                       }}
                       className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
@@ -565,6 +616,7 @@ export default function CabinetsPage() {
                       <option value="recentUpdated">最近更新</option>
                       <option value="created">建立時間</option>
                       <option value="name">名稱</option>
+                      <option value="itemCount">物件數量</option>
                     </select>
                     <div className="flex items-center gap-2">
                       <button
@@ -688,6 +740,8 @@ export default function CabinetsPage() {
                           無縮圖
                         </div>
                       );
+                      const itemCount = cabinetItemCounts[row.id] ?? 0;
+                      const itemCountLabel = `${itemCount} 個物件`;
                       return (
                         <li
                           key={row.id}
@@ -738,6 +792,7 @@ export default function CabinetsPage() {
                                 {row.note && (
                                   <p className="break-anywhere text-sm text-gray-600">{row.note}</p>
                                 )}
+                                <p className="text-xs text-gray-500">{itemCountLabel}</p>
                               </div>
                             </div>
                             <div className="flex flex-col gap-2 text-sm sm:flex-none sm:flex-row sm:flex-wrap sm:justify-end">
@@ -781,6 +836,8 @@ export default function CabinetsPage() {
                     {pageItems.map((row) => {
                       const displayName = row.name || "未命名櫃子";
                       const encodedId = encodeURIComponent(row.id);
+                      const itemCount = cabinetItemCounts[row.id] ?? 0;
+                      const itemCountLabel = `${itemCount} 個物件`;
                       return (
                         <li
                           key={row.id}
@@ -815,6 +872,7 @@ export default function CabinetsPage() {
                                   {row.note}
                                 </p>
                               )}
+                              <p className="text-xs text-gray-500">{itemCountLabel}</p>
                             </div>
                             <div className="flex flex-col gap-2 text-sm sm:flex-none sm:flex-row sm:flex-wrap sm:justify-end">
                               <button
@@ -849,6 +907,7 @@ export default function CabinetsPage() {
                       <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="px-4 py-3">名稱</th>
+                          <th className="px-4 py-3">物件數量</th>
                           <th className="px-4 py-3">備註</th>
                           <th className="px-4 py-3">收藏</th>
                           <th className="px-4 py-3">狀態</th>
@@ -858,6 +917,8 @@ export default function CabinetsPage() {
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {pageItems.map((row) => {
                           const encodedId = encodeURIComponent(row.id);
+                          const itemCount = cabinetItemCounts[row.id] ?? 0;
+                          const itemCountLabel = `${itemCount} 個物件`;
                           return (
                             <tr key={row.id} className="align-top">
                               <td className="max-w-[240px] px-4 py-3">
@@ -869,6 +930,7 @@ export default function CabinetsPage() {
                                   {row.name || "未命名櫃子"}
                                 </Link>
                               </td>
+                              <td className="px-4 py-3 text-gray-600">{itemCountLabel}</td>
                               <td className="max-w-[320px] px-4 py-3 text-gray-600">
                                 {row.note ? (
                                   <span

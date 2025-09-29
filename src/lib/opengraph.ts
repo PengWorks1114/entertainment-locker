@@ -1,6 +1,8 @@
 type OpenGraphMetadata = {
   image: string | null;
   title: string | null;
+  author: string | null;
+  siteName: string | null;
 };
 
 export async function fetchOpenGraphMetadata(
@@ -16,23 +18,29 @@ export async function fetchOpenGraphMetadata(
       return null;
     }
     const data: unknown = await response.json();
-    if (
-      data &&
-      typeof data === "object" &&
-      "image" in data &&
-      "title" in data
-    ) {
-      const { image, title } = data as {
-        image: unknown;
-        title: unknown;
+    if (data && typeof data === "object") {
+      const { image, title, author, siteName } = data as {
+        image?: unknown;
+        title?: unknown;
+        author?: unknown;
+        siteName?: unknown;
       };
       const normalizedImage =
         typeof image === "string" ? image.trim() || null : null;
       const normalizedTitle =
         typeof title === "string" ? title.trim() || null : null;
-      return { image: normalizedImage, title: normalizedTitle };
+      const normalizedAuthor =
+        typeof author === "string" ? author.trim() || null : null;
+      const normalizedSiteName =
+        typeof siteName === "string" ? siteName.trim() || null : null;
+      return {
+        image: normalizedImage,
+        title: normalizedTitle,
+        author: normalizedAuthor,
+        siteName: normalizedSiteName,
+      };
     }
-    return { image: null, title: null };
+    return { image: null, title: null, author: null, siteName: null };
   } catch {
     return null;
   }

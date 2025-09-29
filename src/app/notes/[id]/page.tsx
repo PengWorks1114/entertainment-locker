@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { deleteDoc, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 
+import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
 
@@ -57,6 +58,11 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [favoriting, setFavoriting] = useState(false);
+  const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const [quickEditHtml, setQuickEditHtml] = useState("");
+  const [quickEditText, setQuickEditText] = useState("");
+  const [quickEditSaving, setQuickEditSaving] = useState(false);
+  const [quickEditError, setQuickEditError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -204,6 +210,69 @@ export default function NoteDetailPage({ params }: PageProps) {
     }
   }
 
+  function handleOpenQuickEdit() {
+    if (!note) {
+      return;
+    }
+    setQuickEditHtml(note.content || "");
+    setQuickEditText(extractPlainTextFromHtml(note.content || ""));
+    setQuickEditError(null);
+    setQuickEditOpen(true);
+  }
+
+  const handleCloseQuickEdit = useCallback(() => {
+    if (quickEditSaving) {
+      return;
+    }
+    setQuickEditOpen(false);
+    setQuickEditError(null);
+  }, [quickEditSaving]);
+
+  async function handleQuickEditSave() {
+    if (!note || quickEditSaving) {
+      return;
+    }
+    const trimmedText = quickEditText.trim();
+    const sanitizedHtml = quickEditHtml.trim();
+    if (!trimmedText) {
+      setQuickEditError("請填寫筆記內容");
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setQuickEditError("Firebase 尚未設定");
+      return;
+    }
+    try {
+      setQuickEditSaving(true);
+      setQuickEditError(null);
+      await updateDoc(doc(db, "note", note.id), {
+        content: sanitizedHtml,
+        updatedAt: serverTimestamp(),
+      });
+      setQuickEditOpen(false);
+    } catch (err) {
+      console.error("快速更新筆記內容時發生錯誤", err);
+      setQuickEditError("更新筆記內容時發生錯誤");
+    } finally {
+      setQuickEditSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!quickEditOpen) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleCloseQuickEdit();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleCloseQuickEdit, quickEditOpen]);
+
   if (!authChecked) {
     return (
       <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
@@ -268,69 +337,139 @@ export default function NoteDetailPage({ params }: PageProps) {
   }
 
   return (
-    <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <header className="space-y-3">
-          <Link href="/notes" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
-            ← 返回筆記本
-          </Link>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-2 sm:flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
-                  {note.title || "(未命名筆記)"}
-                </h1>
-                {note.isFavorite ? (
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
-                    最愛
-                  </span>
+    <>
+      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+          <header className="space-y-3">
+            <Link href="/notes" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
+              ← 返回筆記本
+            </Link>
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-2 sm:flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h1 className="break-anywhere text-3xl font-semibold text-gray-900">
+                    {note.title || "(未命名筆記)"}
+                  </h1>
+                  {note.isFavorite ? (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
+                      最愛
+                    </span>
+                  ) : null}
+                </div>
+                {note.description ? (
+                  <p className="break-anywhere whitespace-pre-line text-sm text-gray-600">{note.description}</p>
                 ) : null}
               </div>
-              {note.description ? (
-                <p className="break-anywhere whitespace-pre-line text-sm text-gray-600">{note.description}</p>
-              ) : null}
+              <div className="flex flex-wrap gap-3 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={handleToggleFavorite}
+                  disabled={favoriting}
+                  className={buttonClass({ variant: note.isFavorite ? "primary" : "secondary" })}
+                  aria-pressed={note.isFavorite}
+                >
+                  {favoriting ? "更新中…" : note.isFavorite ? "取消最愛" : "加入最愛"}
+                </button>
+                <Link
+                  href={`/notes/${note.id}/edit`}
+                  className={buttonClass({ variant: "secondary" })}
+                >
+                  編輯筆記
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={buttonClass({ variant: "outlineDanger" })}
+                >
+                  {deleting ? "刪除中…" : "刪除筆記"}
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-3 sm:flex-none">
-              <button
-                type="button"
-                onClick={handleToggleFavorite}
-                disabled={favoriting}
-                className={buttonClass({ variant: note.isFavorite ? "primary" : "secondary" })}
-                aria-pressed={note.isFavorite}
-              >
-                {favoriting ? "更新中…" : note.isFavorite ? "取消最愛" : "加入最愛"}
-              </button>
-              <Link
-                href={`/notes/${note.id}/edit`}
-                className={buttonClass({ variant: "secondary" })}
-              >
-                編輯筆記
-              </Link>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className={buttonClass({ variant: "outlineDanger" })}
-              >
-                {deleting ? "刪除中…" : "刪除筆記"}
-              </button>
+          </header>
+          {metaInfo}
+          <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">筆記內容</h2>
+              <span className="text-xs text-gray-400">雙擊內容以快速編輯</span>
+            </div>
+            <div
+              className="rich-text-content cursor-text text-base leading-relaxed text-gray-700"
+              onDoubleClick={handleOpenQuickEdit}
+              title="雙擊以快速編輯筆記內容"
+              dangerouslySetInnerHTML={{ __html: note.content }}
+            />
+          </section>
+          {feedback && feedback.type === "error" ? (
+            <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {feedback.message}
+            </div>
+          ) : null}
+        </div>
+      </main>
+      {quickEditOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          onClick={handleCloseQuickEdit}
+        >
+          <div className="w-full max-w-3xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex h-[80vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-900">快速編輯筆記內容</h2>
+                <button
+                  type="button"
+                  onClick={handleCloseQuickEdit}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100"
+                  aria-label="關閉"
+                  disabled={quickEditSaving}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex flex-1 flex-col gap-4 px-6 py-5">
+                <div className="flex-1 overflow-hidden rounded-xl border border-gray-200">
+                  <div className="h-full overflow-y-auto px-4 py-3">
+                    <RichTextEditor
+                      value={quickEditHtml}
+                      onChange={({ html, text }) => {
+                        setQuickEditHtml(html);
+                        setQuickEditText(text);
+                      }}
+                      autoFocus
+                      disabled={quickEditSaving}
+                    />
+                  </div>
+                </div>
+                {quickEditError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {quickEditError}
+                  </div>
+                ) : null}
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseQuickEdit}
+                    disabled={quickEditSaving}
+                    className={buttonClass({ variant: "secondary" })}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickEditSave()}
+                    disabled={quickEditSaving}
+                    className={buttonClass({ variant: "primary" })}
+                  >
+                    {quickEditSaving ? "儲存中…" : "儲存"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </header>
-        {metaInfo}
-        <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">筆記內容</h2>
-          <div
-            className="rich-text-content text-base leading-relaxed text-gray-700"
-            dangerouslySetInnerHTML={{ __html: note.content }}
-          />
-        </section>
-        {feedback && feedback.type === "error" ? (
-          <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {feedback.message}
-          </div>
-        ) : null}
-      </div>
-    </main>
+        </div>
+      ) : null}
+    </>
   );
 }

@@ -24,6 +24,29 @@ const META_TITLE_PRIORITY = [
   "title",
 ];
 
+const META_SITE_NAME_KEYS = [
+  "og:site_name",
+  "site_name",
+  "application-name",
+  "twitter:app:name:iphone",
+  "twitter:app:name:ipad",
+  "twitter:app:name:googleplay",
+];
+
+const AUTHOR_KEYWORDS = [
+  "author",
+  "authors",
+  "article:author",
+  "book:author",
+  "byline",
+  "creator",
+  "dc.creator",
+  "dc:creator",
+  "twitter:creator",
+  "作者",
+  "著者",
+];
+
 function extractAttribute(tag: string, attribute: string): string | null {
   const regex = new RegExp(
     `${attribute}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\"'\s>]+))`,
@@ -135,6 +158,99 @@ function pickMetaTitle(
   return null;
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.replace(/[\s\u3000]+/g, " ").trim();
+}
+
+function cleanAuthorValue(raw: string): string | null {
+  const normalized = normalizeWhitespace(raw);
+  if (!normalized) {
+    return null;
+  }
+  const labelPattern = /^(?:作者|著者|author|byline|by)\s*[：:\-]?\s*/i;
+  const stripped = normalized.replace(labelPattern, "");
+  const [firstSegment] = stripped.split(/[|｜／/\n\r]/, 1);
+  const candidate = normalizeWhitespace(firstSegment ?? stripped);
+  return candidate || null;
+}
+
+function extractAuthorFromContent(content: string): string | null {
+  const normalized = normalizeWhitespace(content);
+  if (!normalized) {
+    return null;
+  }
+  const pattern = /(?:作者|著者|author)\s*[：:\-]?\s*([^|｜／/\n\r]{1,80})/i;
+  const match = normalized.match(pattern);
+  if (match) {
+    return cleanAuthorValue(match[0]);
+  }
+  return null;
+}
+
+function pickMetaAuthor(
+  html: string,
+  metaTags: Map<string, string>
+): string | null {
+  for (const [key, value] of metaTags.entries()) {
+    if (AUTHOR_KEYWORDS.some((keyword) => key.includes(keyword))) {
+      const candidate = cleanAuthorValue(value);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+
+  const descriptionKeys = [
+    "description",
+    "og:description",
+    "twitter:description",
+  ];
+  for (const key of descriptionKeys) {
+    const value = metaTags.get(key);
+    if (!value) {
+      continue;
+    }
+    const candidate = extractAuthorFromContent(value);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const inlinePattern = /(?:作者|著者)\s*[：:\-]\s*([^<\n\r]{1,80})/i;
+  const inlineMatch = html.match(inlinePattern);
+  if (inlineMatch) {
+    const candidate = cleanAuthorValue(inlineMatch[0]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function pickMetaSiteName(metaTags: Map<string, string>): string | null {
+  for (const key of META_SITE_NAME_KEYS) {
+    const value = metaTags.get(key);
+    if (value) {
+      const normalized = normalizeWhitespace(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  for (const [key, value] of metaTags.entries()) {
+    if (key.includes("site_name") || key.includes("sitename")) {
+      const normalized = normalizeWhitespace(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function readBodyWithLimit(response: Response): Promise<string> {
   if (!response.body) {
     return "";
@@ -217,6 +333,13 @@ export async function GET(request: NextRequest) {
   const metaTags = collectMetaTags(html);
   const imageUrl = pickMetaImage(html, targetUrl, metaTags);
   const title = pickMetaTitle(html, metaTags);
-  return Response.json({ image: imageUrl ?? null, title: title ?? null });
+  const author = pickMetaAuthor(html, metaTags);
+  const siteName = pickMetaSiteName(metaTags);
+  return Response.json({
+    image: imageUrl ?? null,
+    title: title ?? null,
+    author: author ?? null,
+    siteName: siteName ?? null,
+  });
 }
 
