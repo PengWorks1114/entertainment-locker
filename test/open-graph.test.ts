@@ -398,3 +398,39 @@ test("GET returns host-only titles and site names when they are the only values"
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GET still parses metadata when HTML exceeds the response byte limit", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const head = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Large Document" />
+      <meta property="og:image" content="/large-cover.jpg" />
+    </head>
+    <body>`;
+  const filler = "a".repeat(600 * 1024);
+  const html = `${head}${filler}</body></html>`;
+
+  globalThis.fetch = async () =>
+    new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/large-cover.jpg",
+      title: "Large Document",
+      author: null,
+      siteName: null,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -703,6 +703,7 @@ async function readBodyWithLimit(response: Response): Promise<string> {
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
+  let truncated = false;
 
   try {
     while (true) {
@@ -711,11 +712,24 @@ async function readBodyWithLimit(response: Response): Promise<string> {
         break;
       }
       if (value) {
-        received += value.byteLength;
-        if (received > MAX_RESPONSE_BYTES) {
-          throw new FetchFailure("unsupported");
+        const remainingCapacity = MAX_RESPONSE_BYTES - received;
+        if (remainingCapacity <= 0) {
+          truncated = true;
+          break;
         }
-        chunks.push(value);
+
+        let chunk = value;
+        if (value.byteLength > remainingCapacity) {
+          chunk = value.slice(0, remainingCapacity);
+          truncated = true;
+        }
+        received += chunk.byteLength;
+        if (chunk.byteLength > 0) {
+          chunks.push(chunk);
+        }
+        if (truncated) {
+          break;
+        }
       }
     }
 
