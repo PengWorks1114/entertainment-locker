@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { NextRequest } from "next/server";
 
 const FETCH_TIMEOUT_MS = 7000;
@@ -512,28 +513,147 @@ function pickMetaSiteName(metaTags: Map<string, string>): string | null {
   return null;
 }
 
+function extractCharsetFromContentType(contentType: string | null): string | null {
+  if (!contentType) {
+    return null;
+  }
+  const match = contentType.match(/charset\s*=\s*["']?([^;'"\s]+)/i);
+  if (!match) {
+    return null;
+  }
+  return match[1]?.trim() ?? null;
+}
+
+function normalizeCharset(label: string | null | undefined): string | null {
+  if (!label) {
+    return null;
+  }
+  const collapsed = label.replace(/['"\s]/g, "").toLowerCase();
+  if (!collapsed) {
+    return null;
+  }
+  const hyphenated = collapsed.replace(/_/g, "-");
+  switch (hyphenated) {
+    case "utf8":
+    case "utf-8":
+      return "utf-8";
+    case "shift-jis":
+    case "shiftjis":
+    case "windows-31j":
+    case "ms932":
+    case "cp932":
+      return "shift_jis";
+    case "euc-jp":
+    case "eucjp":
+      return "euc-jp";
+    case "iso-2022-jp":
+    case "iso2022jp":
+      return "iso-2022-jp";
+    case "gbk":
+      return "gbk";
+    case "gb2312":
+      return "gb2312";
+    case "gb18030":
+      return "gb18030";
+    case "big5":
+      return "big5";
+    case "ks_c_5601-1987":
+    case "euckr":
+    case "euc-kr":
+      return "euc-kr";
+    default:
+      return hyphenated;
+  }
+}
+
+function detectCharset(
+  contentType: string | null,
+  bytes: Uint8Array
+): string {
+  const headerCandidate = normalizeCharset(
+    extractCharsetFromContentType(contentType)
+  );
+  if (headerCandidate) {
+    return headerCandidate;
+  }
+
+  const snippetLength = Math.min(bytes.length, 4096);
+  if (snippetLength > 0) {
+    const asciiSnippet = Buffer.from(bytes.slice(0, snippetLength)).toString(
+      "ascii"
+    );
+    const directMatch = asciiSnippet.match(
+      /<meta[^>]+charset\s*=\s*["']?([^"'\s/>]+)/i
+    );
+    if (directMatch) {
+      const normalized = normalizeCharset(directMatch[1]);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    const httpEquivMatch = asciiSnippet.match(
+      /<meta[^>]+http-equiv\s*=\s*["']content-type["'][^>]*content\s*=\s*["'][^"']*charset\s*=\s*([^"'>\s]+)/i
+    );
+    if (httpEquivMatch) {
+      const normalized = normalizeCharset(httpEquivMatch[1]);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return "utf-8";
+}
+
+function decodeBody(bytes: Uint8Array, charset: string): string {
+  try {
+    const decoder = new TextDecoder(charset, { fatal: false });
+    return decoder.decode(bytes);
+  } catch {
+    const fallbackDecoder = new TextDecoder("utf-8", { fatal: false });
+    return fallbackDecoder.decode(bytes);
+  }
+}
+
 async function readBodyWithLimit(response: Response): Promise<string> {
   if (!response.body) {
     return "";
   }
   const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  let result = "";
+  const chunks: Uint8Array[] = [];
   let received = 0;
 
-  while (received < MAX_RESPONSE_BYTES) {
-    const { done, value } = await reader.read();
-    if (done || !value) {
-      break;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value) {
+        received += value.byteLength;
+        if (received > MAX_RESPONSE_BYTES) {
+          throw new FetchFailure("unsupported");
+        }
+        chunks.push(value);
+      }
     }
-    received += value.byteLength;
-    result += decoder.decode(value, { stream: true });
-    if (received >= MAX_RESPONSE_BYTES) {
-      break;
+
+    const buffer = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset);
+      offset += chunk.byteLength;
     }
+
+    const charset = detectCharset(response.headers.get("content-type"), buffer);
+    return decodeBody(buffer, charset);
+  } catch (error) {
+    if (error instanceof FetchFailure) {
+      throw error;
+    }
+    throw new FetchFailure("network");
   }
-  result += decoder.decode();
-  return result;
 }
 
 function safeParseUrl(candidate: string | null | undefined): URL | null {

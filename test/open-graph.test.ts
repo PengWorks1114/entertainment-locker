@@ -230,3 +230,52 @@ test("GET falls back to legacy fetch when primary request fails", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GET decodes Shift_JIS encoded metadata", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const encoder = new TextEncoder();
+  const prefix = encoder.encode(`<!DOCTYPE html>
+  <html lang="ja">
+    <head>
+      <meta charset="Shift_JIS" />
+      <meta property="og:title" content="`);
+  const titleBytes = new Uint8Array([
+    0x83, 0x65, 0x83, 0x58, 0x83, 0x67, 0x83, 0x5e, 0x83, 0x43, 0x83, 0x67,
+    0x83, 0x8b,
+  ]);
+  const suffix = encoder.encode(`" />
+      <meta property="og:image" content="/cover.jpg" />
+      <meta property="og:site_name" content="Rakuten Books" />
+    </head>
+    <body>
+      <h1>Shift JIS Sample</h1>
+    </body>
+  </html>`);
+
+  const bytes = new Uint8Array(prefix.length + titleBytes.length + suffix.length);
+  bytes.set(prefix, 0);
+  bytes.set(titleBytes, prefix.length);
+  bytes.set(suffix, prefix.length + titleBytes.length);
+
+  globalThis.fetch = async () =>
+    new Response(bytes, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=Shift_JIS" },
+    });
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/cover.jpg",
+      title: "テストタイトル",
+      author: null,
+      siteName: "Rakuten Books",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
