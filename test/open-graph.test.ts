@@ -83,7 +83,10 @@ test("GET merges browser and legacy fetch metadata", async () => {
       primaryHeaders.get("User-Agent"),
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     );
-    assert.equal(primaryHeaders.get("Accept-Language"), "en-US,en;q=0.9");
+    assert.equal(
+      primaryHeaders.get("Accept-Language"),
+      "en-US,en;q=0.9,ja;q=0.8,zh-TW;q=0.7,zh;q=0.6"
+    );
     assert.equal(primaryHeaders.get("Sec-Fetch-Mode"), "navigate");
 
     const fallbackHeaders = new Headers(requests[1]?.headers);
@@ -274,6 +277,46 @@ test("GET decodes Shift_JIS encoded metadata", async () => {
       title: "テストタイトル",
       author: null,
       siteName: "Rakuten Books",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("GET accepts HTML payloads served as text/plain", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const html = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Plain Text Article" />
+      <meta property="og:image" content="/plain-cover.jpg" />
+      <meta property="og:site_name" content="Plain Text News" />
+    </head>
+    <body>
+      <h1>Plain Text Article</h1>
+    </body>
+  </html>`;
+
+  globalThis.fetch = async () =>
+    new Response(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain",
+      },
+    });
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/plain-cover.jpg",
+      title: "Plain Text Article",
+      author: null,
+      siteName: "Plain Text News",
     });
   } finally {
     globalThis.fetch = originalFetch;

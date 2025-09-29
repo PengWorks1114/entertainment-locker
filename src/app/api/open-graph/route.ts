@@ -7,7 +7,7 @@ const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁�
 const BROWSER_REQUEST_HEADERS = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Language": "en-US,en;q=0.9,ja;q=0.8,zh-TW;q=0.7,zh;q=0.6",
   "Accept-Encoding": "gzip, deflate, br",
   "Cache-Control": "no-cache",
   Pragma: "no-cache",
@@ -616,6 +616,36 @@ function decodeBody(bytes: Uint8Array, charset: string): string {
   }
 }
 
+function isHtmlContentType(contentType: string | null): boolean {
+  if (!contentType) {
+    return false;
+  }
+  const value = contentType.toLowerCase();
+  if (value.includes("text/html")) {
+    return true;
+  }
+  if (value.includes("application/xhtml+xml")) {
+    return true;
+  }
+  if (value.includes("text/xhtml")) {
+    return true;
+  }
+  return false;
+}
+
+function looksLikeHtmlDocument(html: string): boolean {
+  if (!html) {
+    return false;
+  }
+  const snippet = html.slice(0, 2048).toLowerCase();
+  return (
+    snippet.includes("<!doctype html") ||
+    snippet.includes("<html") ||
+    snippet.includes("<head") ||
+    snippet.includes("<meta")
+  );
+}
+
 async function readBodyWithLimit(response: Response): Promise<string> {
   if (!response.body) {
     return "";
@@ -696,14 +726,15 @@ async function fetchDocument(
     throw new FetchFailure("bad_status");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/html")) {
-    throw new FetchFailure("unsupported");
-  }
+  const contentType = response.headers.get("content-type");
 
   const html = await readBodyWithLimit(response);
   if (!html) {
     throw new FetchFailure("empty");
+  }
+
+  if (!isHtmlContentType(contentType) && !looksLikeHtmlDocument(html)) {
+    throw new FetchFailure("unsupported");
   }
 
   const baseUrl = safeParseUrl(response.url) ?? url;
