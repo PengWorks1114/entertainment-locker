@@ -705,49 +705,72 @@ async function readBodyWithLimit(response: Response): Promise<string> {
   let received = 0;
   let truncated = false;
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-      if (value) {
-        const remainingCapacity = MAX_RESPONSE_BYTES - received;
-        if (remainingCapacity <= 0) {
-          truncated = true;
-          break;
-        }
-
-        let chunk = value;
-        if (value.byteLength > remainingCapacity) {
-          chunk = value.slice(0, remainingCapacity);
-          truncated = true;
-        }
-        received += chunk.byteLength;
-        if (chunk.byteLength > 0) {
-          chunks.push(chunk);
-        }
-        if (truncated) {
-          break;
-        }
-      }
-    }
-
+  const finalize = () => {
     const buffer = new Uint8Array(received);
     let offset = 0;
     for (const chunk of chunks) {
       buffer.set(chunk, offset);
       offset += chunk.byteLength;
     }
-
     const charset = detectCharset(response.headers.get("content-type"), buffer);
     return decodeBody(buffer, charset);
-  } catch (error) {
-    if (error instanceof FetchFailure) {
-      throw error;
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+
+      const remainingCapacity = MAX_RESPONSE_BYTES - received;
+      if (remainingCapacity <= 0) {
+        truncated = true;
+        break;
+      }
+
+      let chunk = value;
+      if (value.byteLength > remainingCapacity) {
+        chunk = value.slice(0, remainingCapacity);
+        truncated = true;
+      }
+
+      if (chunk.byteLength > 0) {
+        chunks.push(chunk);
+        received += chunk.byteLength;
+      }
+
+      if (truncated) {
+        break;
+      }
     }
-    throw new FetchFailure("network");
+  } catch (error) {
+    if (!received) {
+      if (error instanceof FetchFailure) {
+        throw error;
+      }
+      throw new FetchFailure("network");
+    }
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore cancellation errors when salvaging partial content
+    }
+    return finalize();
+  } finally {
+    if (truncated) {
+      try {
+        await reader.cancel();
+      } catch {
+        // best effort
+      }
+    }
   }
+
+  return finalize();
 }
 
 function safeParseUrl(candidate: string | null | undefined): URL | null {

@@ -234,6 +234,58 @@ test("GET falls back to legacy fetch when primary request fails", async () => {
   }
 });
 
+test("GET still parses metadata when the stream errors after the head", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const encoder = new TextEncoder();
+  const partialHtml = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Streaming Title" />
+      <meta property="og:image" content="/stream-cover.jpg" />
+      <meta property="og:site_name" content="Streaming Site" />
+      <meta name="author" content="Stream Author" />
+    </head>
+    <body>
+      <p>Content that never finishes loading.</p>
+    </body>
+  </html>`;
+
+  let callCount = 0;
+
+  globalThis.fetch = async (_input: RequestInfo | URL) => {
+    callCount += 1;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(partialHtml));
+        setTimeout(() => controller.error(new Error("socket hang up")), 0);
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  };
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/stream-cover.jpg",
+      title: "Streaming Title",
+      author: "Stream Author",
+      siteName: "Streaming Site",
+    });
+    assert.equal(callCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("GET decodes Shift_JIS encoded metadata", async () => {
   const originalFetch = globalThis.fetch;
 
