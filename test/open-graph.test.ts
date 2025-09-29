@@ -164,3 +164,69 @@ test("GET recovers metadata when primary response is generic", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GET falls back to legacy fetch when primary request fails", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const legacyHtml = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Legacy Udemy Course" />
+      <meta property="og:image" content="/course-cover.jpg" />
+      <meta property="og:site_name" content="Udemy" />
+      <meta name="author" content="Udemy Instructor" />
+    </head>
+    <body>
+      <h1>Legacy Udemy Course</h1>
+    </body>
+  </html>`;
+
+  let callCount = 0;
+
+  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    callCount += 1;
+    if (callCount === 1) {
+      return new Response("Blocked", {
+        status: 403,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    if (init) {
+      const headers = new Headers(init.headers);
+      if (callCount === 2) {
+        if (
+          headers.get("User-Agent") !==
+          "Mozilla/5.0 (compatible; EntertainmentLockerBot/1.0; +https://github.com/)"
+        ) {
+          throw new Error("expected legacy fallback headers");
+        }
+      }
+    }
+
+    return new Response(legacyHtml, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  };
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/course-cover.jpg",
+      title: "Legacy Udemy Course",
+      author: "Udemy Instructor",
+      siteName: "Udemy",
+    });
+
+    assert.equal(callCount, 2, "should retry with legacy headers after failure");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -624,7 +624,29 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const primary = await fetchDocument(targetUrl, BROWSER_REQUEST_HEADERS);
+    let primary: DocumentSnapshot | null = null;
+    let primaryFailure: FetchFailure | null = null;
+    try {
+      primary = await fetchDocument(targetUrl, BROWSER_REQUEST_HEADERS);
+    } catch (error) {
+      if (error instanceof FetchFailure) {
+        primaryFailure = error;
+      } else {
+        throw error;
+      }
+    }
+
+    let usedLegacyForPrimary = false;
+    if (!primary) {
+      primary = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
+      if (!primary) {
+        if (primaryFailure) {
+          throw primaryFailure;
+        }
+        throw new FetchFailure("network");
+      }
+      usedLegacyForPrimary = true;
+    }
 
     const imageCandidates: string[] = [];
     const titleCandidates: string[] = [];
@@ -681,63 +703,68 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!imageUrl || !title || !author || !siteName) {
-      const fallback = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
-      if (fallback) {
-        const fallbackMetaImage = rememberCandidate(
-          imageCandidates,
-          pickMetaImage(fallback.html, fallback.baseUrl, fallback.metaTags)
-        );
-        if (!imageUrl) {
-          imageUrl = sanitizeImage(fallbackMetaImage);
-        }
-        if (!imageUrl) {
-          const fallbackJsonLdImage = rememberCandidate(
-            imageCandidates,
-            pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
-          );
-          imageUrl = sanitizeImage(fallbackJsonLdImage);
-        }
+    let fallback: DocumentSnapshot | null = null;
+    if (
+      !usedLegacyForPrimary &&
+      (!imageUrl || !title || !author || !siteName)
+    ) {
+      fallback = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
+    }
 
-        const fallbackMetaTitle = rememberCandidate(
+    if (fallback) {
+      const fallbackMetaImage = rememberCandidate(
+        imageCandidates,
+        pickMetaImage(fallback.html, fallback.baseUrl, fallback.metaTags)
+      );
+      if (!imageUrl) {
+        imageUrl = sanitizeImage(fallbackMetaImage);
+      }
+      if (!imageUrl) {
+        const fallbackJsonLdImage = rememberCandidate(
+          imageCandidates,
+          pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
+        );
+        imageUrl = sanitizeImage(fallbackJsonLdImage);
+      }
+
+      const fallbackMetaTitle = rememberCandidate(
+        titleCandidates,
+        pickMetaTitle(fallback.html, fallback.metaTags)
+      );
+      if (!title) {
+        title = sanitizeTitle(fallbackMetaTitle, fallback.baseUrl);
+      }
+      if (!title) {
+        const fallbackJsonLdTitle = rememberCandidate(
           titleCandidates,
-          pickMetaTitle(fallback.html, fallback.metaTags)
+          pickJsonLdTitle(fallback.jsonLdNodes)
         );
-        if (!title) {
-          title = sanitizeTitle(fallbackMetaTitle, fallback.baseUrl);
-        }
-        if (!title) {
-          const fallbackJsonLdTitle = rememberCandidate(
-            titleCandidates,
-            pickJsonLdTitle(fallback.jsonLdNodes)
-          );
-          title = sanitizeTitle(fallbackJsonLdTitle, fallback.baseUrl);
-        }
-        if (!author) {
-          author =
-            pickMetaAuthor(fallback.html, fallback.metaTags) ??
-            pickJsonLdAuthor(fallback.jsonLdNodes);
-        }
-        const fallbackMetaSiteName = rememberCandidate(
+        title = sanitizeTitle(fallbackJsonLdTitle, fallback.baseUrl);
+      }
+      if (!author) {
+        author =
+          pickMetaAuthor(fallback.html, fallback.metaTags) ??
+          pickJsonLdAuthor(fallback.jsonLdNodes);
+      }
+      const fallbackMetaSiteName = rememberCandidate(
+        siteNameCandidates,
+        pickMetaSiteName(fallback.metaTags)
+      );
+      if (!siteName) {
+        siteName = sanitizeSiteName(
+          fallbackMetaSiteName,
+          fallback.baseUrl
+        );
+      }
+      if (!siteName) {
+        const fallbackJsonLdSiteName = rememberCandidate(
           siteNameCandidates,
-          pickMetaSiteName(fallback.metaTags)
+          pickJsonLdSiteName(fallback.jsonLdNodes)
         );
-        if (!siteName) {
-          siteName = sanitizeSiteName(
-            fallbackMetaSiteName,
-            fallback.baseUrl
-          );
-        }
-        if (!siteName) {
-          const fallbackJsonLdSiteName = rememberCandidate(
-            siteNameCandidates,
-            pickJsonLdSiteName(fallback.jsonLdNodes)
-          );
-          siteName = sanitizeSiteName(
-            fallbackJsonLdSiteName,
-            fallback.baseUrl
-          );
-        }
+        siteName = sanitizeSiteName(
+          fallbackJsonLdSiteName,
+          fallback.baseUrl
+        );
       }
     }
 
