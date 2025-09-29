@@ -234,6 +234,64 @@ test("GET falls back to legacy fetch when primary request fails", async () => {
   }
 });
 
+test("GET accepts HTML metadata even when status is forbidden", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const forbiddenHtml = `<!DOCTYPE html>
+  <html lang="zh">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Restricted Comic" />
+      <meta property="og:image" content="/restricted-cover.jpg" />
+      <meta property="og:site_name" content="漫畫匯" />
+      <meta name="author" content="某作者" />
+      <title>Restricted Comic</title>
+    </head>
+    <body>
+      <h1>Restricted Comic</h1>
+    </body>
+  </html>`;
+
+  let callCount = 0;
+
+  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    callCount += 1;
+    if (init) {
+      const headers = new Headers(init.headers);
+      if (
+        headers.get("User-Agent") !==
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      ) {
+        throw new Error("expected browser headers for primary fetch");
+      }
+    }
+
+    return new Response(forbiddenHtml, {
+      status: 403,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  };
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/restricted-cover.jpg",
+      title: "Restricted Comic",
+      author: "某作者",
+      siteName: "漫畫匯",
+    });
+
+    assert.equal(callCount, 1, "should not require legacy fallback for HTML 403");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("GET still parses metadata when the stream errors after the head", async () => {
   const originalFetch = globalThis.fetch;
 

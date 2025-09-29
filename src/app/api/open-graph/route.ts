@@ -809,24 +809,38 @@ async function fetchDocument(
 
   clearTimeout(timeout);
 
-  if (!response.ok) {
-    throw new FetchFailure("bad_status");
-  }
-
   const contentType = response.headers.get("content-type");
 
   const html = await readBodyWithLimit(response);
   if (!html) {
-    throw new FetchFailure("empty");
+    throw new FetchFailure(response.ok ? "empty" : "bad_status");
   }
 
-  if (!isHtmlContentType(contentType) && !looksLikeHtmlDocument(html)) {
-    throw new FetchFailure("unsupported");
+  const looksHtml =
+    isHtmlContentType(contentType) || looksLikeHtmlDocument(html);
+  if (!looksHtml) {
+    throw new FetchFailure(response.ok ? "unsupported" : "bad_status");
   }
 
   const baseUrl = safeParseUrl(response.url) ?? url;
   const metaTags = collectMetaTags(html);
   const jsonLdNodes = extractJsonLdData(html);
+
+  if (!response.ok) {
+    const hasTitle = Boolean(pickMetaTitle(html, metaTags));
+    const hasSiteName = Boolean(pickMetaSiteName(metaTags));
+    const hasJsonLd = jsonLdNodes.length > 0;
+    const hasImage = Boolean(
+      pickMetaImage(html, baseUrl, metaTags) ??
+        pickJsonLdImage(jsonLdNodes, baseUrl)
+    );
+    if (!hasTitle && !hasSiteName && !hasImage && !hasJsonLd) {
+      const titleRegex = /<title[^>]*>([^<]*)<\/title>/i;
+      if (!titleRegex.test(html)) {
+        throw new FetchFailure("bad_status");
+      }
+    }
+  }
 
   return { html, baseUrl, metaTags, jsonLdNodes };
 }
