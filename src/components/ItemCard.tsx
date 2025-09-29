@@ -304,10 +304,13 @@ export default function ItemCard({ item, searchTerm = "" }: ItemCardProps) {
       )}
       {item.note && (
         <div
-          className="line-clamp-2 break-anywhere rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700"
+          className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-700"
           title={item.note}
         >
-          備註：{item.note}
+          <p className="line-clamp-2 break-words">
+            <span className="font-medium">備註：</span>
+            {item.note}
+          </p>
         </div>
       )}
 

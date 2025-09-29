@@ -22,10 +22,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import {
-  fetchOpenGraphImage,
-  fetchOpenGraphMetadata,
-} from "@/lib/opengraph";
+import { fetchOpenGraphMetadata } from "@/lib/opengraph";
 import { buttonClass } from "@/lib/ui";
 import type { ProgressType, ItemLanguage } from "@/lib/types";
 import { ITEM_LANGUAGE_OPTIONS, ITEM_LANGUAGE_VALUES } from "@/lib/types";
@@ -54,6 +51,7 @@ type FormState = {
   titleZh: string;
   titleAlt: string;
   author: string;
+  rating: string;
   language: ItemLanguage | "";
   selectedTags: string[];
   sourceUrl: string;
@@ -66,6 +64,110 @@ const QUICK_ADD_PROGRESS_UNIT: string | null = null;
 const QUICK_ADD_PROGRESS_TYPE: ProgressType = "chapter";
 const QUICK_ADD_DEFAULT_TITLE = "未命名";
 const QUICK_ADD_LAST_CABINET_STORAGE_KEY = "quick-add:last-cabinet-id";
+
+type OpenGraphMetadataResult = Awaited<
+  ReturnType<typeof fetchOpenGraphMetadata>
+>;
+
+function isHanCodePoint(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0x20000 && codePoint <= 0x2bfff)
+  );
+}
+
+function isLikelyTraditionalChinese(text: string): boolean {
+  let hanCount = 0;
+  let meaningfulCount = 0;
+  for (const char of text) {
+    if (/\s/.test(char)) {
+      continue;
+    }
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+    meaningfulCount += 1;
+    if (isHanCodePoint(codePoint)) {
+      hanCount += 1;
+    }
+  }
+  if (meaningfulCount === 0) {
+    return false;
+  }
+  return hanCount / meaningfulCount >= 0.5;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/[\s\u3000]+/g, " ").trim();
+}
+
+function cleanAuthorCandidate(raw: string): string | null {
+  const normalized = normalizeWhitespace(raw);
+  if (!normalized) {
+    return null;
+  }
+  const labelPattern = /^(?:作者|著者|author|byline|by)\s*[：:\-]?\s*/i;
+  const stripped = normalized.replace(labelPattern, "");
+  const [firstSegment] = stripped.split(/[|｜／/]/, 1);
+  const candidate = normalizeWhitespace(firstSegment ?? stripped);
+  return candidate || null;
+}
+
+function extractAuthorFromText(text: string): string | null {
+  if (!text) {
+    return null;
+  }
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  for (const line of lines) {
+    if (!line) {
+      continue;
+    }
+    if (/(作者|著者|author|by)/i.test(line)) {
+      const candidate = cleanAuthorCandidate(line);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+  const labeledMatch = normalized.match(
+    /(?:作者|著者|author)\s*[：:\-]\s*([^\n\r]{1,80})/i
+  );
+  if (labeledMatch) {
+    const candidate = cleanAuthorCandidate(labeledMatch[0]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  const byMatch = normalized.match(/\bby\s+([^\n\r]{1,80})/i);
+  if (byMatch) {
+    const candidate = cleanAuthorCandidate(byMatch[0]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function deriveSourceLabel(
+  metadata: OpenGraphMetadataResult,
+  sourceUrl: string
+): string | null {
+  const siteName = metadata?.siteName?.trim();
+  if (siteName) {
+    return siteName;
+  }
+  try {
+    const url = new URL(sourceUrl);
+    const hostname = url.hostname.replace(/^www\./i, "");
+    return hostname || null;
+  } catch {
+    return null;
+  }
+}
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -87,6 +189,7 @@ export default function QuickAddItemPage() {
     titleZh: "",
     titleAlt: "",
     author: "",
+    rating: "",
     language: "zh",
     selectedTags: [],
     sourceUrl: "",
@@ -113,6 +216,8 @@ export default function QuickAddItemPage() {
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const tagsCacheRef = useRef<Record<string, string[]>>({});
   const previousCabinetIdRef = useRef<string | null>(null);
+  const autoAltSyncedRef = useRef<string | null>(null);
+  const autoAuthorRef = useRef<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -416,6 +521,64 @@ export default function QuickAddItemPage() {
     };
   }, [pathname, user]);
 
+  useEffect(() => {
+    const trimmedTitle = form.titleZh.trim();
+    if (!trimmedTitle) {
+      autoAltSyncedRef.current = null;
+      return;
+    }
+    if (isLikelyTraditionalChinese(trimmedTitle)) {
+      autoAltSyncedRef.current = null;
+      return;
+    }
+    const trimmedAlt = form.titleAlt.trim();
+    if (
+      trimmedAlt.length > 0 &&
+      (!autoAltSyncedRef.current || trimmedAlt !== autoAltSyncedRef.current)
+    ) {
+      autoAltSyncedRef.current = null;
+      return;
+    }
+    if (form.titleAlt === trimmedTitle) {
+      autoAltSyncedRef.current = trimmedTitle;
+      return;
+    }
+    autoAltSyncedRef.current = trimmedTitle;
+    setForm((prev) => {
+      if (prev.titleAlt === trimmedTitle) {
+        return prev;
+      }
+      return { ...prev, titleAlt: trimmedTitle };
+    });
+  }, [form.titleAlt, form.titleZh]);
+
+  useEffect(() => {
+    const trimmedAuthor = form.author.trim();
+    if (
+      trimmedAuthor.length > 0 &&
+      (!autoAuthorRef.current || trimmedAuthor !== autoAuthorRef.current)
+    ) {
+      autoAuthorRef.current = null;
+      return;
+    }
+    const candidate =
+      extractAuthorFromText(form.titleZh) ?? extractAuthorFromText(form.titleAlt);
+    if (!candidate) {
+      return;
+    }
+    if (form.author === candidate) {
+      autoAuthorRef.current = candidate;
+      return;
+    }
+    autoAuthorRef.current = candidate;
+    setForm((prev) => {
+      if (prev.author === candidate) {
+        return prev;
+      }
+      return { ...prev, author: candidate };
+    });
+  }, [form.author, form.titleAlt, form.titleZh]);
+
   const hasCabinet = cabinets.length > 0;
 
   const submitDisabled = useMemo(() => {
@@ -465,9 +628,20 @@ export default function QuickAddItemPage() {
       parsedProgressValue = parsedValue;
     }
 
+    const ratingInput = form.rating.trim();
+    let ratingValue: number | null = null;
+    if (ratingInput) {
+      const parsedRating = Number(ratingInput);
+      if (!Number.isFinite(parsedRating)) {
+        setError("請輸入有效的評分數值");
+        return;
+      }
+      ratingValue = parsedRating;
+    }
+
     let titleZh = form.titleZh.trim();
-    const titleAlt = form.titleAlt.trim();
-    const author = form.author.trim();
+    let titleAlt = form.titleAlt.trim();
+    let authorValue = form.author.trim();
     const languageValue = form.language;
     if (languageValue && !ITEM_LANGUAGE_VALUES.includes(languageValue)) {
       setError("請選擇有效的語言");
@@ -487,16 +661,59 @@ export default function QuickAddItemPage() {
     setSaving(true);
     setError(null);
     try {
+      let metadata: OpenGraphMetadataResult = null;
+      if (sourceUrl) {
+        metadata = await fetchOpenGraphMetadata(sourceUrl);
+      }
+
       if (!titleZh) {
-        if (sourceUrl) {
-          const metadata = await fetchOpenGraphMetadata(sourceUrl);
-          const fetchedTitle = metadata?.title?.trim();
-          const resolvedTitle = fetchedTitle || QUICK_ADD_DEFAULT_TITLE;
+        if (metadata?.title) {
+          const resolvedTitle = metadata.title.trim() || QUICK_ADD_DEFAULT_TITLE;
           titleZh = resolvedTitle;
           setForm((prev) => ({ ...prev, titleZh: resolvedTitle }));
         } else {
           titleZh = QUICK_ADD_DEFAULT_TITLE;
           setForm((prev) => ({ ...prev, titleZh: QUICK_ADD_DEFAULT_TITLE }));
+        }
+      }
+
+      if (!titleAlt && !isLikelyTraditionalChinese(titleZh)) {
+        titleAlt = titleZh;
+        autoAltSyncedRef.current = titleZh;
+        setForm((prev) => {
+          if (prev.titleAlt === titleZh || prev.titleAlt.trim().length > 0) {
+            return prev;
+          }
+          return { ...prev, titleAlt: titleZh };
+        });
+      }
+
+      if (!authorValue && metadata?.author) {
+        const normalizedAuthor = metadata.author.trim();
+        if (normalizedAuthor) {
+          authorValue = normalizedAuthor;
+          autoAuthorRef.current = normalizedAuthor;
+          setForm((prev) => {
+            if (prev.author.trim().length > 0) {
+              return prev;
+            }
+            return { ...prev, author: normalizedAuthor };
+          });
+        }
+      }
+
+      if (!authorValue) {
+        const inferredAuthor =
+          extractAuthorFromText(titleZh) ?? extractAuthorFromText(titleAlt);
+        if (inferredAuthor) {
+          authorValue = inferredAuthor;
+          autoAuthorRef.current = inferredAuthor;
+          setForm((prev) => {
+            if (prev.author.trim().length > 0) {
+              return prev;
+            }
+            return { ...prev, author: inferredAuthor };
+          });
         }
       }
 
@@ -520,10 +737,11 @@ export default function QuickAddItemPage() {
         }
       }
 
+      const linkLabel = sourceUrl ? deriveSourceLabel(metadata, sourceUrl) : null;
       const links = sourceUrl
         ? [
             {
-              label: "來源",
+              label: linkLabel ?? "來源",
               url: sourceUrl,
               isPrimary: true,
             },
@@ -531,11 +749,8 @@ export default function QuickAddItemPage() {
         : [];
 
       let resolvedThumbUrl = thumbUrlInput;
-      if (!resolvedThumbUrl && sourceUrl) {
-        const autoThumb = await fetchOpenGraphImage(sourceUrl);
-        if (autoThumb) {
-          resolvedThumbUrl = autoThumb;
-        }
+      if (!resolvedThumbUrl && metadata?.image) {
+        resolvedThumbUrl = metadata.image;
       }
 
       const normalizedTitleForTags = titleZh.toLowerCase();
@@ -552,7 +767,7 @@ export default function QuickAddItemPage() {
         cabinetId,
         titleZh,
         titleAlt: titleAlt || null,
-        author: author || null,
+        author: authorValue || null,
         language: languageValue || null,
         tags: uniqueTags,
         links,
@@ -563,7 +778,7 @@ export default function QuickAddItemPage() {
         insightNote: null,
         note: null,
         appearances: [],
-        rating: null,
+        rating: ratingValue !== null ? ratingValue : null,
         status: "in-progress",
         updateFrequency: null,
         nextUpdateAt: null,
@@ -1002,6 +1217,22 @@ export default function QuickAddItemPage() {
                 value={form.thumbUrl}
                 onChange={(event) => handleInputChange("thumbUrl", event.target.value)}
                 placeholder="https://i.imgur.com/..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="rating" className="text-sm font-medium text-gray-700">
+                評分（可不填）
+              </label>
+              <input
+                id="rating"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                className={inputClass}
+                value={form.rating}
+                onChange={(event) => handleInputChange("rating", event.target.value)}
+                placeholder="例如：8.5"
               />
             </div>
 
