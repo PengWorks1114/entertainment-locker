@@ -104,13 +104,42 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/[\s\u3000]+/g, " ").trim();
 }
 
+const AUTHOR_KEYWORDS = [
+  "作者",
+  "著者",
+  "author",
+  "byline",
+  "by",
+  "作",
+  "著",
+  "イラスト",
+];
+
+const AUTHOR_KEYWORD_PATTERN_SOURCE = AUTHOR_KEYWORDS.map((keyword) =>
+  keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+).join("|");
+
+const AUTHOR_KEYWORD_PATTERN = new RegExp(
+  `(${AUTHOR_KEYWORD_PATTERN_SOURCE})`,
+  "i"
+);
+
+const AUTHOR_LABEL_PATTERN = new RegExp(
+  `^(?:${AUTHOR_KEYWORD_PATTERN_SOURCE})\\s*[：:\-]?\\s*`,
+  "i"
+);
+
+const AUTHOR_LABELED_LINE_PATTERN = new RegExp(
+  `(?:${AUTHOR_KEYWORD_PATTERN_SOURCE})\\s*[：:\-]\\s*([^\\n\\r]{1,80})`,
+  "i"
+);
+
 function cleanAuthorCandidate(raw: string): string | null {
   const normalized = normalizeWhitespace(raw);
   if (!normalized) {
     return null;
   }
-  const labelPattern = /^(?:作者|著者|author|byline|by)\s*[：:\-]?\s*/i;
-  const stripped = normalized.replace(labelPattern, "");
+  const stripped = normalized.replace(AUTHOR_LABEL_PATTERN, "");
   const [firstSegment] = stripped.split(/[|｜／/]/, 1);
   const candidate = normalizeWhitespace(firstSegment ?? stripped);
   return candidate || null;
@@ -126,16 +155,14 @@ function extractAuthorFromText(text: string): string | null {
     if (!line) {
       continue;
     }
-    if (/(作者|著者|author|by)/i.test(line)) {
+    if (AUTHOR_KEYWORD_PATTERN.test(line)) {
       const candidate = cleanAuthorCandidate(line);
       if (candidate) {
         return candidate;
       }
     }
   }
-  const labeledMatch = normalized.match(
-    /(?:作者|著者|author)\s*[：:\-]\s*([^\n\r]{1,80})/i
-  );
+  const labeledMatch = normalized.match(AUTHOR_LABELED_LINE_PATTERN);
   if (labeledMatch) {
     const candidate = cleanAuthorCandidate(labeledMatch[0]);
     if (candidate) {

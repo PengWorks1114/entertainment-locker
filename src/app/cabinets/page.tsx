@@ -51,7 +51,12 @@ type Feedback = {
   message: string;
 };
 
-type SortOption = "custom" | "recentUpdated" | "created" | "name";
+type SortOption =
+  | "custom"
+  | "recentUpdated"
+  | "created"
+  | "name"
+  | "itemCount";
 type SortDirection = "asc" | "desc";
 type DisplayMode = "detailed" | "compact" | "list";
 
@@ -245,11 +250,18 @@ export default function CabinetsPage() {
         );
         break;
       }
+      case "itemCount":
+        base.sort(
+          (a, b) =>
+            ((cabinetItemCounts[a.id] ?? 0) - (cabinetItemCounts[b.id] ?? 0)) *
+            directionFactor
+        );
+        break;
       default:
         break;
     }
     return base;
-  }, [filteredList, sortDirection, sortOption]);
+  }, [cabinetItemCounts, filteredList, sortDirection, sortOption]);
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -592,6 +604,8 @@ export default function CabinetsPage() {
                         setSortOption(nextOption);
                         if (nextOption === "custom") {
                           setSortDirection("desc");
+                        } else if (nextOption === "itemCount") {
+                          setSortDirection("desc");
                         }
                       }}
                       className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
@@ -600,6 +614,7 @@ export default function CabinetsPage() {
                       <option value="recentUpdated">最近更新</option>
                       <option value="created">建立時間</option>
                       <option value="name">名稱</option>
+                      <option value="itemCount">物件數量</option>
                     </select>
                     <div className="flex items-center gap-2">
                       <button
