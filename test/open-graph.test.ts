@@ -322,3 +322,79 @@ test("GET accepts HTML payloads served as text/plain", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GET keeps logo-styled images instead of treating them as favicons", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const html = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="Logo Story" />
+      <meta property="og:image" content="/assets/logo.jpg" />
+      <meta property="og:site_name" content="Logo News" />
+    </head>
+    <body>
+      <h1>Logo Story</h1>
+    </body>
+  </html>`;
+
+  globalThis.fetch = async () =>
+    new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/assets/logo.jpg",
+      title: "Logo Story",
+      author: null,
+      siteName: "Logo News",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("GET returns host-only titles and site names when they are the only values", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const html = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta property="og:title" content="example.com" />
+      <meta property="og:site_name" content="example.com" />
+      <title>example.com</title>
+    </head>
+    <body>
+      <h1>Example Domain</h1>
+    </body>
+  </html>`;
+
+  globalThis.fetch = async () =>
+    new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: null,
+      title: "example.com",
+      author: null,
+      siteName: "example.com",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

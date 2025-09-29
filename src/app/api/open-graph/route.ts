@@ -388,12 +388,18 @@ function sanitizeSiteName(value: string | null, baseUrl: URL): string | null {
   return normalized;
 }
 
+interface CandidateValue {
+  value: string;
+  baseUrl: URL;
+}
+
 function rememberCandidate(
-  list: string[],
-  value: string | null | undefined
+  list: CandidateValue[],
+  value: string | null | undefined,
+  baseUrl: URL
 ): string | null {
   if (typeof value === "string" && value) {
-    list.push(value);
+    list.push({ value, baseUrl });
     return value;
   }
   return null;
@@ -403,12 +409,35 @@ function isLikelyFavicon(url: string): boolean {
   try {
     const { pathname } = new URL(url);
     const lowerPath = pathname.toLowerCase();
-    return (
-      lowerPath.includes("favicon") ||
-      lowerPath.endsWith(".ico") ||
-      (lowerPath.endsWith(".svg") &&
-        (lowerPath.includes("logo") || lowerPath.includes("icon")))
-    );
+    const fileName = lowerPath.split("/").pop() ?? "";
+    if (!fileName) {
+      return false;
+    }
+
+    if (fileName.endsWith(".ico")) {
+      return true;
+    }
+
+    if (fileName === "favicon") {
+      return true;
+    }
+
+    if (
+      fileName.startsWith("favicon") &&
+      /\.(ico|png|gif|jpe?g|svg|webp)$/.test(fileName)
+    ) {
+      return true;
+    }
+
+    if (fileName.includes("apple-touch-icon")) {
+      return true;
+    }
+
+    if (fileName.includes("mstile")) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -422,6 +451,27 @@ function sanitizeImage(url: string | null): string | null {
     return null;
   }
   return url;
+}
+
+function pickLastResortCandidate(candidates: CandidateValue[]): string | null {
+  let hostEquivalent: string | null = null;
+
+  for (const candidate of candidates) {
+    const normalized = normalizeWhitespace(candidate.value);
+    if (!normalized) {
+      continue;
+    }
+
+    if (!isHostEquivalent(normalized, candidate.baseUrl)) {
+      return normalized;
+    }
+
+    if (!hostEquivalent) {
+      hostEquivalent = normalized;
+    }
+  }
+
+  return hostEquivalent;
 }
 
 function cleanAuthorValue(raw: string): string | null {
@@ -799,21 +849,23 @@ export async function GET(request: NextRequest) {
       usedLegacyForPrimary = true;
     }
 
-    const imageCandidates: string[] = [];
-    const titleCandidates: string[] = [];
-    const siteNameCandidates: string[] = [];
+    const imageCandidates: CandidateValue[] = [];
+    const titleCandidates: CandidateValue[] = [];
+    const siteNameCandidates: CandidateValue[] = [];
 
     let imageUrl = sanitizeImage(
       rememberCandidate(
         imageCandidates,
-        pickMetaImage(primary.html, primary.baseUrl, primary.metaTags)
+        pickMetaImage(primary.html, primary.baseUrl, primary.metaTags),
+        primary.baseUrl
       )
     );
     if (!imageUrl) {
       imageUrl = sanitizeImage(
         rememberCandidate(
           imageCandidates,
-          pickJsonLdImage(primary.jsonLdNodes, primary.baseUrl)
+          pickJsonLdImage(primary.jsonLdNodes, primary.baseUrl),
+          primary.baseUrl
         )
       );
     }
@@ -821,7 +873,8 @@ export async function GET(request: NextRequest) {
     let title = sanitizeTitle(
       rememberCandidate(
         titleCandidates,
-        pickMetaTitle(primary.html, primary.metaTags)
+        pickMetaTitle(primary.html, primary.metaTags),
+        primary.baseUrl
       ),
       primary.baseUrl
     );
@@ -829,7 +882,8 @@ export async function GET(request: NextRequest) {
       title = sanitizeTitle(
         rememberCandidate(
           titleCandidates,
-          pickJsonLdTitle(primary.jsonLdNodes)
+          pickJsonLdTitle(primary.jsonLdNodes),
+          primary.baseUrl
         ),
         primary.baseUrl
       );
@@ -840,7 +894,8 @@ export async function GET(request: NextRequest) {
     let siteName = sanitizeSiteName(
       rememberCandidate(
         siteNameCandidates,
-        pickMetaSiteName(primary.metaTags)
+        pickMetaSiteName(primary.metaTags),
+        primary.baseUrl
       ),
       primary.baseUrl
     );
@@ -848,7 +903,8 @@ export async function GET(request: NextRequest) {
       siteName = sanitizeSiteName(
         rememberCandidate(
           siteNameCandidates,
-          pickJsonLdSiteName(primary.jsonLdNodes)
+          pickJsonLdSiteName(primary.jsonLdNodes),
+          primary.baseUrl
         ),
         primary.baseUrl
       );
@@ -865,7 +921,8 @@ export async function GET(request: NextRequest) {
     if (fallback) {
       const fallbackMetaImage = rememberCandidate(
         imageCandidates,
-        pickMetaImage(fallback.html, fallback.baseUrl, fallback.metaTags)
+        pickMetaImage(fallback.html, fallback.baseUrl, fallback.metaTags),
+        fallback.baseUrl
       );
       if (!imageUrl) {
         imageUrl = sanitizeImage(fallbackMetaImage);
@@ -873,14 +930,16 @@ export async function GET(request: NextRequest) {
       if (!imageUrl) {
         const fallbackJsonLdImage = rememberCandidate(
           imageCandidates,
-          pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
+          pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl),
+          fallback.baseUrl
         );
         imageUrl = sanitizeImage(fallbackJsonLdImage);
       }
 
       const fallbackMetaTitle = rememberCandidate(
         titleCandidates,
-        pickMetaTitle(fallback.html, fallback.metaTags)
+        pickMetaTitle(fallback.html, fallback.metaTags),
+        fallback.baseUrl
       );
       if (!title) {
         title = sanitizeTitle(fallbackMetaTitle, fallback.baseUrl);
@@ -888,7 +947,8 @@ export async function GET(request: NextRequest) {
       if (!title) {
         const fallbackJsonLdTitle = rememberCandidate(
           titleCandidates,
-          pickJsonLdTitle(fallback.jsonLdNodes)
+          pickJsonLdTitle(fallback.jsonLdNodes),
+          fallback.baseUrl
         );
         title = sanitizeTitle(fallbackJsonLdTitle, fallback.baseUrl);
       }
@@ -899,7 +959,8 @@ export async function GET(request: NextRequest) {
       }
       const fallbackMetaSiteName = rememberCandidate(
         siteNameCandidates,
-        pickMetaSiteName(fallback.metaTags)
+        pickMetaSiteName(fallback.metaTags),
+        fallback.baseUrl
       );
       if (!siteName) {
         siteName = sanitizeSiteName(
@@ -910,7 +971,8 @@ export async function GET(request: NextRequest) {
       if (!siteName) {
         const fallbackJsonLdSiteName = rememberCandidate(
           siteNameCandidates,
-          pickJsonLdSiteName(fallback.jsonLdNodes)
+          pickJsonLdSiteName(fallback.jsonLdNodes),
+          fallback.baseUrl
         );
         siteName = sanitizeSiteName(
           fallbackJsonLdSiteName,
@@ -920,14 +982,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!imageUrl) {
-      imageUrl = imageCandidates.find((candidate) => Boolean(candidate)) ?? null;
+      imageUrl =
+        imageCandidates.find((candidate) => Boolean(candidate.value))?.value ??
+        null;
     }
     if (!title) {
-      title = titleCandidates.find((candidate) => Boolean(candidate)) ?? null;
+      title = pickLastResortCandidate(titleCandidates);
     }
     if (!siteName) {
-      siteName =
-        siteNameCandidates.find((candidate) => Boolean(candidate)) ?? null;
+      siteName = pickLastResortCandidate(siteNameCandidates);
     }
 
     return Response.json({
