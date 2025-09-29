@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npm run test:build && node test-dist/test/open-graph.test.js",
+    "test:build": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "firebase": "^12.2.1",

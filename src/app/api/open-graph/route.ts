@@ -47,6 +47,100 @@ const AUTHOR_KEYWORDS = [
   "著者",
 ];
 
+type JsonLdNode = Record<string, unknown>;
+
+function extractJsonLdData(html: string): JsonLdNode[] {
+  const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const results: JsonLdNode[] = [];
+
+  for (const match of html.matchAll(scriptRegex)) {
+    const rawContent = match[1]?.trim();
+    if (!rawContent) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(rawContent);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && typeof item === "object") {
+            results.push(item as JsonLdNode);
+          }
+        }
+        continue;
+      }
+      if (parsed && typeof parsed === "object") {
+        results.push(parsed as JsonLdNode);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
+function extractString(value: unknown): string | null {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    const normalized = normalizeWhitespace(value);
+    return normalized || null;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = extractString(item);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    const potential = (value as Record<string, unknown>).name;
+    return extractString(potential);
+  }
+  return null;
+}
+
+function pickJsonLdTitle(jsonLdNodes: JsonLdNode[]): string | null {
+  for (const node of jsonLdNodes) {
+    const headline = extractString(node["headline"]);
+    if (headline) {
+      return headline;
+    }
+    const name = extractString(node["name"]);
+    if (name) {
+      return name;
+    }
+  }
+  return null;
+}
+
+function pickJsonLdAuthor(jsonLdNodes: JsonLdNode[]): string | null {
+  for (const node of jsonLdNodes) {
+    const author = extractString(node["author"] ?? node["creator"]);
+    if (author) {
+      const candidate = cleanAuthorValue(author);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+function pickJsonLdSiteName(jsonLdNodes: JsonLdNode[]): string | null {
+  for (const node of jsonLdNodes) {
+    const publisher = node["publisher"];
+    const candidate = extractString(publisher);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function extractAttribute(tag: string, attribute: string): string | null {
   const regex = new RegExp(
     `${attribute}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\"'\s>]+))`,
@@ -301,9 +395,19 @@ export async function GET(request: NextRequest) {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        Accept: "text/html,application/xhtml+xml",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
         "User-Agent":
-          "Mozilla/5.0 (compatible; EntertainmentLockerBot/1.0; +https://github.com/)",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       },
     });
   } catch (error) {
@@ -331,10 +435,11 @@ export async function GET(request: NextRequest) {
   }
 
   const metaTags = collectMetaTags(html);
+  const jsonLdNodes = extractJsonLdData(html);
   const imageUrl = pickMetaImage(html, targetUrl, metaTags);
-  const title = pickMetaTitle(html, metaTags);
-  const author = pickMetaAuthor(html, metaTags);
-  const siteName = pickMetaSiteName(metaTags);
+  const title = pickMetaTitle(html, metaTags) ?? pickJsonLdTitle(jsonLdNodes);
+  const author = pickMetaAuthor(html, metaTags) ?? pickJsonLdAuthor(jsonLdNodes);
+  const siteName = pickMetaSiteName(metaTags) ?? pickJsonLdSiteName(jsonLdNodes);
   return Response.json({
     image: imageUrl ?? null,
     title: title ?? null,
