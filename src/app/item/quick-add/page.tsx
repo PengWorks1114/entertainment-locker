@@ -23,7 +23,7 @@ import {
 } from "firebase/firestore";
 
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
-import { fetchOpenGraphImage } from "@/lib/opengraph";
+import { fetchOpenGraphMetadata } from "@/lib/opengraph";
 import { fetchExternalItemData } from "@/lib/external-metadata";
 import type { ExternalItemMetadata } from "@/lib/external-metadata-types";
 import { buttonClass } from "@/lib/ui";
@@ -89,6 +89,37 @@ function detectTagsFromTitle(title: string, tags: string[]): string[] {
     return loweredTitle.includes(normalized);
   });
   return matched;
+}
+
+type OpenGraphMetadataResult = Awaited<
+  ReturnType<typeof fetchOpenGraphMetadata>
+>;
+
+function formatMetadataFactLine(
+  fact: ExternalItemMetadata["facts"][number]
+): string | null {
+  const label = fact.label ? fact.label.trim() : "";
+  const value = fact.value ? fact.value.trim() : "";
+  if (!value) {
+    return null;
+  }
+  const normalizedValue = value.replace(/\s+/g, " ");
+  const stripped = normalizedValue.replace(/[^\p{L}\p{N}]/gu, "");
+  const alphanumericLength = stripped.length;
+  if (alphanumericLength < 2 && !/\d/.test(normalizedValue)) {
+    return null;
+  }
+  const normalizedLabel = label.replace(/\s+/g, " ");
+  if (
+    normalizedLabel &&
+    normalizedValue.toLowerCase() === normalizedLabel.toLowerCase()
+  ) {
+    return null;
+  }
+  if (!normalizedLabel) {
+    return normalizedValue;
+  }
+  return `${normalizedLabel}：${normalizedValue}`;
 }
 
 function formatDateLabel(dateString: string | null): string | null {
@@ -537,6 +568,19 @@ export default function QuickAddItemPage() {
         externalMetadata = await fetchExternalItemData(sourceUrl);
       }
 
+      let openGraphMetadata: OpenGraphMetadataResult | null | undefined;
+      const ensureOpenGraphMetadata = async (): Promise<
+        OpenGraphMetadataResult
+      > => {
+        if (!sourceUrl) {
+          return null;
+        }
+        if (openGraphMetadata === undefined) {
+          openGraphMetadata = await fetchOpenGraphMetadata(sourceUrl);
+        }
+        return openGraphMetadata ?? null;
+      };
+
       let resolvedThumbUrl = thumbUrlInput;
       let generalNote: string | null = null;
       let progressNoteValue: string | null = null;
@@ -616,12 +660,19 @@ export default function QuickAddItemPage() {
       }
 
       if (externalMetadata?.facts?.length) {
-        const detailLines = externalMetadata.facts
+        const detailLineSet = new Set<string>();
+        externalMetadata.facts
           .filter((fact) => fact.type !== "tag")
-          .map((fact) => `${fact.label}：${fact.value}`.trim())
-          .filter((line) => line.length > 0);
-        if (detailLines.length > 0) {
-          const mergedDetails = Array.from(new Set(detailLines)).join("\n");
+          .forEach((fact) => {
+            const formatted = formatMetadataFactLine(fact);
+            if (formatted) {
+              detailLineSet.add(formatted);
+            }
+          });
+        if (detailLineSet.size > 0) {
+          const mergedDetails = Array.from(detailLineSet)
+            .slice(0, 8)
+            .join("\n");
           generalNote = generalNote
             ? `${generalNote}\n${mergedDetails}`
             : mergedDetails;
@@ -636,13 +687,21 @@ export default function QuickAddItemPage() {
       }
 
       if (!titleZh) {
-        const fallbackTitle = externalMetadata?.primaryTitle ?? QUICK_ADD_DEFAULT_TITLE;
+        let fallbackTitle = externalMetadata?.primaryTitle ?? null;
+        if (!fallbackTitle) {
+          const ogMetadata = await ensureOpenGraphMetadata();
+          fallbackTitle = ogMetadata?.title ?? null;
+        }
+        if (!fallbackTitle) {
+          fallbackTitle = QUICK_ADD_DEFAULT_TITLE;
+        }
         titleZh = fallbackTitle;
         autoUpdates.titleZh = fallbackTitle;
       }
 
       if (!resolvedThumbUrl && sourceUrl) {
-        const autoThumb = await fetchOpenGraphImage(sourceUrl);
+        const ogMetadata = await ensureOpenGraphMetadata();
+        const autoThumb = ogMetadata?.image ?? null;
         if (autoThumb) {
           resolvedThumbUrl = autoThumb;
           autoUpdates.thumbUrl = autoThumb;
