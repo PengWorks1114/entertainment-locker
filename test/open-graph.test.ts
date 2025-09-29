@@ -96,3 +96,71 @@ test("GET merges browser and legacy fetch metadata", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GET recovers metadata when primary response is generic", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const browserHtml = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>Example.com</title>
+      <meta property="og:image" content="/favicon.ico" />
+      <meta property="og:site_name" content="example.com" />
+    </head>
+    <body>
+      <h1>Homepage</h1>
+    </body>
+  </html>`;
+
+  const legacyHtml = `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"NewsArticle","headline":"Legacy Title","author":{"@type":"Person","name":"Legacy Reporter"},"publisher":{"@type":"Organization","name":"Example News"},"image":{"@type":"ImageObject","url":"/jsonld-cover.jpg"}}
+      </script>
+    </head>
+    <body>
+      <article>
+        <h1>Legacy Title</h1>
+      </article>
+    </body>
+  </html>`;
+
+  let callCount = 0;
+
+  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.headers && callCount === 0) {
+      const headers = new Headers(init.headers);
+      if (!headers.get("User-Agent")?.includes("Chrome")) {
+        throw new Error("expected primary request to mimic a browser");
+      }
+    }
+    const html = callCount === 0 ? browserHtml : legacyHtml;
+    callCount += 1;
+    return new Response(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  };
+
+  try {
+    const response = await GET(createRequest(TEST_URL) as unknown as NextRequest);
+    assert.equal(response.status, 200);
+
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      image: "https://example.com/jsonld-cover.jpg",
+      title: "Legacy Title",
+      author: "Legacy Reporter",
+      siteName: "Example News",
+    });
+
+    assert.equal(callCount, 2, "should fallback when primary metadata is generic");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

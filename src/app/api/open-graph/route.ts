@@ -121,6 +121,33 @@ function extractJsonLdData(html: string): JsonLdNode[] {
   return results;
 }
 
+function extractJsonLdUrl(value: unknown, baseUrl: URL): string | null {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return normalizeUrl(value, baseUrl);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = extractJsonLdUrl(item, baseUrl);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return (
+      extractJsonLdUrl(record["url"], baseUrl) ??
+      extractJsonLdUrl(record["contentUrl"], baseUrl) ??
+      extractJsonLdUrl(record["thumbnailUrl"], baseUrl)
+    );
+  }
+  return null;
+}
+
 function extractString(value: unknown): string | null {
   if (!value) {
     return null;
@@ -176,6 +203,22 @@ function pickJsonLdSiteName(jsonLdNodes: JsonLdNode[]): string | null {
   for (const node of jsonLdNodes) {
     const publisher = node["publisher"];
     const candidate = extractString(publisher);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function pickJsonLdImage(
+  jsonLdNodes: JsonLdNode[],
+  baseUrl: URL
+): string | null {
+  for (const node of jsonLdNodes) {
+    const candidate =
+      extractJsonLdUrl(node["image"], baseUrl) ??
+      extractJsonLdUrl(node["imageUrl"], baseUrl) ??
+      extractJsonLdUrl(node["thumbnailUrl"], baseUrl);
     if (candidate) {
       return candidate;
     }
@@ -296,6 +339,77 @@ function pickMetaTitle(
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/[\s\u3000]+/g, " ").trim();
+}
+
+function isHostEquivalent(value: string, baseUrl: URL): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  const host = baseUrl.hostname.toLowerCase();
+  if (normalized === host) {
+    return true;
+  }
+  if (host.startsWith("www.")) {
+    const withoutWww = host.slice(4);
+    if (normalized === withoutWww) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sanitizeTitle(value: string | null, baseUrl: URL): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return null;
+  }
+  if (isHostEquivalent(normalized, baseUrl)) {
+    return null;
+  }
+  return normalized;
+}
+
+function sanitizeSiteName(value: string | null, baseUrl: URL): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return null;
+  }
+  if (isHostEquivalent(normalized, baseUrl)) {
+    return null;
+  }
+  return normalized;
+}
+
+function isLikelyFavicon(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    const lowerPath = pathname.toLowerCase();
+    return (
+      lowerPath.includes("favicon") ||
+      lowerPath.endsWith(".ico") ||
+      (lowerPath.endsWith(".svg") &&
+        (lowerPath.includes("logo") || lowerPath.includes("icon")))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeImage(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+  if (isLikelyFavicon(url)) {
+    return null;
+  }
+  return url;
 }
 
 function cleanAuthorValue(raw: string): string | null {
@@ -501,31 +615,67 @@ export async function GET(request: NextRequest) {
   try {
     const primary = await fetchDocument(targetUrl, BROWSER_REQUEST_HEADERS);
 
-    let imageUrl = pickMetaImage(primary.html, primary.baseUrl, primary.metaTags);
-    let title =
-      pickMetaTitle(primary.html, primary.metaTags) ??
-      pickJsonLdTitle(primary.jsonLdNodes);
+    let imageUrl = sanitizeImage(
+      pickMetaImage(primary.html, primary.baseUrl, primary.metaTags)
+    );
+    if (!imageUrl) {
+      imageUrl = sanitizeImage(
+        pickJsonLdImage(primary.jsonLdNodes, primary.baseUrl)
+      );
+    }
+
+    let title = sanitizeTitle(
+      pickMetaTitle(primary.html, primary.metaTags),
+      primary.baseUrl
+    );
+    if (!title) {
+      title = sanitizeTitle(
+        pickJsonLdTitle(primary.jsonLdNodes),
+        primary.baseUrl
+      );
+    }
     let author =
       pickMetaAuthor(primary.html, primary.metaTags) ??
       pickJsonLdAuthor(primary.jsonLdNodes);
-    let siteName =
-      pickMetaSiteName(primary.metaTags) ??
-      pickJsonLdSiteName(primary.jsonLdNodes);
+    let siteName = sanitizeSiteName(
+      pickMetaSiteName(primary.metaTags),
+      primary.baseUrl
+    );
+    if (!siteName) {
+      siteName = sanitizeSiteName(
+        pickJsonLdSiteName(primary.jsonLdNodes),
+        primary.baseUrl
+      );
+    }
 
     if (!imageUrl || !title || !author || !siteName) {
       const fallback = await tryFetchDocument(targetUrl, LEGACY_REQUEST_HEADERS);
       if (fallback) {
         if (!imageUrl) {
-          imageUrl = pickMetaImage(
-            fallback.html,
-            fallback.baseUrl,
-            fallback.metaTags
+          imageUrl = sanitizeImage(
+            pickMetaImage(
+              fallback.html,
+              fallback.baseUrl,
+              fallback.metaTags
+            )
           );
+          if (!imageUrl) {
+            imageUrl = sanitizeImage(
+              pickJsonLdImage(fallback.jsonLdNodes, fallback.baseUrl)
+            );
+          }
         }
         if (!title) {
-          title =
-            pickMetaTitle(fallback.html, fallback.metaTags) ??
-            pickJsonLdTitle(fallback.jsonLdNodes);
+          title = sanitizeTitle(
+            pickMetaTitle(fallback.html, fallback.metaTags),
+            fallback.baseUrl
+          );
+          if (!title) {
+            title = sanitizeTitle(
+              pickJsonLdTitle(fallback.jsonLdNodes),
+              fallback.baseUrl
+            );
+          }
         }
         if (!author) {
           author =
@@ -533,9 +683,16 @@ export async function GET(request: NextRequest) {
             pickJsonLdAuthor(fallback.jsonLdNodes);
         }
         if (!siteName) {
-          siteName =
-            pickMetaSiteName(fallback.metaTags) ??
-            pickJsonLdSiteName(fallback.jsonLdNodes);
+          siteName = sanitizeSiteName(
+            pickMetaSiteName(fallback.metaTags),
+            fallback.baseUrl
+          );
+          if (!siteName) {
+            siteName = sanitizeSiteName(
+              pickJsonLdSiteName(fallback.jsonLdNodes),
+              fallback.baseUrl
+            );
+          }
         }
       }
     }
