@@ -11,8 +11,22 @@ service cloud.firestore {
       return field == null || (field is string && field.size() <= maxLen);
     }
 
+    function isOptionalNonEmptyString(field, maxLen) {
+      return field == null || (field is string && field.size() >= 1 && field.size() <= maxLen);
+    }
+
     function isTimestamp(value) {
       return value is timestamp;
+    }
+
+    function isStringList(list, maxItems, maxLen) {
+      return list is list
+        && list.size() <= maxItems
+        && (list.size() == 0
+            || (list[0] is string
+                && list[0].size() >= 1
+                && list[0].size() <= maxLen
+                && isStringList(list.slice(1, list.size()), maxItems, maxLen)));
     }
 
     function isValidNoteData(data) {
@@ -20,6 +34,11 @@ service cloud.firestore {
         && isNonEmptyString(data.title, 100)
         && isNonEmptyString(data.content, 60000)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
+        && ("cabinetId" in data ? isOptionalNonEmptyString(data.cabinetId, 128) : true)
+        && ("itemId" in data ? isOptionalNonEmptyString(data.itemId, 128) : true)
+        && ("relatedItemIds" in data
+            ? (data.relatedItemIds == null || isStringList(data.relatedItemIds, 50, 128))
+            : true)
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
     }

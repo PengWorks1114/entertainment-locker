@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, use, useEffect, useState } from "react";
+import { FormEvent, use, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
 
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import NoteRelationDialog from "@/components/NoteRelationDialog";
+import { fetchCabinetOptions, type CabinetOption } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  buildItemListFromSummaries,
+  describeCabinet,
+  loadItemSummaries,
+  NOTE_RELATED_ITEM_LIMIT,
+  normalizeNoteRelations,
+  type ItemSummary,
+} from "@/lib/note-relations";
 import { buttonClass } from "@/lib/ui";
 
 const TITLE_LIMIT = 100;
@@ -36,6 +46,15 @@ export default function EditNotePage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [relationDialogOpen, setRelationDialogOpen] = useState(false);
+  const [linkedCabinetId, setLinkedCabinetId] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<ItemSummary[]>([]);
+  const [primaryItemId, setPrimaryItemId] = useState<string | null>(null);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [cabinetLoading, setCabinetLoading] = useState(false);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
+  const [relationsLoading, setRelationsLoading] = useState(false);
+  const [relationsError, setRelationsError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -51,6 +70,118 @@ export default function EditNotePage({ params }: PageProps) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetOptions([]);
+      setCabinetError(null);
+      return;
+    }
+    let active = true;
+    setCabinetLoading(true);
+    setCabinetError(null);
+    fetchCabinetOptions(user.uid)
+      .then((options) => {
+        if (!active) {
+          return;
+        }
+        setCabinetOptions(options);
+      })
+      .catch((err) => {
+        console.error("載入櫃子資料時發生錯誤", err);
+        if (!active) {
+          return;
+        }
+        setCabinetError("載入櫃子資料時發生錯誤");
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+        setCabinetLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const cabinetMap = useMemo(() => {
+    const map = new Map<string, CabinetOption>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option);
+    });
+    return map;
+  }, [cabinetOptions]);
+
+  const relationSummary = useMemo(() => {
+    const cabinetInfo = describeCabinet(linkedCabinetId, cabinetMap);
+    if (relationsLoading) {
+      return (
+        <div className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
+          正在載入關聯作品…
+        </div>
+      );
+    }
+    if (relationsError) {
+      return (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {relationsError}
+        </div>
+      );
+    }
+    if (selectedItems.length === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
+          尚未關聯任何作品，可按右上角按鈕調整。
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-3 rounded-xl border border-gray-200 bg-white px-4 py-5 text-sm text-gray-700">
+        <div>
+          <div className="text-xs text-gray-500">關聯櫃子</div>
+          <div className="mt-1 flex items-center gap-2 text-sm">
+            <span>{cabinetInfo.name}</span>
+            {cabinetInfo.missing ? (
+              <span className="text-xs text-red-600">已找不到或無法存取</span>
+            ) : cabinetInfo.isLocked ? (
+              <span className="text-xs text-amber-600">已鎖定</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="text-xs text-gray-500">關聯作品</div>
+          <ul className="space-y-2">
+            {selectedItems.map((item) => {
+              const cabinet = item.cabinetId ? cabinetMap.get(item.cabinetId) ?? null : null;
+              const cabinetLabel = item.cabinetId
+                ? cabinet
+                  ? `${cabinet.name || "未命名櫃子"}${cabinet.isLocked ? "（已鎖定）" : ""}`
+                  : "(找不到櫃子)"
+                : "未指定櫃子";
+              const isPrimary = primaryItemId === item.id;
+              return (
+                <li key={item.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-gray-800">{item.title}</span>
+                    {item.isMissing ? (
+                      <span className="text-xs text-red-600">資料遺失</span>
+                    ) : null}
+                    {isPrimary ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                        主作品
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-gray-500">{cabinetLabel}</div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    );
+  }, [cabinetMap, linkedCabinetId, primaryItemId, relationsError, relationsLoading, selectedItems]);
 
   useEffect(() => {
     if (!authChecked) {
@@ -87,6 +218,10 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
+          setLinkedCabinetId(null);
+          setSelectedItems([]);
+          setPrimaryItemId(null);
+          setRelationsError(null);
           setLoading(false);
           return;
         }
@@ -99,6 +234,10 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
+          setLinkedCabinetId(null);
+          setSelectedItems([]);
+          setPrimaryItemId(null);
+          setRelationsError(null);
           setLoading(false);
           return;
         }
@@ -108,6 +247,34 @@ export default function EditNotePage({ params }: PageProps) {
         setContentHtml(noteContent);
         setContentText(extractPlainTextFromHtml(noteContent));
         setIsFavorite(Boolean(data.isFavorite));
+        const relations = normalizeNoteRelations(data as Record<string, unknown>);
+        setLinkedCabinetId(relations.cabinetId);
+        setPrimaryItemId(relations.itemId ?? relations.relatedItemIds[0] ?? null);
+        if (relations.relatedItemIds.length > 0) {
+          setRelationsLoading(true);
+          setRelationsError(null);
+          try {
+            const summaryMap = await loadItemSummaries(currentUser.uid, relations.relatedItemIds);
+            const list = buildItemListFromSummaries(relations.relatedItemIds, summaryMap);
+            setSelectedItems(list);
+          } catch (err) {
+            console.error("載入關聯作品時發生錯誤", err);
+            setRelationsError("載入關聯作品時發生錯誤");
+            const placeholders = relations.relatedItemIds.map((id) => ({
+              id,
+              title: "(找不到作品)",
+              cabinetId: null,
+              isMissing: true,
+            } satisfies ItemSummary));
+            setSelectedItems(placeholders);
+          } finally {
+            setRelationsLoading(false);
+          }
+        } else {
+          setSelectedItems([]);
+          setRelationsLoading(false);
+          setRelationsError(null);
+        }
         setFeedback(null);
         setNotFound(false);
       } catch (err) {
@@ -119,6 +286,11 @@ export default function EditNotePage({ params }: PageProps) {
         setContentHtml("");
         setContentText("");
         setIsFavorite(false);
+        setLinkedCabinetId(null);
+        setSelectedItems([]);
+        setPrimaryItemId(null);
+        setRelationsError("載入筆記時發生錯誤");
+        setRelationsLoading(false);
       } finally {
         setLoading(false);
       }
@@ -162,6 +334,12 @@ export default function EditNotePage({ params }: PageProps) {
       return;
     }
 
+    const relatedIds = selectedItems.map((item) => item.id).slice(0, NOTE_RELATED_ITEM_LIMIT);
+    const normalizedPrimary = primaryItemId && relatedIds.includes(primaryItemId)
+      ? primaryItemId
+      : relatedIds[0] ?? null;
+    const normalizedCabinet = linkedCabinetId ?? null;
+
     setSaving(true);
     setFeedback(null);
     try {
@@ -175,6 +353,9 @@ export default function EditNotePage({ params }: PageProps) {
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         isFavorite,
+        cabinetId: normalizedCabinet,
+        itemId: normalizedPrimary,
+        relatedItemIds: relatedIds,
         updatedAt: serverTimestamp(),
       });
       setFeedback({ type: "success", message: "已更新筆記" });
@@ -247,97 +428,141 @@ export default function EditNotePage({ params }: PageProps) {
   }
 
   return (
-    <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
-      <div className="mx-auto w-full max-w-2xl space-y-6">
-        <header className="space-y-2">
-          <Link
-            href={noteId ? `/notes/${noteId}` : "/notes"}
-            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-          >
-            ← 返回筆記詳情
-          </Link>
-          <h1 className="text-2xl font-semibold text-gray-900">編輯筆記</h1>
-          <p className="text-sm text-gray-500">調整筆記內容並保存最新版本。</p>
-        </header>
-        <section className="rounded-2xl border bg-white/70 p-6 shadow-sm">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-700">筆記標題</span>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="輸入筆記標題"
-                maxLength={TITLE_LIMIT}
-                required
-                className="h-12 w-full rounded-xl border px-4 text-base"
-                autoFocus
-              />
-              <span className="block text-right text-xs text-gray-400">
-                {title.trim().length}/{TITLE_LIMIT}
-              </span>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-700">筆記備註</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="補充筆記相關備註（選填）"
-                maxLength={DESCRIPTION_LIMIT}
-                className="min-h-[100px] w-full resize-y rounded-xl border px-4 py-3 text-base"
-              />
-              <span className="block text-right text-xs text-gray-400">
-                {description.trim().length}/{DESCRIPTION_LIMIT}
-              </span>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={isFavorite}
-                onChange={(event) => setIsFavorite(event.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
-              />
-              設為最愛
-            </label>
-            <div className="space-y-2">
-              <span className="text-sm font-medium text-gray-700">筆記內容</span>
-              <RichTextEditor
-                value={contentHtml}
-                onChange={({ html, text }) => {
-                  setContentHtml(html);
-                  setContentText(text);
-                }}
-                placeholder="輸入筆記內容"
-              />
-            </div>
-            {feedback ? (
-              <div
-                className={
-                  feedback.type === "error"
-                    ? "break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
-                    : "break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-                }
-              >
-                {feedback.message}
+    <>
+      <main className="min-h-[100dvh] bg-gray-50 px-4 py-8">
+        <div className="mx-auto w-full max-w-2xl space-y-6">
+          <header className="space-y-2">
+            <Link
+              href={noteId ? `/notes/${noteId}` : "/notes"}
+              className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+            >
+              ← 返回筆記詳情
+            </Link>
+            <h1 className="text-2xl font-semibold text-gray-900">編輯筆記</h1>
+            <p className="text-sm text-gray-500">調整筆記內容並保存最新版本。</p>
+          </header>
+          <section className="rounded-2xl border bg-white/70 p-6 shadow-sm">
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-gray-700">筆記標題</span>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="輸入筆記標題"
+                  maxLength={TITLE_LIMIT}
+                  required
+                  className="h-12 w-full rounded-xl border px-4 text-base"
+                  autoFocus
+                />
+                <span className="block text-right text-xs text-gray-400">
+                  {title.trim().length}/{TITLE_LIMIT}
+                </span>
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-gray-700">筆記備註</span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="補充筆記相關備註（選填）"
+                  maxLength={DESCRIPTION_LIMIT}
+                  className="min-h-[100px] w-full resize-y rounded-xl border px-4 py-3 text-base"
+                />
+                <span className="block text-right text-xs text-gray-400">
+                  {description.trim().length}/{DESCRIPTION_LIMIT}
+                </span>
+              </label>
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">關聯作品 / 櫃子</span>
+                    <p className="text-xs text-gray-500">調整此筆記所對應的作品或櫃子，維持資料關聯性。</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRelationDialogOpen(true)}
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
+                  >
+                    管理關聯
+                  </button>
+                </div>
+                {cabinetError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">
+                    {cabinetError}
+                  </div>
+                ) : null}
+                {cabinetLoading && cabinetOptions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
+                    正在載入櫃子資訊…
+                  </div>
+                ) : (
+                  relationSummary
+                )}
               </div>
-            ) : null}
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Link
-                href={noteId ? `/notes/${noteId}` : "/notes"}
-                className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
-              >
-                取消
-              </Link>
-              <button
-                type="submit"
-                disabled={saving}
-                className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
-              >
-                {saving ? "儲存中…" : "儲存"}
-              </button>
-            </div>
-          </form>
-        </section>
-      </div>
-    </main>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={isFavorite}
+                  onChange={(event) => setIsFavorite(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                />
+                設為最愛
+              </label>
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">筆記內容</span>
+                <RichTextEditor
+                  value={contentHtml}
+                  onChange={({ html, text }) => {
+                    setContentHtml(html);
+                    setContentText(text);
+                  }}
+                  placeholder="輸入筆記內容"
+                />
+              </div>
+              {feedback ? (
+                <div
+                  className={
+                    feedback.type === "error"
+                      ? "break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
+                      : "break-anywhere rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+                  }
+                >
+                  {feedback.message}
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <Link
+                  href={noteId ? `/notes/${noteId}` : "/notes"}
+                  className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                >
+                  取消
+                </Link>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={`${buttonClass({ variant: "primary" })} w-full sm:w-auto`}
+                >
+                  {saving ? "儲存中…" : "儲存"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </main>
+      <NoteRelationDialog
+        open={relationDialogOpen}
+        userId={user.uid}
+        initialCabinetId={linkedCabinetId}
+        initialItems={selectedItems}
+        initialPrimaryItemId={primaryItemId}
+        onClose={() => setRelationDialogOpen(false)}
+        onSave={({ cabinetId, items, primaryItemId: primary }) => {
+          setLinkedCabinetId(cabinetId);
+          setSelectedItems(items);
+          setPrimaryItemId(primary);
+          setRelationsError(null);
+          setRelationDialogOpen(false);
+        }}
+      />
+    </>
   );
 }

@@ -174,6 +174,14 @@ type PrimaryProgressState = {
   updatedAt?: Timestamp | null;
 };
 
+type RelatedNoteSummary = {
+  id: string;
+  title: string;
+  summary: string | null;
+  updatedMs: number;
+  isFavorite: boolean;
+};
+
 type NoteFeedback = {
   type: "success" | "error";
   message: string;
@@ -238,6 +246,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
+  const [relatedNotes, setRelatedNotes] = useState<RelatedNoteSummary[]>([]);
+  const [relatedNotesLoading, setRelatedNotesLoading] = useState(false);
+  const [relatedNotesError, setRelatedNotesError] = useState<string | null>(null);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const titleZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -408,6 +419,59 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       return next;
     });
   }, [insightEntries]);
+
+  useEffect(() => {
+    if (!user || !item) {
+      setRelatedNotes([]);
+      setRelatedNotesError(null);
+      setRelatedNotesLoading(false);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setRelatedNotes([]);
+      setRelatedNotesError("Firebase 尚未設定");
+      setRelatedNotesLoading(false);
+      return;
+    }
+    setRelatedNotesLoading(true);
+    setRelatedNotesError(null);
+    const notesQuery = query(
+      collection(db, "note"),
+      where("uid", "==", user.uid),
+      where("relatedItemIds", "array-contains", item.id)
+    );
+    const unsubscribe = onSnapshot(
+      notesQuery,
+      (snapshot) => {
+        const list = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const updatedAt = data?.updatedAt;
+            const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : 0;
+            const summary =
+              typeof data?.description === "string" && data.description.trim().length > 0
+                ? data.description.trim()
+                : null;
+            return {
+              id: docSnap.id,
+              title: (data?.title as string) || "(未命名筆記)",
+              summary,
+              updatedMs,
+              isFavorite: Boolean(data?.isFavorite),
+            } satisfies RelatedNoteSummary;
+          })
+          .sort((a, b) => b.updatedMs - a.updatedMs);
+        setRelatedNotes(list);
+        setRelatedNotesLoading(false);
+      },
+      () => {
+        setRelatedNotesError("載入相關筆記時發生錯誤");
+        setRelatedNotesLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [item, user]);
 
   useEffect(() => {
     if (!favoriteError) return;
@@ -871,6 +935,64 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     const flagged = validLinks.find((link) => link.isPrimary);
     return flagged ?? validLinks[0];
   }, [item]);
+
+  const relatedNotesContent = useMemo(() => {
+    if (relatedNotesLoading) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-6 text-center text-sm text-gray-500">
+          正在載入相關筆記…
+        </div>
+      );
+    }
+    if (relatedNotesError) {
+      return (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {relatedNotesError}
+        </div>
+      );
+    }
+    if (relatedNotes.length === 0) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-6 text-center text-sm text-gray-500">
+          尚未建立與此作品相關的筆記。
+        </div>
+      );
+    }
+    return (
+      <ul className="space-y-3">
+        {relatedNotes.map((noteEntry) => (
+          <li
+            key={noteEntry.id}
+            className="rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <Link
+                  href={`/notes/${noteEntry.id}`}
+                  className="break-anywhere text-base font-semibold text-gray-900 underline-offset-4 transition hover:text-amber-600 hover:underline"
+                >
+                  {noteEntry.title || "(未命名筆記)"}
+                </Link>
+                {noteEntry.summary ? (
+                  <p className="line-clamp-2 break-anywhere text-sm text-gray-600">
+                    {noteEntry.summary}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-500 sm:flex-none">
+                <span>更新：{formatDateTime(noteEntry.updatedMs)}</span>
+                {noteEntry.isFavorite ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                    最愛
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }, [relatedNotes, relatedNotesError, relatedNotesLoading]);
 
   function openAttributeEditor() {
     if (!item) {
@@ -2451,6 +2573,14 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
             )}
           </div>
+        </section>
+
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-gray-900">相關筆記</h2>
+            <p className="text-sm text-gray-500">快速開啟與此作品連結的筆記，掌握更多背景資訊。</p>
+          </div>
+          {relatedNotesContent}
         </section>
 
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">

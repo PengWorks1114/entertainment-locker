@@ -5,7 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, onSnapshot, query, Timestamp, where } from "firebase/firestore";
 
+import { fetchCabinetOptions, type CabinetOption } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  buildItemListFromSummaries,
+  describeCabinet,
+  loadItemSummaries,
+  normalizeNoteRelations,
+  type ItemSummary,
+} from "@/lib/note-relations";
 import { buttonClass } from "@/lib/ui";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
@@ -17,6 +25,9 @@ type Note = {
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+  cabinetId: string | null;
+  itemId: string | null;
+  relatedItemIds: string[];
 };
 
 type SortOption = "recentUpdated" | "created" | "title";
@@ -58,6 +69,10 @@ export default function NotesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
+  const [itemSummaryMap, setItemSummaryMap] = useState<Map<string, ItemSummary | null>>(new Map());
+  const [itemSummaryError, setItemSummaryError] = useState<string | null>(null);
 
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
@@ -89,6 +104,33 @@ export default function NotesPage() {
 
   useEffect(() => {
     if (!user) {
+      setCabinetOptions([]);
+      setCabinetError(null);
+      return;
+    }
+    let active = true;
+    setCabinetError(null);
+    fetchCabinetOptions(user.uid)
+      .then((options) => {
+        if (!active) {
+          return;
+        }
+        setCabinetOptions(options);
+      })
+      .catch((err) => {
+        console.error("載入櫃子資料時發生錯誤", err);
+        if (!active) {
+          return;
+        }
+        setCabinetError("載入櫃子資料時發生錯誤");
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
       setNotes([]);
       return;
     }
@@ -113,6 +155,7 @@ export default function NotesPage() {
               typeof data?.description === "string" && data.description.trim().length > 0
                 ? data.description.trim()
                 : null;
+            const relations = normalizeNoteRelations(data as Record<string, unknown>);
             return {
               id: docSnap.id,
               title: (data?.title as string) || "",
@@ -120,6 +163,9 @@ export default function NotesPage() {
               isFavorite: Boolean(data?.isFavorite),
               createdMs,
               updatedMs,
+              cabinetId: relations.cabinetId,
+              itemId: relations.itemId,
+              relatedItemIds: relations.relatedItemIds,
             } satisfies Note;
           })
           .sort((a, b) => b.updatedMs - a.updatedMs);
@@ -132,6 +178,55 @@ export default function NotesPage() {
     );
     return () => unsub();
   }, [user]);
+
+  const itemIdsForSummary = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach((note) => {
+      note.relatedItemIds.forEach((id) => {
+        if (typeof id === "string" && id.trim().length > 0) {
+          set.add(id);
+        }
+      });
+    });
+    return Array.from(set);
+  }, [notes]);
+
+  useEffect(() => {
+    if (!user) {
+      setItemSummaryMap(new Map());
+      setItemSummaryError(null);
+      return;
+    }
+    if (itemIdsForSummary.length === 0) {
+      setItemSummaryMap(new Map());
+      setItemSummaryError(null);
+      return;
+    }
+    let active = true;
+    loadItemSummaries(user.uid, itemIdsForSummary)
+      .then((map) => {
+        if (!active) {
+          return;
+        }
+        setItemSummaryMap(map);
+        setItemSummaryError(null);
+      })
+      .catch((err) => {
+        console.error("載入關聯作品時發生錯誤", err);
+        if (!active) {
+          return;
+        }
+        setItemSummaryError("載入關聯作品時發生錯誤");
+        const placeholder = new Map<string, ItemSummary | null>();
+        itemIdsForSummary.forEach((id) => {
+          placeholder.set(id, null);
+        });
+        setItemSummaryMap(placeholder);
+      });
+    return () => {
+      active = false;
+    };
+  }, [itemIdsForSummary, user]);
 
   const filteredNotes = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -175,6 +270,14 @@ export default function NotesPage() {
   const hasNotes = notes.length > 0;
   const hasFilteredNotes = totalNotes > 0;
 
+  const cabinetMap = useMemo(() => {
+    const map = new Map<string, CabinetOption>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option);
+    });
+    return map;
+  }, [cabinetOptions]);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, sortOption, sortDirection, pageSize, showFavoritesOnly]);
@@ -201,45 +304,133 @@ export default function NotesPage() {
     }
 
     return (
-      <ul className="divide-y rounded-2xl border border-gray-200 bg-white/70 shadow-sm">
-        {paginatedNotes.map((note) => (
-          <li key={note.id}>
-            <Link
-              href={`/notes/${note.id}`}
-              className="notes-list-item flex flex-col gap-2 px-6 py-5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 items-start gap-2">
-                  {note.isFavorite ? (
-                    <span className="mt-1 text-base text-amber-500" aria-hidden="true">
-                      ★
-                    </span>
-                  ) : null}
-                  <h2 className="line-clamp-2 flex-1 break-anywhere text-lg font-semibold text-gray-900">
-                    {note.title || "(未命名筆記)"}
-                  </h2>
-                  {note.isFavorite ? <span className="sr-only">最愛筆記</span> : null}
+      <ul className="space-y-4">
+        {paginatedNotes.map((note) => {
+          const cabinetInfo = describeCabinet(note.cabinetId, cabinetMap);
+          const relatedList = buildItemListFromSummaries(note.relatedItemIds, itemSummaryMap);
+          return (
+            <li key={note.id} className="rounded-2xl border border-gray-200 bg-white/70 shadow-sm">
+              <article className="space-y-3 px-6 py-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {note.isFavorite ? (
+                      <span className="mt-1 text-base text-amber-500" aria-hidden="true">
+                        ★
+                      </span>
+                    ) : null}
+                    <div className="min-w-0 space-y-1">
+                      <Link
+                        href={`/notes/${note.id}`}
+                        className="block min-w-0 text-lg font-semibold text-gray-900 transition hover:text-amber-600"
+                      >
+                        <span className="break-anywhere">{note.title || "(未命名筆記)"}</span>
+                      </Link>
+                      {note.summary ? (
+                        <p className="line-clamp-2 break-anywhere text-sm text-gray-600">{note.summary}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 text-xs text-gray-500 sm:flex-none">
+                    <div className="flex gap-1">
+                      <span className="font-medium">建立：</span>
+                      <span>{formatDateTime(note.createdMs)}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <span className="font-medium">更新：</span>
+                      <span>{formatDateTime(note.updatedMs)}</span>
+                    </div>
+                    <Link href={`/notes/${note.id}`} className={buttonClass({ variant: "secondary", size: "sm" })}>
+                      查看筆記
+                    </Link>
+                  </div>
                 </div>
-                <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
-                  <div className="flex gap-1">
-                    <dt className="font-medium">建立：</dt>
-                    <dd>{formatDateTime(note.createdMs)}</dd>
+                <div className="space-y-3 text-xs text-gray-600 sm:text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-gray-500">關聯櫃子：</span>
+                    {note.cabinetId ? (
+                      cabinetInfo.missing ? (
+                        <span className="text-red-600">{cabinetInfo.name}</span>
+                      ) : cabinetInfo.isLocked ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600">
+                          <span aria-hidden="true">🔒</span>
+                          {cabinetInfo.name}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/cabinet/${encodeURIComponent(note.cabinetId)}`}
+                          className="text-blue-600 underline-offset-4 hover:underline"
+                        >
+                          {cabinetInfo.name}
+                        </Link>
+                      )
+                    ) : (
+                      <span>未指定</span>
+                    )}
                   </div>
-                  <div className="flex gap-1">
-                    <dt className="font-medium">更新：</dt>
-                    <dd>{formatDateTime(note.updatedMs)}</dd>
+                  <div className="space-y-2">
+                    <span className="font-medium text-gray-500">關聯作品：</span>
+                    {itemSummaryError && note.relatedItemIds.length > 0 ? (
+                      <span className="text-xs text-red-600">{itemSummaryError}</span>
+                    ) : relatedList.length === 0 ? (
+                      <span className="text-sm text-gray-500">尚未關聯作品。</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {relatedList.map((item) => {
+                          const itemCabinet = item.cabinetId ? cabinetMap.get(item.cabinetId) ?? null : null;
+                          const itemLocked = Boolean(itemCabinet?.isLocked);
+                          const isPrimary = note.itemId === item.id;
+                          if (item.isMissing) {
+                            return (
+                              <span
+                                key={item.id}
+                                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs text-red-600"
+                              >
+                                {item.title}
+                              </span>
+                            );
+                          }
+                          if (itemLocked) {
+                            return (
+                              <span
+                                key={item.id}
+                                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs text-amber-700"
+                              >
+                                <span aria-hidden="true">🔒</span>
+                                {item.title}
+                                {isPrimary ? (
+                                  <span className="ml-1 rounded-full bg-white/70 px-1 text-[10px] font-semibold text-amber-700">
+                                    主
+                                  </span>
+                                ) : null}
+                              </span>
+                            );
+                          }
+                          return (
+                            <Link
+                              key={item.id}
+                              href={`/item/${encodeURIComponent(item.id)}`}
+                              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700 hover:bg-blue-100"
+                            >
+                              {item.title}
+                              {isPrimary ? (
+                                <span className="ml-1 rounded-full bg-white/70 px-1 text-[10px] font-semibold text-blue-700">
+                                  主
+                                </span>
+                              ) : null}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </dl>
-              </div>
-              {note.summary ? (
-                <p className="line-clamp-2 break-anywhere text-sm text-gray-600">{note.summary}</p>
-              ) : null}
-            </Link>
-          </li>
-        ))}
+                </div>
+              </article>
+            </li>
+          );
+        })}
       </ul>
     );
-  }, [hasFilteredNotes, hasNotes, paginatedNotes]);
+  }, [cabinetMap, hasFilteredNotes, hasNotes, itemSummaryError, itemSummaryMap, paginatedNotes]);
 
   if (!authChecked) {
     return (
@@ -287,6 +478,11 @@ export default function NotesPage() {
         {feedback && feedback.type === "error" ? (
           <div className="break-anywhere rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {feedback.message}
+          </div>
+        ) : null}
+        {cabinetError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+            {cabinetError}
           </div>
         ) : null}
         <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">

@@ -7,7 +7,15 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { deleteDoc, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import { fetchCabinetOptions, type CabinetOption } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  buildItemListFromSummaries,
+  describeCabinet,
+  loadItemSummaries,
+  normalizeNoteRelations,
+  type ItemSummary,
+} from "@/lib/note-relations";
 import { buttonClass } from "@/lib/ui";
 
 type PageProps = {
@@ -22,6 +30,9 @@ type Note = {
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+  cabinetId: string | null;
+  itemId: string | null;
+  relatedItemIds: string[];
 };
 
 type Feedback = {
@@ -63,6 +74,12 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [quickEditText, setQuickEditText] = useState("");
   const [quickEditSaving, setQuickEditSaving] = useState(false);
   const [quickEditError, setQuickEditError] = useState<string | null>(null);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [cabinetLoading, setCabinetLoading] = useState(false);
+  const [cabinetError, setCabinetError] = useState<string | null>(null);
+  const [relatedItems, setRelatedItems] = useState<ItemSummary[]>([]);
+  const [relationsLoading, setRelationsLoading] = useState(false);
+  const [relationsError, setRelationsError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -79,6 +96,40 @@ export default function NoteDetailPage({ params }: PageProps) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetOptions([]);
+      setCabinetError(null);
+      return;
+    }
+    let active = true;
+    setCabinetLoading(true);
+    setCabinetError(null);
+    fetchCabinetOptions(user.uid)
+      .then((options) => {
+        if (!active) {
+          return;
+        }
+        setCabinetOptions(options);
+      })
+      .catch((err) => {
+        console.error("載入櫃子資料時發生錯誤", err);
+        if (!active) {
+          return;
+        }
+        setCabinetError("載入櫃子資料時發生錯誤");
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+        setCabinetLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!authChecked) {
@@ -119,6 +170,7 @@ export default function NoteDetailPage({ params }: PageProps) {
         const updatedAt = data.updatedAt;
         const createdMs = createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
         const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
+        const relations = normalizeNoteRelations(data as Record<string, unknown>);
         setNote({
           id: snap.id,
           title: (data.title as string) || "",
@@ -130,6 +182,9 @@ export default function NoteDetailPage({ params }: PageProps) {
           isFavorite: Boolean(data.isFavorite),
           createdMs,
           updatedMs,
+          cabinetId: relations.cabinetId,
+          itemId: relations.itemId,
+          relatedItemIds: relations.relatedItemIds,
         });
         setFeedback(null);
         setLoading(false);
@@ -141,6 +196,57 @@ export default function NoteDetailPage({ params }: PageProps) {
     );
     return () => unsub();
   }, [authChecked, noteId, user]);
+
+  const relatedKey = note ? note.relatedItemIds.join("|") : "";
+
+  useEffect(() => {
+    if (!user || !note) {
+      setRelatedItems([]);
+      setRelationsError(null);
+      setRelationsLoading(false);
+      return;
+    }
+    if (note.relatedItemIds.length === 0) {
+      setRelatedItems([]);
+      setRelationsError(null);
+      setRelationsLoading(false);
+      return;
+    }
+    let active = true;
+    setRelationsLoading(true);
+    setRelationsError(null);
+    loadItemSummaries(user.uid, note.relatedItemIds)
+      .then((map) => {
+        if (!active) {
+          return;
+        }
+        const list = buildItemListFromSummaries(note.relatedItemIds, map);
+        setRelatedItems(list);
+      })
+      .catch((err) => {
+        console.error("載入關聯作品時發生錯誤", err);
+        if (!active) {
+          return;
+        }
+        setRelationsError("載入關聯作品時發生錯誤");
+        const placeholders = note.relatedItemIds.map((id) => ({
+          id,
+          title: "(找不到作品)",
+          cabinetId: null,
+          isMissing: true,
+        } satisfies ItemSummary));
+        setRelatedItems(placeholders);
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+        setRelationsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [note, relatedKey, user]);
 
   const metaInfo = useMemo(() => {
     if (!note) {
@@ -159,6 +265,116 @@ export default function NoteDetailPage({ params }: PageProps) {
       </dl>
     );
   }, [note]);
+
+  const cabinetMap = useMemo(() => {
+    const map = new Map<string, CabinetOption>();
+    cabinetOptions.forEach((option) => {
+      map.set(option.id, option);
+    });
+    return map;
+  }, [cabinetOptions]);
+
+  const relationInfo = useMemo(() => {
+    if (!note) {
+      return null;
+    }
+    const cabinetInfo = describeCabinet(note.cabinetId, cabinetMap);
+    const cabinetContent = note.cabinetId ? (
+      cabinetInfo.missing ? (
+        <span className="text-sm text-red-600">{cabinetInfo.name}</span>
+      ) : cabinetInfo.isLocked ? (
+        <span className="inline-flex items-center gap-1 text-sm text-amber-600">
+          <span aria-hidden="true">🔒</span>
+          {cabinetInfo.name}
+        </span>
+      ) : (
+        <Link
+          href={`/cabinet/${encodeURIComponent(note.cabinetId)}`}
+          className="text-sm text-blue-600 underline-offset-4 hover:underline"
+        >
+          {cabinetInfo.name}
+        </Link>
+      )
+    ) : (
+      <span className="text-sm text-gray-600">未指定</span>
+    );
+
+    const itemsContent = relationsLoading ? (
+      <div className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
+        正在載入關聯作品…
+      </div>
+    ) : relationsError ? (
+      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{relationsError}</div>
+    ) : relatedItems.length === 0 ? (
+      <p className="text-sm text-gray-500">尚未關聯任何作品。</p>
+    ) : (
+      <ul className="space-y-2">
+        {relatedItems.map((item) => {
+          const cabinet = item.cabinetId ? cabinetMap.get(item.cabinetId) ?? null : null;
+          const cabinetLabel = item.cabinetId
+            ? cabinet
+              ? `${cabinet.name || "未命名櫃子"}${cabinet.isLocked ? "（已鎖定）" : ""}`
+              : "(找不到櫃子)"
+            : "未指定櫃子";
+          const isLocked = Boolean(cabinet?.isLocked);
+          const isPrimary = note.itemId === item.id;
+          const content = item.isMissing ? (
+            <span className="font-medium text-red-600">{item.title}</span>
+          ) : isLocked ? (
+            <span className="inline-flex items-center gap-1 font-medium text-amber-600">
+              <span aria-hidden="true">🔒</span>
+              {item.title}
+            </span>
+          ) : (
+            <Link
+              href={`/item/${encodeURIComponent(item.id)}`}
+              className="font-medium text-blue-600 underline-offset-4 hover:underline"
+            >
+              {item.title}
+            </Link>
+          );
+          return (
+            <li key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {content}
+                {isPrimary ? (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                    主作品
+                  </span>
+                ) : null}
+              </div>
+              <div className="text-xs text-gray-500">{cabinetLabel}</div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+
+    const hasContent =
+      note.cabinetId || cabinetError || relatedItems.length > 0 || relationsLoading || relationsError;
+
+    return (
+      <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">關聯作品 / 櫃子</h2>
+          {cabinetLoading ? <span className="text-xs text-gray-400">正在載入櫃子資訊…</span> : null}
+        </div>
+        {cabinetError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{cabinetError}</div>
+        ) : null}
+        <div className="space-y-3 text-sm text-gray-700">
+          <div>
+            <div className="text-xs text-gray-500">關聯櫃子</div>
+            <div className="mt-1">{hasContent ? cabinetContent : <span className="text-sm text-gray-500">未指定</span>}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">關聯作品</div>
+            <div className="mt-2">{itemsContent}</div>
+          </div>
+        </div>
+      </section>
+    );
+  }, [cabinetError, cabinetLoading, cabinetMap, note, relatedItems, relationsError, relationsLoading]);
 
   async function handleDelete() {
     if (!note || deleting) {
@@ -387,6 +603,7 @@ export default function NoteDetailPage({ params }: PageProps) {
               </div>
             </div>
           </header>
+          {relationInfo}
           {metaInfo}
           <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-2">
