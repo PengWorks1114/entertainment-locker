@@ -71,6 +71,9 @@ export default function CabinetsPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [list, setList] = useState<Cabinet[]>([]);
   const [cabinetItemCounts, setCabinetItemCounts] = useState<Record<string, number>>({});
+  const [cabinetLatestItemUpdatedMs, setCabinetLatestItemUpdatedMs] = useState<
+    Record<string, number>
+  >({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [showReorder, setShowReorder] = useState(false);
   const [reorderList, setReorderList] = useState<Cabinet[]>([]);
@@ -112,6 +115,7 @@ export default function CabinetsPage() {
     if (!user) {
       setList([]);
       setCabinetItemCounts({});
+      setCabinetLatestItemUpdatedMs({});
       invalidateCabinetOptions();
       return;
     }
@@ -181,6 +185,7 @@ export default function CabinetsPage() {
   useEffect(() => {
     if (!user) {
       setCabinetItemCounts({});
+      setCabinetLatestItemUpdatedMs({});
       return;
     }
     const db = getFirebaseDb();
@@ -193,6 +198,7 @@ export default function CabinetsPage() {
       q,
       (snap) => {
         const counts: Record<string, number> = {};
+        const latestUpdated: Record<string, number> = {};
         snap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const rawCabinetId =
@@ -201,11 +207,23 @@ export default function CabinetsPage() {
             return;
           }
           counts[rawCabinetId] = (counts[rawCabinetId] ?? 0) + 1;
+          const updatedAt = data?.updatedAt;
+          const createdAt = data?.createdAt;
+          const createdMs =
+            createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
+          const updatedMs =
+            updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
+          const previous = latestUpdated[rawCabinetId] ?? 0;
+          if (updatedMs > previous) {
+            latestUpdated[rawCabinetId] = updatedMs;
+          }
         });
         setCabinetItemCounts(counts);
+        setCabinetLatestItemUpdatedMs(latestUpdated);
       },
       () => {
         setCabinetItemCounts({});
+        setCabinetLatestItemUpdatedMs({});
       }
     );
     return () => unSub();
@@ -236,10 +254,17 @@ export default function CabinetsPage() {
     const fallbackName = "未命名櫃子";
     const getItemCount = (id: string) => cabinetItemCounts[id] ?? 0;
 
-    const comparators: Record<Exclude<SortOption, "custom">, Record<SortDirection, (a: Cabinet, b: Cabinet) => number>> = {
+    const getLatestItemUpdatedMs = (cabinet: Cabinet) => {
+      const latest = cabinetLatestItemUpdatedMs[cabinet.id];
+      return typeof latest === "number" && latest > 0 ? latest : cabinet.updatedMs;
+    };
+    const comparators: Record<
+      Exclude<SortOption, "custom">,
+      Record<SortDirection, (a: Cabinet, b: Cabinet) => number>
+    > = {
       recentUpdated: {
-        asc: (a, b) => b.updatedMs - a.updatedMs,
-        desc: (a, b) => a.updatedMs - b.updatedMs,
+        asc: (a, b) => getLatestItemUpdatedMs(b) - getLatestItemUpdatedMs(a),
+        desc: (a, b) => getLatestItemUpdatedMs(a) - getLatestItemUpdatedMs(b),
       },
       created: {
         asc: (a, b) => a.createdMs - b.createdMs,
@@ -262,7 +287,13 @@ export default function CabinetsPage() {
       base.sort(comparator);
     }
     return base;
-  }, [cabinetItemCounts, filteredList, sortDirection, sortOption]);
+  }, [
+    cabinetItemCounts,
+    cabinetLatestItemUpdatedMs,
+    filteredList,
+    sortDirection,
+    sortOption,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
