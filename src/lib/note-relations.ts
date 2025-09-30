@@ -34,7 +34,7 @@ type ItemByIdCacheEntry = {
 const itemsByCabinetCache = new Map<string, ItemCacheEntry>();
 const pendingCabinetCache = new Map<string, Promise<NoteItemSummary[]>>();
 const itemsByIdCache = new Map<string, ItemByIdCacheEntry>();
-const pendingItemIdsCache = new Map<string, Promise<NoteItemSummary>>();
+const pendingItemIdsCache = new Map<string, Promise<NoteItemSummary | null>>();
 
 function now(): number {
   return Date.now();

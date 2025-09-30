@@ -610,8 +610,8 @@ export default function NoteDetailPage({ params }: PageProps) {
                   ✕
                 </button>
               </div>
-              <div className="flex flex-1 flex-col gap-4 px-6 py-5">
-                <div className="flex-1 overflow-hidden rounded-xl border border-gray-200">
+              <div className="flex flex-1 min-h-0 flex-col gap-4 px-6 py-5">
+                <div className="flex-1 min-h-0 overflow-hidden rounded-xl border border-gray-200">
                   <div className="h-full overflow-y-auto px-4 py-3">
                     <RichTextEditor
                       value={quickEditHtml}
