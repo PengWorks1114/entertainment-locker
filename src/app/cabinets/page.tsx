@@ -86,7 +86,7 @@ export default function CabinetsPage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const canChangeSortDirection = sortOption !== "custom";
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
@@ -233,9 +233,7 @@ export default function CabinetsPage() {
       return filteredList;
     }
     const base = [...filteredList];
-    const directionFactor =
-      (sortDirection === "asc" ? 1 : -1) *
-      (sortOption === "recentUpdated" || sortOption === "itemCount" ? -1 : 1);
+    const directionFactor = sortDirection === "asc" ? 1 : -1;
     switch (sortOption) {
       case "recentUpdated":
         base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
