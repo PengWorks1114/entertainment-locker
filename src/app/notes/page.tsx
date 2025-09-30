@@ -253,20 +253,28 @@ export default function NotesPage() {
 
   const sortedNotes = useMemo(() => {
     const base = [...filteredNotes];
-    const directionFactor = sortDirection === "asc" ? 1 : -1;
-    switch (sortOption) {
-      case "created":
-        base.sort((a, b) => (a.createdMs - b.createdMs) * directionFactor);
-        break;
-      case "title":
-        base.sort((a, b) =>
-          a.title.localeCompare(b.title, "zh-Hant", { sensitivity: "base" }) * directionFactor
-        );
-        break;
-      case "recentUpdated":
-      default:
-        base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
-        break;
+    const comparators: Record<
+      SortOption,
+      Record<SortDirection, (a: Note, b: Note) => number>
+    > = {
+      recentUpdated: {
+        asc: (a, b) => b.updatedMs - a.updatedMs,
+        desc: (a, b) => a.updatedMs - b.updatedMs,
+      },
+      created: {
+        asc: (a, b) => a.createdMs - b.createdMs,
+        desc: (a, b) => b.createdMs - a.createdMs,
+      },
+      title: {
+        asc: (a, b) =>
+          a.title.localeCompare(b.title, "zh-Hant", { sensitivity: "base" }),
+        desc: (a, b) =>
+          b.title.localeCompare(a.title, "zh-Hant", { sensitivity: "base" }),
+      },
+    };
+    const comparator = comparators[sortOption]?.[sortDirection];
+    if (comparator) {
+      base.sort(comparator);
     }
     return base;
   }, [filteredNotes, sortDirection, sortOption]);
