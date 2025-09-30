@@ -3,6 +3,32 @@ import { NextRequest } from "next/server";
 const FETCH_TIMEOUT_MS = 7000;
 const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
 
+// Header policy:
+// 1. Mimic a modern desktop Chrome request so that more sites return their full HTML.
+// 2. If that precise UA is blocked, retry once with a simpler legacy UA instead of
+//    falling back to a bot signature. Please keep both attempts aligned with common
+//    browser headers to avoid being throttled by anti-bot systems.
+const PRIMARY_BROWSER_HEADERS: Record<string, string> = {
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Sec-CH-UA": '"Google Chrome";v="125", "Chromium";v="125", "Not:A-Brand";v="24"',
+  "Sec-CH-UA-Mobile": "?0",
+  "Sec-CH-UA-Platform": '"Windows"',
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+};
+
+const FALLBACK_BROWSER_HEADERS: Record<string, string> = {
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36",
+};
+
+const BLOCKED_STATUS_CODES = new Set([401, 403, 406, 429]);
+
 const META_IMAGE_PRIORITY = [
   "og:image",
   "og:image:url",
@@ -380,27 +406,71 @@ export async function GET(request: NextRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  let response: Response;
-  try {
-    response = await fetch(targetUrl, {
+  const fetchWithHeaders = (headers: Record<string, string>) =>
+    fetch(targetUrl, {
       method: "GET",
       redirect: "follow",
       signal: controller.signal,
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent":
-          "Mozilla/5.0 (compatible; EntertainmentLockerBot/1.0; +https://github.com/)",
-      },
+      headers,
     });
+
+  let response: Response | null = null;
+  let lastError: unknown;
+  let usedFallback = false;
+  try {
+    response = await fetchWithHeaders(PRIMARY_BROWSER_HEADERS);
   } catch (error) {
-    clearTimeout(timeout);
-    if (error instanceof Error && error.name === "AbortError") {
+    lastError = error;
+    if (!controller.signal.aborted) {
+      try {
+        response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
+        usedFallback = true;
+      } catch (fallbackError) {
+        lastError = fallbackError;
+        response = null;
+        usedFallback = true;
+      }
+    }
+  }
+
+  if (
+    response &&
+    !response.ok &&
+    !usedFallback &&
+    BLOCKED_STATUS_CODES.has(response.status) &&
+    !controller.signal.aborted
+  ) {
+    if (response.body) {
+      try {
+        await response.body.cancel();
+      } catch {
+        // ignore body cancellation failure
+      }
+    }
+    try {
+      response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
+      usedFallback = true;
+    } catch (fallbackError) {
+      lastError = fallbackError;
+      response = null;
+      usedFallback = true;
+    }
+  }
+
+  clearTimeout(timeout);
+
+  if (!response) {
+    if (controller.signal.aborted) {
+      return Response.json({ error: "抓取逾時" }, { status: 504 });
+    }
+    if (
+      lastError instanceof Error &&
+      (lastError.name === "AbortError" || lastError.name === "TimeoutError")
+    ) {
       return Response.json({ error: "抓取逾時" }, { status: 504 });
     }
     return Response.json({ error: "抓取失敗" }, { status: 502 });
   }
-
-  clearTimeout(timeout);
 
   if (!response.ok) {
     return Response.json({ error: "來源回應錯誤" }, { status: 502 });
