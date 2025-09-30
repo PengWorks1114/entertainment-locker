@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, onSnapshot, query, Timestamp, where } from "firebase/firestore";
@@ -59,6 +60,7 @@ function formatDateTime(ms: number): string {
 }
 
 export default function NotesPage() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -354,15 +356,28 @@ export default function NotesPage() {
                         </span>
                       );
                     }
+                    const cabinetHref = `/cabinet/${cabinetId}`;
                     return (
-                      <Link
+                      <span
                         key={`cab-${cabinetId}`}
-                        href={`/cabinet/${cabinetId}`}
-                        className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-gray-700 hover:bg-gray-200"
-                        onClick={(event) => event.stopPropagation()}
+                        role="link"
+                        tabIndex={0}
+                        className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-400"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          router.push(cabinetHref);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(cabinetHref);
+                          }
+                        }}
                       >
                         📁 {label}
-                      </Link>
+                      </span>
                     );
                   })}
                   {note.itemIds.map((itemId) => {
@@ -390,15 +405,28 @@ export default function NotesPage() {
                         </span>
                       );
                     }
+                    const itemHref = `/item/${itemId}`;
                     return (
-                      <Link
+                      <span
                         key={`item-${itemId}`}
-                        href={`/item/${itemId}`}
-                        className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-700 hover:bg-amber-100"
-                        onClick={(event) => event.stopPropagation()}
+                        role="link"
+                        tabIndex={0}
+                        className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-700 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          router.push(itemHref);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(itemHref);
+                          }
+                        }}
                       >
                         📚 {label}
-                      </Link>
+                      </span>
                     );
                   })}
                 </div>
@@ -408,7 +436,7 @@ export default function NotesPage() {
         ))}
       </ul>
     );
-  }, [cabinetMap, hasFilteredNotes, hasNotes, itemSummaries, paginatedNotes]);
+  }, [cabinetMap, hasFilteredNotes, hasNotes, itemSummaries, paginatedNotes, router]);
 
   if (!authChecked) {
     return (

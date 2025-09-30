@@ -746,12 +746,16 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
     };
     const unsubscribers = [
       onSnapshot(
-        query(noteCollectionRef, where("relatedItemIds", "array-contains", itemId)),
+        query(
+          noteCollectionRef,
+          where("uid", "==", user.uid),
+          where("relatedItemIds", "array-contains", itemId)
+        ),
         applySnapshot("related"),
         handleError("related")
       ),
       onSnapshot(
-        query(noteCollectionRef, where("itemId", "==", itemId)),
+        query(noteCollectionRef, where("uid", "==", user.uid), where("itemId", "==", itemId)),
         applySnapshot("legacy"),
         handleError("legacy")
       ),
