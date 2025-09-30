@@ -86,7 +86,7 @@ export default function CabinetsPage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("detailed");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const canChangeSortDirection = sortOption !== "custom";
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
@@ -233,34 +233,33 @@ export default function CabinetsPage() {
       return filteredList;
     }
     const base = [...filteredList];
-    const directionFactor =
-      (sortDirection === "asc" ? 1 : -1) *
-      (sortOption === "recentUpdated" || sortOption === "itemCount" ? -1 : 1);
-    switch (sortOption) {
-      case "recentUpdated":
-        base.sort((a, b) => (a.updatedMs - b.updatedMs) * directionFactor);
-        break;
-      case "created":
-        base.sort((a, b) => (a.createdMs - b.createdMs) * directionFactor);
-        break;
-      case "name": {
-        const fallback = "未命名櫃子";
-        base.sort(
-          (a, b) =>
-            (a.name || fallback).localeCompare(b.name || fallback, "zh-Hant") *
-            directionFactor
-        );
-        break;
-      }
-      case "itemCount":
-        base.sort(
-          (a, b) =>
-            ((cabinetItemCounts[a.id] ?? 0) - (cabinetItemCounts[b.id] ?? 0)) *
-            directionFactor
-        );
-        break;
-      default:
-        break;
+    const fallbackName = "未命名櫃子";
+    const getItemCount = (id: string) => cabinetItemCounts[id] ?? 0;
+
+    const comparators: Record<Exclude<SortOption, "custom">, Record<SortDirection, (a: Cabinet, b: Cabinet) => number>> = {
+      recentUpdated: {
+        asc: (a, b) => b.updatedMs - a.updatedMs,
+        desc: (a, b) => a.updatedMs - b.updatedMs,
+      },
+      created: {
+        asc: (a, b) => a.createdMs - b.createdMs,
+        desc: (a, b) => b.createdMs - a.createdMs,
+      },
+      name: {
+        asc: (a, b) =>
+          (a.name || fallbackName).localeCompare(b.name || fallbackName, "zh-Hant"),
+        desc: (a, b) =>
+          (b.name || fallbackName).localeCompare(a.name || fallbackName, "zh-Hant"),
+      },
+      itemCount: {
+        asc: (a, b) => getItemCount(b.id) - getItemCount(a.id),
+        desc: (a, b) => getItemCount(a.id) - getItemCount(b.id),
+      },
+    };
+
+    const comparator = comparators[sortOption]?.[sortDirection];
+    if (comparator) {
+      base.sort(comparator);
     }
     return base;
   }, [cabinetItemCounts, filteredList, sortDirection, sortOption]);
@@ -606,8 +605,8 @@ export default function CabinetsPage() {
                         setSortOption(nextOption);
                         if (nextOption === "custom") {
                           setSortDirection("desc");
-                        } else if (nextOption === "itemCount") {
-                          setSortDirection("desc");
+                        } else {
+                          setSortDirection("asc");
                         }
                       }}
                       className="h-12 w-full flex-1 rounded-xl border bg-white px-4 text-base"
