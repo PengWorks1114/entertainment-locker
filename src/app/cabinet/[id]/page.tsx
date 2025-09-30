@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import {
   collection,
   doc,
@@ -21,6 +22,7 @@ import ItemImageCard from "@/components/ItemImageCard";
 import { normalizeAppearanceRecords } from "@/lib/appearances";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
+import { deleteItemWithProgress } from "@/lib/firestore-utils";
 import {
   ITEM_LANGUAGE_OPTIONS,
   ITEM_LANGUAGE_VALUES,
@@ -59,6 +61,11 @@ type FilterState = {
   sortDirection: SortDirection;
   tags: string[];
   pageSize: number;
+};
+type DuplicateGroup = {
+  displayUrl: string;
+  normalizedUrl: string;
+  items: ItemRecord[];
 };
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 30, 40, 50, 100] as const;
@@ -266,6 +273,71 @@ function readFiltersFromStorage(storageKey: string): FilterState | null {
   }
 }
 
+
+function normalizeSourceUrl(input: unknown): string | null {
+  if (typeof input !== "string") {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const lower = trimmed.toLowerCase();
+  const withoutProtocol = lower.replace(/^https?:\/\//, "");
+  return withoutProtocol.replace(/\/+$/, "");
+}
+
+function getCreatedAtMs(item: ItemRecord): number {
+  return item.createdAt ? item.createdAt.toMillis() : Number.MAX_SAFE_INTEGER;
+}
+
+function isNonEmptyText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function getDuplicateItemScore(item: ItemRecord): number {
+  let score = 0;
+  if (isNonEmptyText(item.thumbUrl)) {
+    score += 1000;
+  }
+  if (item.isFavorite) {
+    score += 40;
+  }
+  if (typeof item.rating === "number" && Number.isFinite(item.rating)) {
+    score += item.rating * 5;
+  }
+  const richTextFields = [
+    item.titleAlt,
+    item.author,
+    item.progressNote,
+    item.insightNote,
+    item.note,
+  ];
+  richTextFields.forEach((field) => {
+    if (isNonEmptyText(field)) {
+      score += 20;
+    }
+  });
+  if (Array.isArray(item.links)) {
+    const linkCount = item.links.filter((link) => isNonEmptyText(link?.url)).length;
+    score += linkCount * 30;
+  }
+  if (Array.isArray(item.insightNotes)) {
+    score += item.insightNotes.length * 15;
+  }
+  if (Array.isArray(item.appearances)) {
+    score += item.appearances.length * 10;
+  }
+  if (Array.isArray(item.tags)) {
+    score += item.tags.length * 3;
+  }
+  const updatedAt = item.updatedAt?.toMillis?.() ?? 0;
+  score += updatedAt / 1_000_000;
+  const createdAt = item.createdAt?.toMillis?.() ?? 0;
+  score += createdAt / 10_000_000;
+  return score;
+}
+
 export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const { id: cabinetId } = use(params);
   const searchParams = useSearchParams();
@@ -281,6 +353,10 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
   const [cabinetLocked, setCabinetLocked] = useState(false);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateSelection, setDuplicateSelection] = useState<Record<string, boolean>>({});
+  const [duplicateDeleting, setDuplicateDeleting] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => {
     const hasLanguageParam = searchParams.has("language");
@@ -761,6 +837,80 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     return sorted;
   }, [items, filters]);
 
+  const duplicateGroups = useMemo<DuplicateGroup[]>(() => {
+    if (items.length === 0) {
+      return [];
+    }
+    const groups = new Map<string, { displayUrl: string; items: ItemRecord[] }>();
+    items.forEach((item) => {
+      const links = Array.isArray(item.links) ? item.links : [];
+      if (links.length === 0) {
+        return;
+      }
+      const primaryLink = links.find((link) => link?.isPrimary) ?? links[0];
+      if (!primaryLink || typeof primaryLink.url !== "string") {
+        return;
+      }
+      const normalized = normalizeSourceUrl(primaryLink.url);
+      if (!normalized) {
+        return;
+      }
+      const trimmedUrl = primaryLink.url.trim();
+      const existing = groups.get(normalized);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        groups.set(normalized, { displayUrl: trimmedUrl, items: [item] });
+      }
+    });
+    const entries: DuplicateGroup[] = [];
+    groups.forEach((value, key) => {
+      if (value.items.length < 2) {
+        return;
+      }
+      entries.push({
+        normalizedUrl: key,
+        displayUrl: value.displayUrl,
+        items: value.items
+          .slice()
+          .sort((a, b) => {
+            const scoreDiff = getDuplicateItemScore(b) - getDuplicateItemScore(a);
+            if (scoreDiff !== 0) {
+              return scoreDiff;
+            }
+            const createdDiff = getCreatedAtMs(a) - getCreatedAtMs(b);
+            if (createdDiff !== 0) {
+              return createdDiff;
+            }
+            return a.id.localeCompare(b.id);
+          }),
+      });
+    });
+    return entries.sort((a, b) => b.items.length - a.items.length);
+  }, [items]);
+
+  const duplicateItemIdSet = useMemo(() => {
+    const set = new Set<string>();
+    duplicateGroups.forEach((group) => {
+      group.items.forEach((item) => {
+        set.add(item.id);
+      });
+    });
+    return set;
+  }, [duplicateGroups]);
+
+  const selectedDuplicateIds = useMemo(() => {
+    return Object.keys(duplicateSelection).filter(
+      (itemId) => duplicateSelection[itemId] && duplicateItemIdSet.has(itemId)
+    );
+  }, [duplicateSelection, duplicateItemIdSet]);
+
+  const duplicateSelectedCount = selectedDuplicateIds.length;
+  const duplicateItemCount = duplicateGroups.reduce(
+    (total, group) => total + group.items.length,
+    0
+  );
+
   const highlightQuery = filters.search.trim();
   const pageSize = filters.pageSize || PAGE_SIZE_OPTIONS[0];
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
@@ -846,6 +996,94 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
     setFiltersCollapsed((prev) => !prev);
   }
 
+  function handleOpenDuplicateDialog() {
+    const defaults: Record<string, boolean> = {};
+    duplicateGroups.forEach((group) => {
+      group.items.forEach((item, index) => {
+        if (index === 0) {
+          return;
+        }
+        defaults[item.id] = true;
+      });
+    });
+    setDuplicateSelection(defaults);
+    setDuplicateError(null);
+    setDuplicateDialogOpen(true);
+  }
+
+  function handleCloseDuplicateDialog() {
+    if (duplicateDeleting) {
+      return;
+    }
+    setDuplicateDialogOpen(false);
+    setDuplicateSelection({});
+    setDuplicateError(null);
+  }
+
+  function handleToggleDuplicateSelection(itemId: string, checked: boolean) {
+    setDuplicateSelection((prev) => {
+      if (checked) {
+        return { ...prev, [itemId]: true };
+      }
+      if (!prev[itemId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  }
+
+  function handleClearDuplicateSelection() {
+    if (duplicateDeleting) {
+      return;
+    }
+    setDuplicateSelection({});
+  }
+
+  async function handleDeleteSelectedDuplicates() {
+    if (selectedDuplicateIds.length === 0) {
+      return;
+    }
+    if (!user?.uid) {
+      setDuplicateError("尚未登入，請重新登入後再試。");
+      return;
+    }
+    setDuplicateError(null);
+    setDuplicateDeleting(true);
+    const failed: { id: string; error: unknown }[] = [];
+    for (const itemId of selectedDuplicateIds) {
+      try {
+        await deleteItemWithProgress(itemId, user.uid);
+      } catch (error) {
+        failed.push({ id: itemId, error });
+      }
+    }
+    if (failed.length === 0) {
+      setDuplicateDialogOpen(false);
+      setDuplicateSelection({});
+    } else {
+      const failedIds = new Set(failed.map((entry) => entry.id));
+      setDuplicateSelection((prev) => {
+        const next: Record<string, boolean> = {};
+        Object.keys(prev).forEach((key) => {
+          if (failedIds.has(key)) {
+            next[key] = true;
+          }
+        });
+        return next;
+      });
+      const permissionDenied = failed.some(
+        ({ error }) => error instanceof FirebaseError && error.code === "permission-denied"
+      );
+      const message = permissionDenied
+        ? "沒有刪除部分物件的權限，請確認帳號權限或稍後再試。"
+        : "刪除時發生錯誤，部分物件未刪除成功。";
+      setDuplicateError(message);
+    }
+    setDuplicateDeleting(false);
+  }
+
   const inputClass = "h-12 rounded-xl border px-4 text-base";
   const selectClass = "h-12 rounded-xl border px-4 text-base";
   const smallInputClass = "h-10 w-full rounded-lg border px-3 text-sm";
@@ -923,6 +1161,14 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
             )}
           </div>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
+            <button
+              type="button"
+              onClick={handleOpenDuplicateDialog}
+              className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+            >
+              重複物件檢查
+              {duplicateGroups.length > 0 ? `（${duplicateGroups.length} 組）` : ""}
+            </button>
             <Link
               href={`/item/new?cabinetId=${encodeURIComponent(cabinetId)}`}
               className={`${buttonClass({ variant: "accent" })} w-full sm:w-auto`}
@@ -1360,6 +1606,148 @@ export default function CabinetDetailPage({ params }: CabinetPageProps) {
           )}
         </section>
       </div>
+      {duplicateDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="duplicate-dialog-title"
+            className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-xl"
+          >
+            <div className="flex flex-col gap-2 border-b px-6 py-4">
+              <h2 id="duplicate-dialog-title" className="text-lg font-semibold text-gray-900">
+                重複物件檢查
+              </h2>
+              <p className="text-sm text-gray-500">
+                {duplicateGroups.length > 0
+                  ? `找到 ${duplicateGroups.length} 組，共 ${duplicateItemCount} 件。請勾選要刪除的物件。`
+                  : "未找到來源連結相同的物件。"}
+              </p>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto px-6 py-4">
+              {duplicateGroups.length === 0 ? (
+                <div className="rounded-xl border border-dashed bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+                  目前沒有偵測到重複的來源連結。
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {duplicateGroups.map((group) => (
+                    <div
+                      key={group.normalizedUrl}
+                      className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                    >
+                      <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-3">
+                        <div className="break-anywhere text-sm font-medium text-gray-700">
+                          {group.displayUrl}
+                        </div>
+                        <span className="text-xs text-gray-500">{group.items.length} 件</span>
+                      </div>
+                      <ul className="divide-y">
+                        {group.items.map((item, index) => {
+                          const checked = Boolean(duplicateSelection[item.id]);
+                          return (
+                            <li key={item.id} className="bg-white">
+                              <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                                <label className="flex flex-1 cursor-pointer items-start gap-3">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    checked={checked}
+                                    disabled={duplicateDeleting}
+                                    onChange={(event) =>
+                                      handleToggleDuplicateSelection(item.id, event.target.checked)
+                                    }
+                                  />
+                                  <span className="flex flex-1 flex-col gap-1">
+                                    <span className="flex flex-wrap items-center gap-2">
+                                      <span className="text-sm font-medium text-gray-900">
+                                        {item.titleZh || "未命名物件"}
+                                      </span>
+                                      {index === 0 && (
+                                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-600">
+                                          建議保留
+                                        </span>
+                                      )}
+                                      {item.thumbUrl ? (
+                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                                          有縮圖
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                    {item.titleAlt ? (
+                                      <span className="text-xs text-gray-500">{item.titleAlt}</span>
+                                    ) : null}
+                                    <span className="flex flex-wrap gap-3 text-xs text-gray-500">
+                                      {item.links?.length ? <span>連結 {item.links.length}</span> : null}
+                                      {item.insightNotes?.length ? <span>洞察 {item.insightNotes.length}</span> : null}
+                                      {item.appearances?.length ? <span>登場 {item.appearances.length}</span> : null}
+                                      {isNonEmptyText(item.note) ? <span>備註</span> : null}
+                                    </span>
+                                  </span>
+                                </label>
+                                <div className="flex shrink-0 items-center gap-2 sm:pt-1">
+                                  <Link
+                                    href={`/item/${item.id}`}
+                                    className={`${buttonClass({ variant: "secondary", size: "sm" })}`}
+                                  >
+                                    查看
+                                  </Link>
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="border-t bg-gray-50 px-6 py-4">
+              {duplicateError && (
+                <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {duplicateError}
+                </div>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-gray-600">
+                  {duplicateGroups.length > 0
+                    ? `已選擇 ${duplicateSelectedCount} 件`
+                    : "沒有可刪除的項目"}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseDuplicateDialog}
+                    disabled={duplicateDeleting}
+                    className={`${buttonClass({ variant: "subtle" })} w-full sm:w-auto`}
+                  >
+                    關閉
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearDuplicateSelection}
+                    disabled={duplicateDeleting || duplicateSelectedCount === 0}
+                    className={`${buttonClass({ variant: "secondary" })} w-full sm:w-auto`}
+                  >
+                    取消全選
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelectedDuplicates}
+                    disabled={duplicateDeleting || duplicateSelectedCount === 0}
+                    className={`${buttonClass({ variant: "danger" })} w-full sm:w-auto`}
+                  >
+                    {duplicateDeleting
+                      ? "刪除中…"
+                      : `刪除已選（${duplicateSelectedCount}）`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
