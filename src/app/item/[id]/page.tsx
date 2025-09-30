@@ -3658,10 +3658,10 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
-      <section className="mt-6 space-y-4 rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
-        <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">相關筆記</h2>
+      <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-gray-900">相關筆記</h2>
             <p className="text-sm text-gray-500">檢視與此作品建立連結的筆記。</p>
           </div>
         </header>
