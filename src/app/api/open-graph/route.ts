@@ -251,12 +251,98 @@ function pickMetaSiteName(metaTags: Map<string, string>): string | null {
   return null;
 }
 
-async function readBodyWithLimit(response: Response): Promise<string> {
+function normalizeEncodingName(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === "utf8") {
+    return "utf-8";
+  }
+  if (normalized === "shift-jis") {
+    return "shift_jis";
+  }
+  return normalized;
+}
+
+function extractEncodingFromContentType(contentType: string | null): string | null {
+  if (!contentType) {
+    return null;
+  }
+  const match = contentType.match(/charset\s*=\s*([^"]+?)(?:;|$)/i);
+  if (!match) {
+    return null;
+  }
+  const [raw] = match.slice(1);
+  return normalizeEncodingName(raw.replace(/["']/g, ""));
+}
+
+async function sniffEncodingFromMeta(response: Response): Promise<string | null> {
+  if (!response.body) {
+    return null;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let received = 0;
+  let preview = "";
+  const MAX_SNIFF_BYTES = 32_768;
+
+  try {
+    while (received < MAX_SNIFF_BYTES) {
+      const { done, value } = await reader.read();
+      if (done || !value) {
+        break;
+      }
+      received += value.byteLength;
+      preview += decoder.decode(value, { stream: true });
+      if (/<\/head>/i.test(preview)) {
+        break;
+      }
+      if (received >= MAX_SNIFF_BYTES) {
+        break;
+      }
+    }
+    preview += decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  const directMatch = preview.match(/<meta[^>]*charset\s*=\s*["']?([^"'\s/>]+)/i);
+  if (directMatch) {
+    return normalizeEncodingName(directMatch[1]);
+  }
+
+  const httpEquivMatch = preview.match(
+    /<meta[^>]*http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([^"';\s]+)/i
+  );
+  if (httpEquivMatch) {
+    return normalizeEncodingName(httpEquivMatch[1]);
+  }
+
+  return null;
+}
+
+function createTextDecoder(encoding: string): TextDecoder {
+  try {
+    return new TextDecoder(encoding, { fatal: false });
+  } catch {
+    return new TextDecoder("utf-8", { fatal: false });
+  }
+}
+
+async function readBodyWithLimit(
+  response: Response,
+  encoding: string
+): Promise<string> {
   if (!response.body) {
     return "";
   }
   const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const decoder = createTextDecoder(encoding);
   let result = "";
   let received = 0;
 
@@ -321,11 +407,17 @@ export async function GET(request: NextRequest) {
   }
 
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/html")) {
+  if (!contentType.toLowerCase().includes("text/html")) {
     return Response.json({ image: null });
   }
 
-  const html = await readBodyWithLimit(response);
+  let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
+  const metaEncoding = await sniffEncodingFromMeta(response.clone());
+  if (metaEncoding) {
+    encoding = metaEncoding;
+  }
+
+  const html = await readBodyWithLimit(response, encoding);
   if (!html) {
     return Response.json({ image: null });
   }
