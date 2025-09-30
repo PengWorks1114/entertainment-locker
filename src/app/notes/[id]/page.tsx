@@ -7,7 +7,17 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { deleteDoc, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
+import { fetchCabinetOptions, type CabinetOption } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  NOTE_RELATED_CABINET_LIMIT,
+  NOTE_RELATED_ITEM_LIMIT,
+  fetchItemSummariesByIds,
+  limitRelationIds,
+  mergeLegacyRelationId,
+  normalizeRelationIds,
+  type NoteItemSummary,
+} from "@/lib/note-relations";
 import { buttonClass } from "@/lib/ui";
 
 type PageProps = {
@@ -22,6 +32,8 @@ type Note = {
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+  cabinetIds: string[];
+  itemIds: string[];
 };
 
 type Feedback = {
@@ -63,6 +75,15 @@ export default function NoteDetailPage({ params }: PageProps) {
   const [quickEditText, setQuickEditText] = useState("");
   const [quickEditSaving, setQuickEditSaving] = useState(false);
   const [quickEditError, setQuickEditError] = useState<string | null>(null);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [itemSummaries, setItemSummaries] = useState<Record<string, NoteItemSummary>>({});
+  const cabinetMap = useMemo(() => {
+    const map = new Map<string, CabinetOption>();
+    for (const option of cabinetOptions) {
+      map.set(option.id, option);
+    }
+    return map;
+  }, [cabinetOptions]);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -79,6 +100,27 @@ export default function NoteDetailPage({ params }: PageProps) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetOptions([]);
+      return;
+    }
+    let active = true;
+    fetchCabinetOptions(user.uid)
+      .then((rows) => {
+        if (!active) return;
+        setCabinetOptions(rows);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入櫃子資料時發生錯誤", err);
+        setCabinetOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!authChecked) {
@@ -119,6 +161,14 @@ export default function NoteDetailPage({ params }: PageProps) {
         const updatedAt = data.updatedAt;
         const createdMs = createdAt instanceof Timestamp ? createdAt.toMillis() : 0;
         const updatedMs = updatedAt instanceof Timestamp ? updatedAt.toMillis() : createdMs;
+        const cabinetIds = limitRelationIds(
+          mergeLegacyRelationId(data.cabinetId, normalizeRelationIds(data.relatedCabinetIds)),
+          NOTE_RELATED_CABINET_LIMIT
+        );
+        const itemIds = limitRelationIds(
+          mergeLegacyRelationId(data.itemId, normalizeRelationIds(data.relatedItemIds)),
+          NOTE_RELATED_ITEM_LIMIT
+        );
         setNote({
           id: snap.id,
           title: (data.title as string) || "",
@@ -130,6 +180,8 @@ export default function NoteDetailPage({ params }: PageProps) {
           isFavorite: Boolean(data.isFavorite),
           createdMs,
           updatedMs,
+          cabinetIds,
+          itemIds,
         });
         setFeedback(null);
         setLoading(false);
@@ -141,6 +193,44 @@ export default function NoteDetailPage({ params }: PageProps) {
     );
     return () => unsub();
   }, [authChecked, noteId, user]);
+
+  useEffect(() => {
+    if (!user || !note) {
+      if (Object.keys(itemSummaries).length > 0) {
+        setItemSummaries({});
+      }
+      return;
+    }
+    if (note.itemIds.length === 0) {
+      if (Object.keys(itemSummaries).length > 0) {
+        setItemSummaries({});
+      }
+      return;
+    }
+    const missing = note.itemIds.filter((id) => !itemSummaries[id]);
+    if (missing.length === 0) {
+      return;
+    }
+    let active = true;
+    fetchItemSummariesByIds(user.uid, missing)
+      .then((rows) => {
+        if (!active) return;
+        setItemSummaries((prev) => {
+          const next = { ...prev };
+          for (const row of rows) {
+            next[row.id] = row;
+          }
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入作品資料時發生錯誤", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, note, itemSummaries]);
 
   const metaInfo = useMemo(() => {
     if (!note) {
@@ -159,6 +249,97 @@ export default function NoteDetailPage({ params }: PageProps) {
       </dl>
     );
   }, [note]);
+
+  const relatedInfo = useMemo(() => {
+    if (!note) {
+      return null;
+    }
+    const cabinetEntries = note.cabinetIds.map((cabinetId) => {
+      const cabinet = cabinetMap.get(cabinetId);
+      if (!cabinet) {
+        return (
+          <span key={`cab-${cabinetId}`} className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-500">
+            未知櫃子
+          </span>
+        );
+      }
+      const label = cabinet.name || "未命名櫃子";
+      if (cabinet.isLocked) {
+        return (
+          <span
+            key={`cab-${cabinetId}`}
+            className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-400"
+          >
+            🔒 {label}
+          </span>
+        );
+      }
+      return (
+        <Link
+          key={`cab-${cabinetId}`}
+          href={`/cabinet/${cabinetId}`}
+          className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200"
+        >
+          📁 {label}
+        </Link>
+      );
+    });
+    const itemEntries = note.itemIds.map((itemId) => {
+      const item = itemSummaries[itemId];
+      if (!item) {
+        return (
+          <span key={`item-${itemId}`} className="rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-600">
+            載入作品中…
+          </span>
+        );
+      }
+      const relatedCabinet = item.cabinetId ? cabinetMap.get(item.cabinetId) : null;
+      const locked = relatedCabinet ? relatedCabinet.isLocked : false;
+      const label = item.title || "未命名作品";
+      if (locked) {
+        return (
+          <span
+            key={`item-${itemId}`}
+            className="flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-500"
+          >
+            🔒 {label}
+          </span>
+        );
+      }
+      return (
+        <Link
+          key={`item-${itemId}`}
+          href={`/item/${itemId}`}
+          className="flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-700 hover:bg-amber-100"
+        >
+          📚 {label}
+        </Link>
+      );
+    });
+    if (cabinetEntries.length === 0 && itemEntries.length === 0) {
+      return null;
+    }
+    return (
+      <section className="space-y-4 rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
+        <header className="space-y-1">
+          <h2 className="text-lg font-semibold text-gray-900">關聯項目</h2>
+          <p className="text-sm text-gray-500">查看此筆記連結的作品與收藏櫃。</p>
+        </header>
+        {cabinetEntries.length > 0 ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-gray-700">櫃子</h3>
+            <div className="flex flex-wrap gap-2">{cabinetEntries}</div>
+          </div>
+        ) : null}
+        {itemEntries.length > 0 ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-gray-700">作品</h3>
+            <div className="flex flex-wrap gap-2">{itemEntries}</div>
+          </div>
+        ) : null}
+      </section>
+    );
+  }, [cabinetMap, itemSummaries, note]);
 
   async function handleDelete() {
     if (!note || deleting) {
@@ -388,6 +569,7 @@ export default function NoteDetailPage({ params }: PageProps) {
             </div>
           </header>
           {metaInfo}
+          {relatedInfo}
           <section className="rounded-2xl border border-gray-200 bg-white/70 p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-gray-900">筆記內容</h2>

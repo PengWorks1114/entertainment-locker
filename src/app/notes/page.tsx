@@ -1,11 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, onSnapshot, query, Timestamp, where } from "firebase/firestore";
 
+import { fetchCabinetOptions, type CabinetOption } from "@/lib/cabinet-options";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import {
+  NOTE_RELATED_CABINET_LIMIT,
+  NOTE_RELATED_ITEM_LIMIT,
+  fetchItemSummariesByIds,
+  limitRelationIds,
+  mergeLegacyRelationId,
+  normalizeRelationIds,
+  type NoteItemSummary,
+} from "@/lib/note-relations";
 import { buttonClass } from "@/lib/ui";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
@@ -17,6 +28,8 @@ type Note = {
   isFavorite: boolean;
   createdMs: number;
   updatedMs: number;
+  cabinetIds: string[];
+  itemIds: string[];
 };
 
 type SortOption = "recentUpdated" | "created" | "title";
@@ -47,6 +60,7 @@ function formatDateTime(ms: number): string {
 }
 
 export default function NotesPage() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -58,12 +72,22 @@ export default function NotesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [cabinetOptions, setCabinetOptions] = useState<CabinetOption[]>([]);
+  const [itemSummaries, setItemSummaries] = useState<Record<string, NoteItemSummary>>({});
 
   const directionButtonClass = (direction: SortDirection) =>
     `${buttonClass({
       variant: sortDirection === direction ? "primary" : "secondary",
       size: "sm",
     })} whitespace-nowrap px-3`;
+
+  const cabinetMap = useMemo(() => {
+    const map = new Map<string, CabinetOption>();
+    for (const option of cabinetOptions) {
+      map.set(option.id, option);
+    }
+    return map;
+  }, [cabinetOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -86,6 +110,27 @@ export default function NotesPage() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCabinetOptions([]);
+      return;
+    }
+    let active = true;
+    fetchCabinetOptions(user.uid)
+      .then((rows) => {
+        if (!active) return;
+        setCabinetOptions(rows);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入櫃子資料時發生錯誤", err);
+        setCabinetOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -113,6 +158,14 @@ export default function NotesPage() {
               typeof data?.description === "string" && data.description.trim().length > 0
                 ? data.description.trim()
                 : null;
+            const cabinetIds = limitRelationIds(
+              mergeLegacyRelationId(data?.cabinetId, normalizeRelationIds(data?.relatedCabinetIds)),
+              NOTE_RELATED_CABINET_LIMIT
+            );
+            const itemIds = limitRelationIds(
+              mergeLegacyRelationId(data?.itemId, normalizeRelationIds(data?.relatedItemIds)),
+              NOTE_RELATED_ITEM_LIMIT
+            );
             return {
               id: docSnap.id,
               title: (data?.title as string) || "",
@@ -120,6 +173,8 @@ export default function NotesPage() {
               isFavorite: Boolean(data?.isFavorite),
               createdMs,
               updatedMs,
+              cabinetIds,
+              itemIds,
             } satisfies Note;
           })
           .sort((a, b) => b.updatedMs - a.updatedMs);
@@ -132,6 +187,54 @@ export default function NotesPage() {
     );
     return () => unsub();
   }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      return;
+    }
+    setItemSummaries((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    if (notes.length === 0) {
+      return;
+    }
+    const allItemIds = new Set<string>();
+    for (const note of notes) {
+      for (const id of note.itemIds) {
+        if (id) {
+          allItemIds.add(id);
+        }
+      }
+    }
+    const existingIds = new Set(Object.keys(itemSummaries));
+    const missing = Array.from(allItemIds).filter((id) => !existingIds.has(id));
+    if (missing.length === 0) {
+      return;
+    }
+    let active = true;
+    fetchItemSummariesByIds(user.uid, missing)
+      .then((rows) => {
+        if (!active) return;
+        setItemSummaries((prev) => {
+          const next = { ...prev };
+          for (const row of rows) {
+            next[row.id] = row;
+          }
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("載入作品資料時發生錯誤", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, notes, itemSummaries]);
 
   const filteredNotes = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -234,12 +337,112 @@ export default function NotesPage() {
               {note.summary ? (
                 <p className="line-clamp-2 break-anywhere text-sm text-gray-600">{note.summary}</p>
               ) : null}
+              {note.cabinetIds.length > 0 || note.itemIds.length > 0 ? (
+                <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                  {note.cabinetIds.map((cabinetId) => {
+                    const cabinet = cabinetMap.get(cabinetId);
+                    if (!cabinet) {
+                      return (
+                        <span
+                          key={`cab-${cabinetId}`}
+                          className="rounded-full bg-gray-100 px-2 py-1 text-gray-500"
+                        >
+                          未知櫃子
+                        </span>
+                      );
+                    }
+                    const label = cabinet.name || "未命名櫃子";
+                    if (cabinet.isLocked) {
+                      return (
+                        <span
+                          key={`cab-${cabinetId}`}
+                          className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-gray-400"
+                        >
+                          🔒 {label}
+                        </span>
+                      );
+                    }
+                    const cabinetHref = `/cabinet/${cabinetId}`;
+                    return (
+                      <span
+                        key={`cab-${cabinetId}`}
+                        role="link"
+                        tabIndex={0}
+                        className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-400"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          router.push(cabinetHref);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(cabinetHref);
+                          }
+                        }}
+                      >
+                        📁 {label}
+                      </span>
+                    );
+                  })}
+                  {note.itemIds.map((itemId) => {
+                    const item = itemSummaries[itemId];
+                    if (!item) {
+                      return (
+                        <span
+                          key={`item-${itemId}`}
+                          className="rounded-full bg-amber-50 px-2 py-1 text-amber-600"
+                        >
+                          載入作品中…
+                        </span>
+                      );
+                    }
+                    const relatedCabinet = item.cabinetId ? cabinetMap.get(item.cabinetId) : null;
+                    const locked = relatedCabinet ? relatedCabinet.isLocked : false;
+                    const label = item.title || "未命名作品";
+                    if (locked) {
+                      return (
+                        <span
+                          key={`item-${itemId}`}
+                          className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-500"
+                        >
+                          🔒 {label}
+                        </span>
+                      );
+                    }
+                    const itemHref = `/item/${itemId}`;
+                    return (
+                      <span
+                        key={`item-${itemId}`}
+                        role="link"
+                        tabIndex={0}
+                        className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-700 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          router.push(itemHref);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            router.push(itemHref);
+                          }
+                        }}
+                      >
+                        📚 {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
             </Link>
           </li>
         ))}
       </ul>
     );
-  }, [hasFilteredNotes, hasNotes, paginatedNotes]);
+  }, [cabinetMap, hasFilteredNotes, hasNotes, itemSummaries, paginatedNotes, router]);
 
   if (!authChecked) {
     return (

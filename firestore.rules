@@ -15,11 +15,25 @@ service cloud.firestore {
       return value is timestamp;
     }
 
+    function isStringList(field, maxCount, maxLen) {
+      return field is list
+        && field.size() <= maxCount
+        && field.where(item => !(item is string) || item.size() < 1 || item.size() > maxLen).size() == 0;
+    }
+
+    function isOptionalStringList(field, maxCount, maxLen) {
+      return field == null || isStringList(field, maxCount, maxLen);
+    }
+
     function isValidNoteData(data) {
       return data.uid is string
         && isNonEmptyString(data.title, 100)
         && isNonEmptyString(data.content, 60000)
         && ("description" in data ? isOptionalString(data.description, 300) : true)
+        && ("cabinetId" in data ? isOptionalString(data.cabinetId, 64) : true)
+        && ("itemId" in data ? isOptionalString(data.itemId, 64) : true)
+        && ("relatedCabinetIds" in data ? isOptionalStringList(data.relatedCabinetIds, 20, 64) : true)
+        && ("relatedItemIds" in data ? isOptionalStringList(data.relatedItemIds, 50, 64) : true)
         && isTimestamp(data.createdAt)
         && isTimestamp(data.updatedAt);
     }

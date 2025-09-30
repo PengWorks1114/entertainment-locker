@@ -15,6 +15,8 @@ import {
   Timestamp,
   updateDoc,
   where,
+  type DocumentData,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import FavoriteToggleButton from "@/components/FavoriteToggleButton";
 import {
@@ -179,6 +181,13 @@ type NoteFeedback = {
   message: string;
 };
 
+type RelatedNoteSummary = {
+  id: string;
+  title: string;
+  updatedMs: number;
+  isFavorite: boolean;
+};
+
 type ProgressDraftState = {
   platform: string;
   type: ProgressType;
@@ -238,6 +247,9 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteFeedback, setNoteFeedback] = useState<NoteFeedback | null>(null);
+  const [relatedNotes, setRelatedNotes] = useState<RelatedNoteSummary[]>([]);
+  const [relatedNotesLoading, setRelatedNotesLoading] = useState(true);
+  const [relatedNotesError, setRelatedNotesError] = useState<string | null>(null);
   const progressNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const generalNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const titleZhInputRef = useRef<HTMLInputElement | null>(null);
@@ -662,6 +674,95 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
       }
     );
     return () => unsub();
+  }, [user, itemId]);
+
+  useEffect(() => {
+    if (!user) {
+      setRelatedNotes([]);
+      setRelatedNotesLoading(false);
+      return;
+    }
+    const db = getFirebaseDb();
+    if (!db) {
+      setRelatedNotesError("Firebase 尚未設定");
+      setRelatedNotes([]);
+      setRelatedNotesLoading(false);
+      return;
+    }
+    setRelatedNotesLoading(true);
+    setRelatedNotesError(null);
+    setRelatedNotes([]);
+    const noteCollectionRef = collection(db, "note");
+    const results = new Map<string, RelatedNoteSummary>();
+    const readySources = new Set<string>();
+    const finalizeSource = (key: string) => {
+      if (!readySources.has(key)) {
+        readySources.add(key);
+        if (readySources.size >= 2) {
+          setRelatedNotesLoading(false);
+        }
+      }
+    };
+    const applySnapshot = (key: string) => (snapshot: QuerySnapshot<DocumentData>) => {
+      let changed = false;
+      snapshot.docChanges().forEach((change) => {
+        const data = change.doc.data();
+        if (!data || data.uid !== user.uid) {
+          if (change.type === "removed") {
+            if (results.delete(change.doc.id)) {
+              changed = true;
+            }
+          }
+          return;
+        }
+        if (change.type === "removed") {
+          if (results.delete(change.doc.id)) {
+            changed = true;
+          }
+        } else {
+          const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : 0;
+          const titleValue =
+            typeof data.title === "string" && data.title.trim().length > 0
+              ? data.title.trim()
+              : "(未命名筆記)";
+          results.set(change.doc.id, {
+            id: change.doc.id,
+            title: titleValue,
+            updatedMs: updatedAt,
+            isFavorite: Boolean(data.isFavorite),
+          });
+          changed = true;
+        }
+      });
+      if (changed) {
+        setRelatedNotes(Array.from(results.values()).sort((a, b) => b.updatedMs - a.updatedMs));
+      }
+      finalizeSource(key);
+    };
+    const handleError = (key: string) => (err: unknown) => {
+      console.error("載入相關筆記時發生錯誤", err);
+      setRelatedNotesError("載入相關筆記時發生錯誤");
+      finalizeSource(key);
+    };
+    const unsubscribers = [
+      onSnapshot(
+        query(
+          noteCollectionRef,
+          where("uid", "==", user.uid),
+          where("relatedItemIds", "array-contains", itemId)
+        ),
+        applySnapshot("related"),
+        handleError("related")
+      ),
+      onSnapshot(
+        query(noteCollectionRef, where("uid", "==", user.uid), where("itemId", "==", itemId)),
+        applySnapshot("legacy"),
+        handleError("legacy")
+      ),
+    ];
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
   }, [user, itemId]);
 
   useEffect(() => {
@@ -2822,6 +2923,55 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
               </div>
             )
           ) : null}
+        </section>
+
+        <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-900">相關筆記</h2>
+              <p className="text-sm text-gray-500">檢視與此作品建立連結的筆記。</p>
+            </div>
+          </div>
+          {relatedNotesLoading ? (
+            <p className="text-sm text-gray-500">載入中…</p>
+          ) : relatedNotesError ? (
+            <div className="break-anywhere rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              {relatedNotesError}
+            </div>
+          ) : relatedNotes.length === 0 ? (
+            <p className="text-sm text-gray-500">目前尚未有相關筆記。</p>
+          ) : (
+            <ul className="space-y-3">
+              {relatedNotes.map((note) => {
+                const updatedText = note.updatedMs
+                  ? formatDateTime(Timestamp.fromMillis(note.updatedMs))
+                  : "—";
+                return (
+                  <li key={note.id}>
+                    <Link
+                      href={`/notes/${note.id}`}
+                      className="group flex items-start justify-between gap-3 rounded-2xl border bg-white/80 p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-start gap-2">
+                          <span className="break-anywhere text-base font-medium text-gray-900 group-hover:text-blue-700">
+                            {note.title}
+                          </span>
+                          {note.isFavorite ? (
+                            <span className="mt-1 text-xs text-amber-500" aria-label="最愛筆記">
+                              ★
+                            </span>
+                          ) : null}
+                        </div>
+                        <span className="text-xs text-gray-500">更新於：{updatedText}</span>
+                      </div>
+                      <span className="shrink-0 text-xs text-blue-600 group-hover:text-blue-700">檢視筆記</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       </div>
 
