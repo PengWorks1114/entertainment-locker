@@ -6,9 +6,17 @@ import { FormEvent, use, useEffect, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
 
+import NoteRelationSelector from "@/components/NoteRelationSelector";
 import { RichTextEditor, extractPlainTextFromHtml } from "@/components/RichTextEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import { buttonClass } from "@/lib/ui";
+import {
+  NOTE_RELATED_CABINET_LIMIT,
+  NOTE_RELATED_ITEM_LIMIT,
+  limitRelationIds,
+  mergeLegacyRelationId,
+  normalizeRelationIds,
+} from "@/lib/note-relations";
 
 const TITLE_LIMIT = 100;
 const DESCRIPTION_LIMIT = 300;
@@ -32,6 +40,8 @@ export default function EditNotePage({ params }: PageProps) {
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
+  const [relatedCabinetIds, setRelatedCabinetIds] = useState<string[]>([]);
+  const [relatedItemIds, setRelatedItemIds] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -87,6 +97,8 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
+          setRelatedCabinetIds([]);
+          setRelatedItemIds([]);
           setLoading(false);
           return;
         }
@@ -99,6 +111,8 @@ export default function EditNotePage({ params }: PageProps) {
           setContentHtml("");
           setContentText("");
           setIsFavorite(false);
+          setRelatedCabinetIds([]);
+          setRelatedItemIds([]);
           setLoading(false);
           return;
         }
@@ -108,6 +122,16 @@ export default function EditNotePage({ params }: PageProps) {
         setContentHtml(noteContent);
         setContentText(extractPlainTextFromHtml(noteContent));
         setIsFavorite(Boolean(data.isFavorite));
+        const loadedCabinetIds = limitRelationIds(
+          mergeLegacyRelationId(data.cabinetId, normalizeRelationIds(data.relatedCabinetIds)),
+          NOTE_RELATED_CABINET_LIMIT
+        );
+        const loadedItemIds = limitRelationIds(
+          mergeLegacyRelationId(data.itemId, normalizeRelationIds(data.relatedItemIds)),
+          NOTE_RELATED_ITEM_LIMIT
+        );
+        setRelatedCabinetIds(loadedCabinetIds);
+        setRelatedItemIds(loadedItemIds);
         setFeedback(null);
         setNotFound(false);
       } catch (err) {
@@ -119,6 +143,8 @@ export default function EditNotePage({ params }: PageProps) {
         setContentHtml("");
         setContentText("");
         setIsFavorite(false);
+        setRelatedCabinetIds([]);
+        setRelatedItemIds([]);
       } finally {
         setLoading(false);
       }
@@ -139,6 +165,14 @@ export default function EditNotePage({ params }: PageProps) {
     const trimmedDescription = description.trim();
     const trimmedContentText = contentText.trim();
     const sanitizedContentHtml = contentHtml.trim();
+    const normalizedCabinetIds = limitRelationIds(
+      normalizeRelationIds(relatedCabinetIds),
+      NOTE_RELATED_CABINET_LIMIT
+    );
+    const normalizedItemIds = limitRelationIds(
+      normalizeRelationIds(relatedItemIds),
+      NOTE_RELATED_ITEM_LIMIT
+    );
     if (!trimmedTitle) {
       setFeedback({ type: "error", message: "請填寫筆記標題" });
       return;
@@ -175,6 +209,10 @@ export default function EditNotePage({ params }: PageProps) {
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         isFavorite,
+        cabinetId: normalizedCabinetIds[0] ?? null,
+        itemId: normalizedItemIds[0] ?? null,
+        relatedCabinetIds: normalizedCabinetIds,
+        relatedItemIds: normalizedItemIds,
         updatedAt: serverTimestamp(),
       });
       setFeedback({ type: "success", message: "已更新筆記" });
@@ -289,6 +327,14 @@ export default function EditNotePage({ params }: PageProps) {
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
             </label>
+            <NoteRelationSelector
+              user={user}
+              cabinetIds={relatedCabinetIds}
+              onCabinetIdsChange={setRelatedCabinetIds}
+              itemIds={relatedItemIds}
+              onItemIdsChange={setRelatedItemIds}
+              disabled={saving}
+            />
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"

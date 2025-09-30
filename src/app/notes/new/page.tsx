@@ -8,7 +8,14 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
+import NoteRelationSelector from "@/components/NoteRelationSelector";
 import { buttonClass } from "@/lib/ui";
+import {
+  NOTE_RELATED_CABINET_LIMIT,
+  NOTE_RELATED_ITEM_LIMIT,
+  limitRelationIds,
+  normalizeRelationIds,
+} from "@/lib/note-relations";
 
 const TITLE_LIMIT = 100;
 const DESCRIPTION_LIMIT = 300;
@@ -27,6 +34,8 @@ export default function NewNotePage() {
   const [contentHtml, setContentHtml] = useState("");
   const [contentText, setContentText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
+  const [relatedCabinetIds, setRelatedCabinetIds] = useState<string[]>([]);
+  const [relatedItemIds, setRelatedItemIds] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -57,6 +66,14 @@ export default function NewNotePage() {
     const trimmedDescription = description.trim();
     const trimmedContentText = contentText.trim();
     const sanitizedContentHtml = contentHtml.trim();
+    const normalizedCabinetIds = limitRelationIds(
+      normalizeRelationIds(relatedCabinetIds),
+      NOTE_RELATED_CABINET_LIMIT
+    );
+    const normalizedItemIds = limitRelationIds(
+      normalizeRelationIds(relatedItemIds),
+      NOTE_RELATED_ITEM_LIMIT
+    );
     if (!trimmedTitle) {
       setFeedback({ type: "error", message: "請填寫筆記標題" });
       return;
@@ -90,6 +107,10 @@ export default function NewNotePage() {
         description: trimmedDescription ? trimmedDescription : null,
         content: sanitizedContentHtml,
         isFavorite,
+        cabinetId: normalizedCabinetIds[0] ?? null,
+        itemId: normalizedItemIds[0] ?? null,
+        relatedCabinetIds: normalizedCabinetIds,
+        relatedItemIds: normalizedItemIds,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -99,6 +120,8 @@ export default function NewNotePage() {
       setContentHtml("");
       setContentText("");
       setIsFavorite(false);
+      setRelatedCabinetIds([]);
+      setRelatedItemIds([]);
       router.replace("/notes");
     } catch (err) {
       console.error("新增筆記時發生錯誤", err);
@@ -176,6 +199,14 @@ export default function NewNotePage() {
                 {description.trim().length}/{DESCRIPTION_LIMIT}
               </span>
             </label>
+            <NoteRelationSelector
+              user={user}
+              cabinetIds={relatedCabinetIds}
+              onCabinetIdsChange={setRelatedCabinetIds}
+              itemIds={relatedItemIds}
+              onItemIdsChange={setRelatedItemIds}
+              disabled={saving}
+            />
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
