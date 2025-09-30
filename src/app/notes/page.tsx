@@ -189,8 +189,14 @@ export default function NotesPage() {
   }, [user]);
 
   useEffect(() => {
+    if (user) {
+      return;
+    }
+    setItemSummaries((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+  }, [user]);
+
+  useEffect(() => {
     if (!user) {
-      setItemSummaries({});
       return;
     }
     if (notes.length === 0) {
