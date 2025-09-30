@@ -3658,7 +3658,7 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
-      <section className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-sm">
+      <section className="mt-6 space-y-4 rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
         <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">相關筆記</h2>
@@ -3674,22 +3674,19 @@ export default function ItemDetailPage({ params }: ItemPageProps) {
         ) : relatedNotes.length === 0 ? (
           <p className="text-sm text-gray-500">目前尚未有相關筆記。</p>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {relatedNotes.map((note) => {
               const updatedText = note.updatedMs
                 ? formatDateTime(Timestamp.fromMillis(note.updatedMs))
                 : "—";
               return (
-                <li
-                  key={note.id}
-                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60"
-                >
+                <li key={note.id} className="group h-full">
                   <Link
                     href={`/notes/${note.id}`}
-                    className="flex h-full flex-col gap-2 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="flex h-full flex-col justify-between gap-3 rounded-2xl border border-gray-200 bg-white/90 p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="break-anywhere text-sm font-semibold text-gray-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="break-anywhere text-sm font-semibold text-gray-900 group-hover:text-blue-700">
                         {note.title}
                       </span>
                       {note.isFavorite ? (

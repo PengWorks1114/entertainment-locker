@@ -196,11 +196,15 @@ export default function NoteDetailPage({ params }: PageProps) {
 
   useEffect(() => {
     if (!user || !note) {
-      setItemSummaries({});
+      if (Object.keys(itemSummaries).length > 0) {
+        setItemSummaries({});
+      }
       return;
     }
     if (note.itemIds.length === 0) {
-      setItemSummaries({});
+      if (Object.keys(itemSummaries).length > 0) {
+        setItemSummaries({});
+      }
       return;
     }
     const missing = note.itemIds.filter((id) => !itemSummaries[id]);
