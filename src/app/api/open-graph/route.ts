@@ -3,13 +3,13 @@ import { NextRequest } from "next/server";
 const FETCH_TIMEOUT_MS = (() => {
   const raw = process.env.OPEN_GRAPH_FETCH_TIMEOUT_MS;
   if (!raw) {
-    return 5000;
+    return 3500;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3500;
 })();
-const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
-const MAX_BODY_BYTES_AFTER_HEAD = 64_000;
+const MAX_RESPONSE_BYTES = 256_000; // 約 250 KB，避免下載過大的網頁內容
+const MAX_BODY_BYTES_AFTER_HEAD = 32_000;
 
 // Header policy:
 // 1. Mimic a modern desktop Chrome request so that more sites return their full HTML.
@@ -773,6 +773,7 @@ export async function GET(request: NextRequest) {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
+    const domainFallback = buildDomainFallbackMetadata(targetUrl);
     const fetchWithHeaders = (headers: Record<string, string>) =>
       fetch(targetUrl, {
         method: "GET",
@@ -826,15 +827,24 @@ export async function GET(request: NextRequest) {
 
     if (!response) {
       if (controller.signal.aborted) {
-        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse(
+          { ...domainFallback, error: "抓取逾時" },
+          { status: 504 }
+        );
       }
       if (
         lastError instanceof Error &&
         (lastError.name === "AbortError" || lastError.name === "TimeoutError")
       ) {
-        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse(
+          { ...domainFallback, error: "抓取逾時" },
+          { status: 504 }
+        );
       }
-      return buildMetadataResponse({ error: "抓取失敗" }, { status: 502 });
+      return buildMetadataResponse(
+        { ...domainFallback, error: "抓取失敗" },
+        { status: 502 }
+      );
     }
 
     if (!response.ok) {
@@ -846,9 +856,8 @@ export async function GET(request: NextRequest) {
             // ignore cancellation errors
           }
         }
-        const fallbackMetadata = buildDomainFallbackMetadata(targetUrl);
         return buildMetadataResponse(
-          { ...fallbackMetadata, error: "來源被阻擋" },
+          { ...domainFallback, error: "來源被阻擋" },
           { status: 200 }
         );
       }
@@ -857,7 +866,7 @@ export async function GET(request: NextRequest) {
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("text/html")) {
-      return buildMetadataResponse();
+      return buildMetadataResponse(domainFallback);
     }
 
     let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
@@ -872,13 +881,16 @@ export async function GET(request: NextRequest) {
       html = await readBodyWithLimit(response, encoding, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) {
-        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse(
+          { ...domainFallback, error: "抓取逾時" },
+          { status: 504 }
+        );
       }
       throw error;
     }
 
     if (!html) {
-      return buildMetadataResponse();
+      return buildMetadataResponse(domainFallback);
     }
 
     const metaTags = collectMetaTags(html);
@@ -892,12 +904,12 @@ export async function GET(request: NextRequest) {
     );
     const title = pickMetaTitle(html, metaTags, jsonLdMetadata.titles);
     const author = pickMetaAuthor(html, metaTags);
-    const siteName = pickMetaSiteName(metaTags);
+    const siteName = pickMetaSiteName(metaTags) ?? domainFallback.siteName;
     return buildMetadataResponse({
-      image: imageUrl ?? null,
-      title: title ?? null,
+      image: imageUrl ?? domainFallback.image,
+      title: title ?? domainFallback.title,
       author: author ?? null,
-      siteName: siteName ?? null,
+      siteName,
     });
   } finally {
     clearTimeout(timeout);

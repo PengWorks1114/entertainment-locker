@@ -126,7 +126,57 @@ async function run() {
       assert.equal(result.status, 504);
       const payload = await result.json();
       assert.equal(payload.error, "抓取逾時");
+      assert.equal(payload.title, "example.com");
+      assert.equal(
+        payload.image,
+        "https://www.google.com/s2/favicons?sz=128&domain_url=https%3A%2F%2Fexample.com"
+      );
       console.log("Test passed: hanging responses time out cleanly.");
+    }
+  );
+
+  await withMockedFetch(
+    async () => {
+      throw Object.assign(new Error("network"), { name: "FetchError" });
+    },
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/network"
+      );
+      const result = await GET(request);
+      assert.equal(result.status, 502);
+      const payload = await result.json();
+      assert.equal(payload.error, "抓取失敗");
+      assert.equal(payload.title, "example.com");
+      assert.equal(
+        payload.image,
+        "https://www.google.com/s2/favicons?sz=128&domain_url=https%3A%2F%2Fexample.com"
+      );
+      console.log("Test passed: network failures return fallback metadata.");
+    }
+  );
+
+  await withMockedFetch(
+    async () =>
+      new Response("binary", {
+        status: 200,
+        headers: {
+          "content-type": "application/octet-stream",
+        },
+      }),
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/not-html"
+      );
+      const result = await GET(request);
+      assert.equal(result.status, 200);
+      const payload = await result.json();
+      assert.equal(payload.title, "example.com");
+      assert.equal(
+        payload.image,
+        "https://www.google.com/s2/favicons?sz=128&domain_url=https%3A%2F%2Fexample.com"
+      );
+      console.log("Test passed: non-HTML responses fall back to domain metadata.");
     }
   );
 }
