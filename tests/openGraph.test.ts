@@ -76,6 +76,32 @@ async function run() {
 
   await withMockedFetch(
     async () =>
+      new Response("Blocked", {
+        status: 403,
+        headers: {
+          "content-type": "text/html",
+        },
+      }),
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/protected"
+      );
+      const result = await GET(request);
+      assert.equal(result.status, 200);
+      const payload = await result.json();
+
+      assert.equal(payload.error, "來源被阻擋");
+      assert.equal(payload.title, "example.com");
+      assert.equal(
+        payload.image,
+        "https://www.google.com/s2/favicons?sz=128&domain_url=https%3A%2F%2Fexample.com"
+      );
+      console.log("Test passed: blocked domains fall back to favicon metadata.");
+    }
+  );
+
+  await withMockedFetch(
+    async () =>
       new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {

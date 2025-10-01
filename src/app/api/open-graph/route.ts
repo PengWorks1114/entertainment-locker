@@ -3,12 +3,13 @@ import { NextRequest } from "next/server";
 const FETCH_TIMEOUT_MS = (() => {
   const raw = process.env.OPEN_GRAPH_FETCH_TIMEOUT_MS;
   if (!raw) {
-    return 7000;
+    return 5000;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 7000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
 })();
 const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
+const MAX_BODY_BYTES_AFTER_HEAD = 64_000;
 
 // Header policy:
 // 1. Mimic a modern desktop Chrome request so that more sites return their full HTML.
@@ -35,6 +36,25 @@ const FALLBACK_BROWSER_HEADERS: Record<string, string> = {
 };
 
 const BLOCKED_STATUS_CODES = new Set([401, 403, 406, 429]);
+
+const EMPTY_METADATA = {
+  image: null as string | null,
+  title: null as string | null,
+  author: null as string | null,
+  siteName: null as string | null,
+};
+
+const FALLBACK_FAVICON_SIZE = 128;
+
+type MetadataPayload = typeof EMPTY_METADATA & { error?: string };
+
+function buildMetadataResponse(
+  metadata: Partial<MetadataPayload> = {},
+  init?: ResponseInit
+) {
+  const payload: MetadataPayload = { ...EMPTY_METADATA, ...metadata };
+  return Response.json(payload, init);
+}
 
 const META_IMAGE_PRIORITY = [
   "og:image",
@@ -102,6 +122,19 @@ function normalizeUrl(candidate: string, base: URL): string | null {
   } catch {
     return null;
   }
+}
+
+function buildDomainFallbackMetadata(targetUrl: URL) {
+  const normalizedHost = targetUrl.hostname.replace(/^www\./i, "");
+  const fallbackImage = `https://www.google.com/s2/favicons?sz=${FALLBACK_FAVICON_SIZE}&domain_url=${encodeURIComponent(
+    targetUrl.origin
+  )}`;
+  return {
+    ...EMPTY_METADATA,
+    image: fallbackImage,
+    title: normalizedHost || targetUrl.hostname,
+    siteName: normalizedHost || targetUrl.hostname,
+  };
 }
 
 function collectMetaTags(html: string): Map<string, string> {
@@ -559,7 +592,16 @@ async function sniffEncodingFromMetaStream(
 
   try {
     while (received < MAX_SNIFF_BYTES) {
-      const { done, value } = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        if (isAbortError(error)) {
+          return null;
+        }
+        throw error;
+      }
+      const { done, value } = chunk;
       if (done || !value) {
         break;
       }
@@ -641,6 +683,9 @@ async function readBodyWithLimit(
   let received = 0;
   let abortPromise: Promise<never> | null = null;
   let abortCleanup: (() => void) | null = null;
+  const headClosePattern = /<\/head>/i;
+  let headClosed = false;
+  let bodyBytesAfterHead = 0;
 
   if (signal) {
     abortPromise = new Promise<never>((_, reject) => {
@@ -685,6 +730,15 @@ async function readBodyWithLimit(
       }
       received += value.byteLength;
       result += decoder.decode(value, { stream: true });
+      if (!headClosed && headClosePattern.test(result)) {
+        headClosed = true;
+      }
+      if (headClosed) {
+        bodyBytesAfterHead += value.byteLength;
+        if (bodyBytesAfterHead >= MAX_BODY_BYTES_AFTER_HEAD) {
+          break;
+        }
+      }
       if (received >= MAX_RESPONSE_BYTES) {
         break;
       }
@@ -702,7 +756,7 @@ async function readBodyWithLimit(
 export async function GET(request: NextRequest) {
   const urlParam = request.nextUrl.searchParams.get("url");
   if (!urlParam) {
-    return Response.json({ error: "缺少 url 參數" }, { status: 400 });
+    return buildMetadataResponse({ error: "缺少 url 參數" }, { status: 400 });
   }
 
   let targetUrl: URL;
@@ -712,7 +766,7 @@ export async function GET(request: NextRequest) {
       throw new Error("Invalid protocol");
     }
   } catch {
-    return Response.json({ error: "網址格式錯誤" }, { status: 400 });
+    return buildMetadataResponse({ error: "網址格式錯誤" }, { status: 400 });
   }
 
   const controller = new AbortController();
@@ -772,24 +826,38 @@ export async function GET(request: NextRequest) {
 
     if (!response) {
       if (controller.signal.aborted) {
-        return Response.json({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
       }
       if (
         lastError instanceof Error &&
         (lastError.name === "AbortError" || lastError.name === "TimeoutError")
       ) {
-        return Response.json({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
       }
-      return Response.json({ error: "抓取失敗" }, { status: 502 });
+      return buildMetadataResponse({ error: "抓取失敗" }, { status: 502 });
     }
 
     if (!response.ok) {
-      return Response.json({ error: "來源回應錯誤" }, { status: 502 });
+      if (BLOCKED_STATUS_CODES.has(response.status)) {
+        if (response.body) {
+          try {
+            await response.body.cancel();
+          } catch {
+            // ignore cancellation errors
+          }
+        }
+        const fallbackMetadata = buildDomainFallbackMetadata(targetUrl);
+        return buildMetadataResponse(
+          { ...fallbackMetadata, error: "來源被阻擋" },
+          { status: 200 }
+        );
+      }
+      return buildMetadataResponse({ error: "來源回應錯誤" }, { status: 502 });
     }
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("text/html")) {
-      return Response.json({ image: null });
+      return buildMetadataResponse();
     }
 
     let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
@@ -804,13 +872,13 @@ export async function GET(request: NextRequest) {
       html = await readBodyWithLimit(response, encoding, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) {
-        return Response.json({ error: "抓取逾時" }, { status: 504 });
+        return buildMetadataResponse({ error: "抓取逾時" }, { status: 504 });
       }
       throw error;
     }
 
     if (!html) {
-      return Response.json({ image: null });
+      return buildMetadataResponse();
     }
 
     const metaTags = collectMetaTags(html);
@@ -825,7 +893,7 @@ export async function GET(request: NextRequest) {
     const title = pickMetaTitle(html, metaTags, jsonLdMetadata.titles);
     const author = pickMetaAuthor(html, metaTags);
     const siteName = pickMetaSiteName(metaTags);
-    return Response.json({
+    return buildMetadataResponse({
       image: imageUrl ?? null,
       title: title ?? null,
       author: author ?? null,
