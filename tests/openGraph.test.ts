@@ -3,7 +3,10 @@ process.env.OPEN_GRAPH_FETCH_TIMEOUT_MS = "100";
 import assert from "node:assert/strict";
 import type { NextRequest } from "next/server";
 
-type FetchFactory = () => Promise<Response>;
+type FetchFactory = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1]
+) => ReturnType<typeof fetch>;
 
 function createRequest(url: string): NextRequest {
   const requestUrl = new URL(url);
@@ -12,7 +15,7 @@ function createRequest(url: string): NextRequest {
 
 async function withMockedFetch(factory: FetchFactory, runAssertions: () => Promise<void>) {
   const originalFetch = global.fetch;
-  global.fetch = factory;
+  global.fetch = factory as typeof global.fetch;
 
   try {
     await runAssertions();
@@ -31,15 +34,19 @@ async function run() {
 
   const latinHtml = `<!DOCTYPE html><html><head><meta charset="iso-8859-1" />\n<title>Caf\u00e9 \u00dcber</title><meta property="og:image" content="https://example.com/preview.jpg" /></head><body></body></html>`;
   const jsonLdHtml = `<!DOCTYPE html><html><head><title>Placeholder</title><script type="application/ld+json">{\n  "@context": "https://schema.org",\n  "@type": "NewsArticle",\n  "headline": "JSON-LD Title",\n  "image": {\n    "@type": "ImageObject",\n    "url": "https://cdn.example.com/card.jpg"\n  }\n}</script></head><body><h1>Story</h1></body></html>`;
+  const rangeHtml = `<!DOCTYPE html><html><head><meta property="og:image" content="https://example.com/range.jpg" /><meta property="og:title" content="Range Title" /></head><body></body></html>`;
 
   await withMockedFetch(
-    async () =>
-      new Response(Buffer.from(latinHtml, "latin1"), {
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response(Buffer.from(latinHtml, "latin1"), {
         status: 200,
         headers: {
           "content-type": "text/html",
         },
-      }),
+      });
+    },
     async () => {
       const request = createRequest(
         "http://localhost/api/open-graph?url=https://example.com/article"
@@ -54,13 +61,16 @@ async function run() {
   );
 
   await withMockedFetch(
-    async () =>
-      new Response(Buffer.from(jsonLdHtml, "utf-8"), {
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response(Buffer.from(jsonLdHtml, "utf-8"), {
         status: 200,
         headers: {
           "content-type": "text/html",
         },
-      }),
+      });
+    },
     async () => {
       const request = createRequest(
         "http://localhost/api/open-graph?url=https://example.com/jsonld"
@@ -75,13 +85,55 @@ async function run() {
   );
 
   await withMockedFetch(
-    async () =>
-      new Response("Blocked", {
+    (() => {
+      let callCount = 0;
+      return async (input, init) => {
+        void input;
+        callCount += 1;
+        const headers = new Headers(init?.headers ?? {});
+        if (callCount === 1) {
+          assert.equal(headers.get("Range"), "bytes=0-65535");
+          return new Response("Range Not Satisfiable", {
+            status: 416,
+            headers: {
+              "content-type": "text/html",
+            },
+          });
+        }
+
+        assert.equal(headers.get("Range"), null);
+        return new Response(rangeHtml, {
+          status: 200,
+          headers: {
+            "content-type": "text/html",
+          },
+        });
+      };
+    })(),
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/range"
+      );
+      const result = await GET(request);
+      const payload = await result.json();
+
+      assert.equal(payload.title, "Range Title");
+      assert.equal(payload.image, "https://example.com/range.jpg");
+      console.log("Test passed: range requests gracefully retry without Range header.");
+    }
+  );
+
+  await withMockedFetch(
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response("Blocked", {
         status: 403,
         headers: {
           "content-type": "text/html",
         },
-      }),
+      });
+    },
     async () => {
       const request = createRequest(
         "http://localhost/api/open-graph?url=https://example.com/protected"
@@ -101,8 +153,10 @@ async function run() {
   );
 
   await withMockedFetch(
-    async () =>
-      new Response(
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(
@@ -117,7 +171,8 @@ async function run() {
             "content-type": "text/html",
           },
         }
-      ),
+      );
+    },
     async () => {
       const request = createRequest(
         "http://localhost/api/open-graph?url=https://example.com/hanging"
@@ -136,7 +191,9 @@ async function run() {
   );
 
   await withMockedFetch(
-    async () => {
+    async (input, init) => {
+      void input;
+      void init;
       throw Object.assign(new Error("network"), { name: "FetchError" });
     },
     async () => {
@@ -157,13 +214,16 @@ async function run() {
   );
 
   await withMockedFetch(
-    async () =>
-      new Response("binary", {
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response("binary", {
         status: 200,
         headers: {
           "content-type": "application/octet-stream",
         },
-      }),
+      });
+    },
     async () => {
       const request = createRequest(
         "http://localhost/api/open-graph?url=https://example.com/not-html"

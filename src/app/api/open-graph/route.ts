@@ -10,6 +10,8 @@ const FETCH_TIMEOUT_MS = (() => {
 })();
 const MAX_RESPONSE_BYTES = 256_000; // 約 250 KB，避免下載過大的網頁內容
 const MAX_BODY_BYTES_AFTER_HEAD = 32_000;
+const PARTIAL_CONTENT_RANGE_BYTES = 65_536; // 先以 64 KB 嘗試擷取 head，失敗再回退完整抓取
+const PARTIAL_CONTENT_RANGE_HEADER = `bytes=0-${PARTIAL_CONTENT_RANGE_BYTES - 1}`;
 
 // Header policy:
 // 1. Mimic a modern desktop Chrome request so that more sites return their full HTML.
@@ -135,6 +137,17 @@ function buildDomainFallbackMetadata(targetUrl: URL) {
     title: normalizedHost || targetUrl.hostname,
     siteName: normalizedHost || targetUrl.hostname,
   };
+}
+
+async function cancelResponseBody(response: Response) {
+  if (!response.body) {
+    return;
+  }
+  try {
+    await response.body.cancel();
+  } catch {
+    // ignore cancellation errors
+  }
 }
 
 function collectMetaTags(html: string): Map<string, string> {
@@ -774,54 +787,69 @@ export async function GET(request: NextRequest) {
 
   try {
     const domainFallback = buildDomainFallbackMetadata(targetUrl);
-    const fetchWithHeaders = (headers: Record<string, string>) =>
-      fetch(targetUrl, {
-        method: "GET",
-        redirect: "follow",
-        signal: controller.signal,
-        headers,
-      });
+
+    type FetchAttempt = {
+      baseHeaders: Record<string, string>;
+      useRange: boolean;
+    };
+
+    const attempts: FetchAttempt[] = [
+      { baseHeaders: PRIMARY_BROWSER_HEADERS, useRange: true },
+      { baseHeaders: PRIMARY_BROWSER_HEADERS, useRange: false },
+      { baseHeaders: FALLBACK_BROWSER_HEADERS, useRange: true },
+      { baseHeaders: FALLBACK_BROWSER_HEADERS, useRange: false },
+    ];
 
     let response: Response | null = null;
     let lastError: unknown;
-    let usedFallback = false;
-    try {
-      response = await fetchWithHeaders(PRIMARY_BROWSER_HEADERS);
-    } catch (error) {
-      lastError = error;
-      if (!controller.signal.aborted) {
-        try {
-          response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
-          usedFallback = true;
-        } catch (fallbackError) {
-          lastError = fallbackError;
-          response = null;
-          usedFallback = true;
-        }
-      }
-    }
 
-    if (
-      response &&
-      !response.ok &&
-      !usedFallback &&
-      BLOCKED_STATUS_CODES.has(response.status) &&
-      !controller.signal.aborted
-    ) {
-      if (response.body) {
-        try {
-          await response.body.cancel();
-        } catch {
-          // ignore body cancellation failure
-        }
+    for (const attempt of attempts) {
+      if (controller.signal.aborted) {
+        break;
       }
+
       try {
-        response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
-        usedFallback = true;
-      } catch (fallbackError) {
-        lastError = fallbackError;
+        const headers: Record<string, string> = { ...attempt.baseHeaders };
+        if (attempt.useRange) {
+          headers.Range = PARTIAL_CONTENT_RANGE_HEADER;
+        }
+
+        const candidate = await fetch(targetUrl, {
+          method: "GET",
+          redirect: "follow",
+          signal: controller.signal,
+          headers,
+        });
+
+        if (attempt.useRange && candidate.status === 416) {
+          await cancelResponseBody(candidate);
+          lastError = new Error("Range request not satisfiable");
+          continue;
+        }
+
+        if (attempt.useRange && !candidate.ok) {
+          await cancelResponseBody(candidate);
+          lastError = new Error(`Range request failed with status ${candidate.status}`);
+          continue;
+        }
+
+        if (
+          !candidate.ok &&
+          BLOCKED_STATUS_CODES.has(candidate.status) &&
+          attempt.baseHeaders === PRIMARY_BROWSER_HEADERS
+        ) {
+          await cancelResponseBody(candidate);
+          continue;
+        }
+
+        response = candidate;
+        break;
+      } catch (error) {
+        lastError = error;
         response = null;
-        usedFallback = true;
+        if (controller.signal.aborted) {
+          break;
+        }
       }
     }
 
@@ -849,13 +877,7 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       if (BLOCKED_STATUS_CODES.has(response.status)) {
-        if (response.body) {
-          try {
-            await response.body.cancel();
-          } catch {
-            // ignore cancellation errors
-          }
-        }
+        await cancelResponseBody(response);
         return buildMetadataResponse(
           { ...domainFallback, error: "來源被阻擋" },
           { status: 200 }
