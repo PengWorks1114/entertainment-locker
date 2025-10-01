@@ -548,12 +548,10 @@ function extractEncodingFromContentType(contentType: string | null): string | nu
   return normalizeEncodingName(raw.replace(/["']/g, ""));
 }
 
-async function sniffEncodingFromMeta(response: Response): Promise<string | null> {
-  if (!response.body) {
-    return null;
-  }
-
-  const reader = response.body.getReader();
+async function sniffEncodingFromMetaStream(
+  stream: ReadableStream<Uint8Array>
+): Promise<string | null> {
+  const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: false });
   let received = 0;
   let preview = "";
@@ -592,6 +590,25 @@ async function sniffEncodingFromMeta(response: Response): Promise<string | null>
   }
 
   return null;
+}
+
+async function teeAndSniffEncoding(
+  response: Response
+): Promise<{ encoding: string | null; response: Response }> {
+  const body = response.body;
+  if (!body) {
+    return { encoding: null, response };
+  }
+
+  const [sniffStream, mainStream] = body.tee();
+  const encoding = await sniffEncodingFromMetaStream(sniffStream);
+  const rebuilt = new Response(mainStream, {
+    headers: new Headers(response.headers),
+    status: response.status,
+    statusText: response.statusText,
+  });
+
+  return { encoding, response: rebuilt };
 }
 
 function createTextDecoder(encoding: string): TextDecoder {
@@ -776,9 +793,10 @@ export async function GET(request: NextRequest) {
     }
 
     let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
-    const metaEncoding = await sniffEncodingFromMeta(response.clone());
-    if (metaEncoding) {
-      encoding = metaEncoding;
+    const sniffResult = await teeAndSniffEncoding(response);
+    response = sniffResult.response;
+    if (sniffResult.encoding) {
+      encoding = sniffResult.encoding;
     }
 
     let html: string;
