@@ -1,6 +1,7 @@
+process.env.OPEN_GRAPH_FETCH_TIMEOUT_MS = "100";
+
 import assert from "node:assert/strict";
 import type { NextRequest } from "next/server";
-import { GET } from "../src/app/api/open-graph/route.ts";
 
 type FetchFactory = () => Promise<Response>;
 
@@ -26,6 +27,8 @@ async function withMockedFetch(factory: FetchFactory, runAssertions: () => Promi
 }
 
 async function run() {
+  const { GET } = await import("../src/app/api/open-graph/route.ts");
+
   const latinHtml = `<!DOCTYPE html><html><head><meta charset="iso-8859-1" />\n<title>Caf\u00e9 \u00dcber</title><meta property="og:image" content="https://example.com/preview.jpg" /></head><body></body></html>`;
   const jsonLdHtml = `<!DOCTYPE html><html><head><title>Placeholder</title><script type="application/ld+json">{\n  "@context": "https://schema.org",\n  "@type": "NewsArticle",\n  "headline": "JSON-LD Title",\n  "image": {\n    "@type": "ImageObject",\n    "url": "https://cdn.example.com/card.jpg"\n  }\n}</script></head><body><h1>Story</h1></body></html>`;
 
@@ -68,6 +71,36 @@ async function run() {
       assert.equal(payload.title, "JSON-LD Title");
       assert.equal(payload.image, "https://cdn.example.com/card.jpg");
       console.log("Test passed: JSON-LD metadata extracted correctly.");
+    }
+  );
+
+  await withMockedFetch(
+    async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode("<!DOCTYPE html><html><head>")
+            );
+            // leave the stream open to simulate a hanging response
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "text/html",
+          },
+        }
+      ),
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/hanging"
+      );
+      const result = await GET(request);
+      assert.equal(result.status, 504);
+      const payload = await result.json();
+      assert.equal(payload.error, "抓取逾時");
+      console.log("Test passed: hanging responses time out cleanly.");
     }
   );
 }

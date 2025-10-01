@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 
-const FETCH_TIMEOUT_MS = 7000;
+const FETCH_TIMEOUT_MS = (() => {
+  const raw = process.env.OPEN_GRAPH_FETCH_TIMEOUT_MS;
+  if (!raw) {
+    return 7000;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 7000;
+})();
 const MAX_RESPONSE_BYTES = 512_000; // 約 500 KB，避免下載過大的網頁內容
 
 // Header policy:
@@ -595,9 +602,18 @@ function createTextDecoder(encoding: string): TextDecoder {
   }
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    (error as { name?: string }).name === "AbortError"
+  );
+}
+
 async function readBodyWithLimit(
   response: Response,
-  encoding: string
+  encoding: string,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!response.body) {
     return "";
@@ -606,20 +622,64 @@ async function readBodyWithLimit(
   const decoder = createTextDecoder(encoding);
   let result = "";
   let received = 0;
+  let abortPromise: Promise<never> | null = null;
+  let abortCleanup: (() => void) | null = null;
 
-  while (received < MAX_RESPONSE_BYTES) {
-    const { done, value } = await reader.read();
-    if (done || !value) {
-      break;
-    }
-    received += value.byteLength;
-    result += decoder.decode(value, { stream: true });
-    if (received >= MAX_RESPONSE_BYTES) {
-      break;
-    }
+  if (signal) {
+    abortPromise = new Promise<never>((_, reject) => {
+      const handleAbort = () => {
+        abortCleanup?.();
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        reject(abortError);
+      };
+
+      if (signal.aborted) {
+        handleAbort();
+        return;
+      }
+
+      const listener = () => handleAbort();
+      signal.addEventListener("abort", listener, { once: true });
+      abortCleanup = () => {
+        signal.removeEventListener("abort", listener);
+      };
+    });
   }
-  result += decoder.decode();
-  return result;
+
+  try {
+    while (received < MAX_RESPONSE_BYTES) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        if (abortPromise) {
+          chunk = await Promise.race([reader.read(), abortPromise]);
+        } else {
+          chunk = await reader.read();
+        }
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        break;
+      }
+      const { done, value } = chunk;
+      if (done || !value) {
+        break;
+      }
+      received += value.byteLength;
+      result += decoder.decode(value, { stream: true });
+      if (received >= MAX_RESPONSE_BYTES) {
+        break;
+      }
+    }
+    result += decoder.decode();
+    return result;
+  } finally {
+    if (abortCleanup) {
+      abortCleanup();
+    }
+    await reader.cancel().catch(() => undefined);
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -641,22 +701,48 @@ export async function GET(request: NextRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  const fetchWithHeaders = (headers: Record<string, string>) =>
-    fetch(targetUrl, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers,
-    });
-
-  let response: Response | null = null;
-  let lastError: unknown;
-  let usedFallback = false;
   try {
-    response = await fetchWithHeaders(PRIMARY_BROWSER_HEADERS);
-  } catch (error) {
-    lastError = error;
-    if (!controller.signal.aborted) {
+    const fetchWithHeaders = (headers: Record<string, string>) =>
+      fetch(targetUrl, {
+        method: "GET",
+        redirect: "follow",
+        signal: controller.signal,
+        headers,
+      });
+
+    let response: Response | null = null;
+    let lastError: unknown;
+    let usedFallback = false;
+    try {
+      response = await fetchWithHeaders(PRIMARY_BROWSER_HEADERS);
+    } catch (error) {
+      lastError = error;
+      if (!controller.signal.aborted) {
+        try {
+          response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
+          usedFallback = true;
+        } catch (fallbackError) {
+          lastError = fallbackError;
+          response = null;
+          usedFallback = true;
+        }
+      }
+    }
+
+    if (
+      response &&
+      !response.ok &&
+      !usedFallback &&
+      BLOCKED_STATUS_CODES.has(response.status) &&
+      !controller.signal.aborted
+    ) {
+      if (response.body) {
+        try {
+          await response.body.cancel();
+        } catch {
+          // ignore body cancellation failure
+        }
+      }
       try {
         response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
         usedFallback = true;
@@ -666,79 +752,69 @@ export async function GET(request: NextRequest) {
         usedFallback = true;
       }
     }
-  }
 
-  if (
-    response &&
-    !response.ok &&
-    !usedFallback &&
-    BLOCKED_STATUS_CODES.has(response.status) &&
-    !controller.signal.aborted
-  ) {
-    if (response.body) {
-      try {
-        await response.body.cancel();
-      } catch {
-        // ignore body cancellation failure
+    if (!response) {
+      if (controller.signal.aborted) {
+        return Response.json({ error: "抓取逾時" }, { status: 504 });
       }
+      if (
+        lastError instanceof Error &&
+        (lastError.name === "AbortError" || lastError.name === "TimeoutError")
+      ) {
+        return Response.json({ error: "抓取逾時" }, { status: 504 });
+      }
+      return Response.json({ error: "抓取失敗" }, { status: 502 });
     }
+
+    if (!response.ok) {
+      return Response.json({ error: "來源回應錯誤" }, { status: 502 });
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("text/html")) {
+      return Response.json({ image: null });
+    }
+
+    let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
+    const metaEncoding = await sniffEncodingFromMeta(response.clone());
+    if (metaEncoding) {
+      encoding = metaEncoding;
+    }
+
+    let html: string;
     try {
-      response = await fetchWithHeaders(FALLBACK_BROWSER_HEADERS);
-      usedFallback = true;
-    } catch (fallbackError) {
-      lastError = fallbackError;
-      response = null;
-      usedFallback = true;
+      html = await readBodyWithLimit(response, encoding, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return Response.json({ error: "抓取逾時" }, { status: 504 });
+      }
+      throw error;
     }
-  }
 
-  clearTimeout(timeout);
-
-  if (!response) {
-    if (controller.signal.aborted) {
-      return Response.json({ error: "抓取逾時" }, { status: 504 });
+    if (!html) {
+      return Response.json({ image: null });
     }
-    if (
-      lastError instanceof Error &&
-      (lastError.name === "AbortError" || lastError.name === "TimeoutError")
-    ) {
-      return Response.json({ error: "抓取逾時" }, { status: 504 });
-    }
-    return Response.json({ error: "抓取失敗" }, { status: 502 });
-  }
 
-  if (!response.ok) {
-    return Response.json({ error: "來源回應錯誤" }, { status: 502 });
+    const metaTags = collectMetaTags(html);
+    const jsonLdPayloads = collectJsonLdPayloads(html);
+    const jsonLdMetadata = collectJsonLdMetadata(jsonLdPayloads);
+    const imageUrl = pickMetaImage(
+      html,
+      targetUrl,
+      metaTags,
+      jsonLdMetadata.images
+    );
+    const title = pickMetaTitle(html, metaTags, jsonLdMetadata.titles);
+    const author = pickMetaAuthor(html, metaTags);
+    const siteName = pickMetaSiteName(metaTags);
+    return Response.json({
+      image: imageUrl ?? null,
+      title: title ?? null,
+      author: author ?? null,
+      siteName: siteName ?? null,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("text/html")) {
-    return Response.json({ image: null });
-  }
-
-  let encoding = extractEncodingFromContentType(contentType) ?? "utf-8";
-  const metaEncoding = await sniffEncodingFromMeta(response.clone());
-  if (metaEncoding) {
-    encoding = metaEncoding;
-  }
-
-  const html = await readBodyWithLimit(response, encoding);
-  if (!html) {
-    return Response.json({ image: null });
-  }
-
-  const metaTags = collectMetaTags(html);
-  const jsonLdPayloads = collectJsonLdPayloads(html);
-  const jsonLdMetadata = collectJsonLdMetadata(jsonLdPayloads);
-  const imageUrl = pickMetaImage(html, targetUrl, metaTags, jsonLdMetadata.images);
-  const title = pickMetaTitle(html, metaTags, jsonLdMetadata.titles);
-  const author = pickMetaAuthor(html, metaTags);
-  const siteName = pickMetaSiteName(metaTags);
-  return Response.json({
-    image: imageUrl ?? null,
-    title: title ?? null,
-    author: author ?? null,
-    siteName: siteName ?? null,
-  });
 }
 
