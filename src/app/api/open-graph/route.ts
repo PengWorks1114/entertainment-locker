@@ -127,11 +127,217 @@ function collectMetaTags(html: string): Map<string, string> {
   return candidates;
 }
 
+function collectJsonLdPayloads(html: string): unknown[] {
+  const scriptRegex =
+    /<script[^>]*type\s*=\s*("|')application\/ld\+json(?:;[^"']*)?\1[^>]*>([\s\S]*?)<\/script>/gi;
+  const payloads: unknown[] = [];
+
+  for (const match of html.matchAll(scriptRegex)) {
+    const raw = match[2]?.trim();
+    if (!raw) {
+      continue;
+    }
+    try {
+      payloads.push(JSON.parse(raw));
+    } catch {
+      // Ignore invalid JSON-LD blocks
+    }
+  }
+
+  return payloads;
+}
+
+function extractImageStrings(value: unknown): string[] {
+  const results: string[] = [];
+  const queue: unknown[] = [value];
+  const seen = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    if (typeof current === "string") {
+      const normalized = current.trim();
+      if (normalized) {
+        results.push(normalized);
+      }
+      continue;
+    }
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+    if (typeof current === "object") {
+      if (seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      const candidateObject = current as Record<string, unknown>;
+      const possibleKeys = ["url", "@id", "contentUrl", "thumbnailUrl"];
+      for (const key of possibleKeys) {
+        const candidate = candidateObject[key];
+        if (typeof candidate === "string") {
+          const normalized = candidate.trim();
+          if (normalized) {
+            results.push(normalized);
+          }
+        }
+      }
+      for (const nested of Object.values(candidateObject)) {
+        if (Array.isArray(nested)) {
+          queue.push(...nested);
+        } else if (nested && typeof nested === "object") {
+          queue.push(nested);
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+function extractTitleStrings(value: unknown): string[] {
+  const results: string[] = [];
+  const queue: unknown[] = [value];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (typeof current === "string") {
+      const normalized = normalizeWhitespace(current);
+      if (normalized) {
+        results.push(normalized);
+      }
+      continue;
+    }
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+    if (current && typeof current === "object") {
+      const candidateObject = current as Record<string, unknown>;
+      const possibleKeys = ["text", "value"]; // Schema.org literals sometimes live here
+      for (const key of possibleKeys) {
+        const candidate = candidateObject[key];
+        if (typeof candidate === "string") {
+          const normalized = normalizeWhitespace(candidate);
+          if (normalized) {
+            results.push(normalized);
+          }
+        }
+      }
+      for (const nested of Object.values(candidateObject)) {
+        if (Array.isArray(nested)) {
+          queue.push(...nested);
+        } else if (nested && typeof nested === "object") {
+          queue.push(nested);
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+function collectJsonLdMetadata(payloads: unknown[]): {
+  images: string[];
+  titles: string[];
+} {
+  const imageSet = new Set<string>();
+  const titleSet = new Set<string>();
+
+  const visit = (node: unknown) => {
+    if (!node) {
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        visit(item);
+      }
+      return;
+    }
+    if (typeof node !== "object") {
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey === "image" || normalizedKey === "thumbnailurl") {
+        for (const candidate of extractImageStrings(value)) {
+          if (candidate) {
+            imageSet.add(candidate);
+          }
+        }
+      }
+      if (normalizedKey === "headline" || normalizedKey === "name") {
+        for (const candidate of extractTitleStrings(value)) {
+          if (candidate) {
+            titleSet.add(candidate);
+          }
+        }
+      }
+      if (Array.isArray(value)) {
+        visit(value);
+      } else if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  };
+
+  for (const payload of payloads) {
+    visit(payload);
+  }
+
+  return {
+    images: Array.from(imageSet),
+    titles: Array.from(titleSet),
+  };
+}
+
+function isLikelyPlaceholderImage(candidate: string): boolean {
+  const normalized = candidate.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  if (normalized.startsWith("data:")) {
+    return true;
+  }
+  const placeholderPatterns = [
+    /\/favicon\.(?:ico|png|gif|jpg)$/, // favicon style assets rarely help for link previews
+    /spacer\.(?:gif|png)$/,
+    /pixel\.(?:gif|png)$/,
+    /blank\.(?:gif|png)$/,
+    /placeholder/,
+    /default/,
+  ];
+  return placeholderPatterns.some((pattern) => pattern.test(normalized));
+}
+
+function isLikelyPlaceholderTitle(candidate: string): boolean {
+  const normalized = normalizeWhitespace(candidate).toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  const placeholderTitles = new Set([
+    "untitled",
+    "home",
+    "index",
+    "default",
+    "default title",
+    "undefined",
+    "null",
+  ]);
+  return placeholderTitles.has(normalized);
+}
+
 function pickMetaImage(
   html: string,
   baseUrl: URL,
-  metaTags: Map<string, string>
+  metaTags: Map<string, string>,
+  jsonLdImages: readonly string[] = []
 ): string | null {
+  let placeholderCandidate: string | null = null;
   for (const key of META_IMAGE_PRIORITY) {
     const value = metaTags.get(key);
     if (!value) {
@@ -139,8 +345,22 @@ function pickMetaImage(
     }
     const resolved = normalizeUrl(value, baseUrl);
     if (resolved) {
+      if (!isLikelyPlaceholderImage(resolved)) {
+        return resolved;
+      }
+      placeholderCandidate ??= resolved;
+    }
+  }
+
+  for (const candidate of jsonLdImages) {
+    const resolved = normalizeUrl(candidate, baseUrl);
+    if (!resolved) {
+      continue;
+    }
+    if (!isLikelyPlaceholderImage(resolved)) {
       return resolved;
     }
+    placeholderCandidate ??= resolved;
   }
 
   const imgRegex = /<img\s+[^>]*src\s*=\s*("([^"]*)"|'([^']*)'|([^"'\s>]+))/i;
@@ -155,21 +375,36 @@ function pickMetaImage(
     }
   }
 
-  return null;
+  return placeholderCandidate;
 }
 
 function pickMetaTitle(
   html: string,
-  metaTags: Map<string, string>
+  metaTags: Map<string, string>,
+  jsonLdTitles: readonly string[] = []
 ): string | null {
+  let placeholderCandidate: string | null = null;
   for (const key of META_TITLE_PRIORITY) {
     const value = metaTags.get(key);
     if (value) {
       const normalized = value.trim();
       if (normalized) {
-        return normalized;
+        if (!isLikelyPlaceholderTitle(normalized)) {
+          return normalized;
+        }
+        placeholderCandidate ??= normalized;
       }
     }
+  }
+
+  for (const candidate of jsonLdTitles) {
+    if (!candidate) {
+      continue;
+    }
+    if (!isLikelyPlaceholderTitle(candidate)) {
+      return candidate;
+    }
+    placeholderCandidate ??= candidate;
   }
 
   const titleRegex = /<title[^>]*>([^<]*)<\/title>/i;
@@ -493,8 +728,10 @@ export async function GET(request: NextRequest) {
   }
 
   const metaTags = collectMetaTags(html);
-  const imageUrl = pickMetaImage(html, targetUrl, metaTags);
-  const title = pickMetaTitle(html, metaTags);
+  const jsonLdPayloads = collectJsonLdPayloads(html);
+  const jsonLdMetadata = collectJsonLdMetadata(jsonLdPayloads);
+  const imageUrl = pickMetaImage(html, targetUrl, metaTags, jsonLdMetadata.images);
+  const title = pickMetaTitle(html, metaTags, jsonLdMetadata.titles);
   const author = pickMetaAuthor(html, metaTags);
   const siteName = pickMetaSiteName(metaTags);
   return Response.json({
