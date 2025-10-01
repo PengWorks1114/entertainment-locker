@@ -35,6 +35,7 @@ async function run() {
   const latinHtml = `<!DOCTYPE html><html><head><meta charset="iso-8859-1" />\n<title>Caf\u00e9 \u00dcber</title><meta property="og:image" content="https://example.com/preview.jpg" /></head><body></body></html>`;
   const jsonLdHtml = `<!DOCTYPE html><html><head><title>Placeholder</title><script type="application/ld+json">{\n  "@context": "https://schema.org",\n  "@type": "NewsArticle",\n  "headline": "JSON-LD Title",\n  "image": {\n    "@type": "ImageObject",\n    "url": "https://cdn.example.com/card.jpg"\n  }\n}</script></head><body><h1>Story</h1></body></html>`;
   const rangeHtml = `<!DOCTYPE html><html><head><meta property="og:image" content="https://example.com/range.jpg" /><meta property="og:title" content="Range Title" /></head><body></body></html>`;
+  const defaultNamedHtml = `<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><meta property="og:title" content="Home" /><meta property="og:image" content="https://i.ytimg.com/vi/abc123/hqdefault.jpg" /></head><body></body></html>`;
 
   await withMockedFetch(
     async (input, init) => {
@@ -81,6 +82,33 @@ async function run() {
       assert.equal(payload.title, "JSON-LD Title");
       assert.equal(payload.image, "https://cdn.example.com/card.jpg");
       console.log("Test passed: JSON-LD metadata extracted correctly.");
+    }
+  );
+
+  await withMockedFetch(
+    async (input, init) => {
+      void input;
+      void init;
+      return new Response(defaultNamedHtml, {
+        status: 200,
+        headers: {
+          "content-type": "application/xhtml+xml; charset=utf-8",
+        },
+      });
+    },
+    async () => {
+      const request = createRequest(
+        "http://localhost/api/open-graph?url=https://example.com/default"
+      );
+      const result = await GET(request);
+      const payload = await result.json();
+
+      assert.equal(payload.title, "Home");
+      assert.equal(
+        payload.image,
+        "https://i.ytimg.com/vi/abc123/hqdefault.jpg"
+      );
+      console.log("Test passed: default-like assets and XHTML content are parsed.");
     }
   );
 

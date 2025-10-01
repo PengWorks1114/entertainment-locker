@@ -357,12 +357,10 @@ function isLikelyPlaceholderImage(candidate: string): boolean {
     return true;
   }
   const placeholderPatterns = [
-    /\/favicon\.(?:ico|png|gif|jpg)$/, // favicon style assets rarely help for link previews
-    /spacer\.(?:gif|png)$/,
-    /pixel\.(?:gif|png)$/,
-    /blank\.(?:gif|png)$/,
-    /placeholder/,
-    /default/,
+    /\/favicon\.(?:ico|png|gif|jpg)(?:\?.*)?$/i, // favicon style assets rarely help for link previews
+    /\/(?:spacer|pixel|blank)[^/]*\.(?:gif|png)$/i,
+    /transparent\.gif$/i,
+    /placeholder(?:[_-]|\b)/i,
   ];
   return placeholderPatterns.some((pattern) => pattern.test(normalized));
 }
@@ -374,9 +372,6 @@ function isLikelyPlaceholderTitle(candidate: string): boolean {
   }
   const placeholderTitles = new Set([
     "untitled",
-    "home",
-    "index",
-    "default",
     "default title",
     "undefined",
     "null",
@@ -887,7 +882,11 @@ export async function GET(request: NextRequest) {
     }
 
     const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("text/html")) {
+    const lowerContentType = contentType.toLowerCase();
+    const isHtml =
+      lowerContentType.includes("text/html") ||
+      lowerContentType.includes("application/xhtml+xml");
+    if (!isHtml) {
       return buildMetadataResponse(domainFallback);
     }
 
